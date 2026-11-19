@@ -1,0 +1,22 @@
+# Build outputs
+/bin/
+/dist/
+
+# Release artifacts
+*.AppImage
+*.tar.gz
+*.zip
+checksums.txt
+
+# Logs and editor state
+*.log
+.pico-editor/
+
+# Local recovery files
+*.recover
+
+# Editor and OS noise
+*.swp
+*.swo
+*~
+.DS_Store

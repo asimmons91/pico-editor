@@ -1,2 +1,39 @@
 [tools]
 go = "1.27.4"
+golangci-lint = "2.15.0"
+
+[tasks.build]
+description = "Build bin/pico-editor"
+run = "go build -trimpath -o bin/pico-editor ./cmd/pico-editor"
+
+[tasks.run]
+description = "Run the editor"
+run = "go run ./cmd/pico-editor"
+
+[tasks.test]
+description = "Run the Go test suite"
+run = "go test ./..."
+
+[tasks.lint]
+description = "Run golangci-lint"
+run = "golangci-lint run"
+
+[tasks.fmt]
+description = "Format Go sources and tidy the module"
+run = ["gofmt -w .", "go mod tidy"]
+
+[tasks.fmt-check]
+description = "Fail when formatting or module files are stale (never rewrites)"
+run = """
+set -eu
+unformatted="$(gofmt -l .)"
+if [ -n "$unformatted" ]; then
+  printf 'gofmt required for:\n%s\n' "$unformatted" >&2
+  exit 1
+fi
+go mod tidy -diff
+"""
+
+[tasks.check]
+description = "Run the full local and CI gate"
+depends = ["fmt-check", "lint", "test", "build"]
