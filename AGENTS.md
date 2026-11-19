@@ -2,7 +2,7 @@
 
 ## Read first
 
-- This repo is a scaffold: no `cmd/`, app code, test suite, CI, or release flow exists yet. `docs/ROADMAP.md` links one detailed spec per milestone (`docs/M0-foundation.md` through `docs/M8-linux-release.md`); start with the roadmap.
+- M0 (foundation) is implemented: `cmd/pico-editor`, `internal/app`, `internal/version`, mise tasks, and CI exist. `docs/ROADMAP.md` links one detailed spec per milestone (`docs/M0-foundation.md` through `docs/M8-linux-release.md`); start with the roadmap, then read `docs/ARCHITECTURE.md` and `docs/VIM.md`.
 - `docs/ROADMAP.md` is the source of truth for V1 scope, locked decisions, milestones, and deferred work. Read it before adding features; update it when a locked decision changes.
 - Do not implement post-V1 items without explicit approval: full Vim macros/marks/plugins/splits, references/rename/formatting/code actions, `.p8.png`, run-cart, macOS/Windows packaging.
 
@@ -27,14 +27,16 @@
 
 ## Commands
 
-- `mise install` installs the pinned Go toolchain; `mise exec -- go version` should report `go1.27.4`.
-- `mise.toml` currently defines no tasks. Do not assume `mise run test` or `mise run check` exists until M0 adds them; use `mise exec -- go <cmd>`.
-- With no packages yet, `go test ./...` exits 1 with “matched no packages” and `go build ./...` exits 0. Do not treat these as meaningful test/build gates until `cmd/pico-editor` and packages exist.
-- Once code exists, use `go build ./cmd/pico-editor`, `go test ./...`, `go vet ./...`, and `gofmt`. Prefer a `mise run check` task once M0 defines it.
+- `mise install` installs the pinned Go toolchain and `golangci-lint`; `mise exec -- go version` should report `go1.27.4`.
+- `mise run check` is the gate: `fmt-check`, `lint`, `test`, and `build`. Also available: `mise run build`, `mise run run`, `mise run test`, `mise run lint`, and `mise run fmt`.
+- Use `mise exec -- go <cmd>` for Go commands not exposed as tasks. `go build ./...`, `go test ./...`, `go vet ./...`, and `gofmt` work directly.
+- CI runs `mise run check` with `CGO_ENABLED=0` and `GOFLAGS=-mod=readonly`. Do not add toolchain versions to workflows; `mise.toml` is the only source.
+- pico-lsp is not a dependency yet. Follow the pin schedule in `docs/ARCHITECTURE.md` §12; never import pico-lsp `internal/` packages.
 
 ## Working agreements
 
-- No commits or CI exist yet. M0 establishes mise tasks and CI; do not invent branch, PR, or release conventions beyond what is added there.
+- `main` is protected: never push directly to it. Create a branch, push it, and open a PR.
+- CI runs `mise run check` on pushes to `main` and on every PR; it must be green before merge.
 - Use Conventional Commits for every commit: `<type>(<optional scope>): <description>`. Allowed types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`. Use imperative, lowercase descriptions with no trailing period. Mark breaking changes with `!` and/or a `BREAKING CHANGE:` footer.
 - After opening a PR, load the `code-review` skill with the `skill` tool and review that PR (pass its URL or number). Fix the findings and push them to the same branch/PR before merging; do not open a separate PR for review fixes.
 - Golden-test cart round-trips, P8SCII glyph coverage/widths, and Vim behavior. Use Ebitengine 2.10's headless VM/screenshot support for UI tests when possible.

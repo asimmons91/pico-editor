@@ -1,6 +1,6 @@
 # M0 — Foundation and decisions
 
-**Status:** Draft
+**Status:** Done (local exit criteria verified; CI gate tracked by the M0 PR)
 **Depends on:** none
 **Blocks:** M1
 **Roadmap:** [ROADMAP.md](ROADMAP.md)

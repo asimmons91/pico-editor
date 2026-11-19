@@ -1,0 +1,34 @@
+# Notices
+
+pico-editor
+Copyright (c) 2026 Austin Simmons
+Licensed under the MIT License. See LICENSE.
+
+## PICO-8 font
+
+The PICO-8 font is published by Lexaloffle Games under the Creative Commons
+CC0 1.0 Universal public domain dedication. pico-editor derives a 1-bit glyph
+atlas from that font for display. The checked-in atlas data is distributed
+under CC0 as well; the rest of pico-editor remains MIT-licensed.
+
+The atlas is verified against PICO-8 screenshots. It is not a generic pixel
+font and is not rendered with runtime TrueType anti-aliasing.
+
+## PICO-8 trademark
+
+PICO-8 is a trademark of Lexaloffle Games. pico-editor is an independent
+project. It is not affiliated with, sponsored by, or endorsed by Lexaloffle
+Games. PICO-8 cartridges and the PICO-8 name are referenced only to describe
+compatibility.
+
+## Rune
+
+No source code from the Rune project is included in pico-editor. Rune is
+reference material only. Its GPL-3.0 license does not apply to this repository,
+and no Rune code, assets, or vendored dependencies are copied here.
+
+## Third-party dependencies
+
+pico-editor depends on third-party Go modules, including Ebitengine and
+pico-lsp. Those modules retain their own licenses; see `go.mod` for the exact
+versions in use.
