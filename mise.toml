@@ -24,6 +24,7 @@ run = ["gofmt -w .", "go mod tidy"]
 
 [tasks.fmt-check]
 description = "Fail when formatting or module files are stale (never rewrites)"
+hide = true
 run = """
 set -eu
 unformatted="$(gofmt -l .)"
