@@ -27,6 +27,18 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
+func TestRunHelp(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"--help"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("run(--help) = %d, want 0", code)
+	}
+	if !strings.Contains(stderr.String(), "usage: pico-editor") {
+		t.Errorf("stderr = %q, want usage output", stderr.String())
+	}
+}
+
 func TestRunRejectsBadFlags(t *testing.T) {
 	t.Parallel()
 
@@ -48,8 +60,8 @@ func TestRunRejectsBadFlags(t *testing.T) {
 			if code := run(test.args, &stdout, &stderr); code != 2 {
 				t.Errorf("run(%v) = %d, want 2", test.args, code)
 			}
-			if stderr.Len() == 0 {
-				t.Errorf("run(%v) wrote no usage to stderr", test.args)
+			if !strings.Contains(stderr.String(), "usage: pico-editor") {
+				t.Errorf("run(%v) stderr = %q, want usage output", test.args, stderr.String())
 			}
 		})
 	}
@@ -142,12 +154,65 @@ func TestSetupLoggerFallsBackToStderr(t *testing.T) {
 	}
 }
 
+func TestSetupLoggerFallsBackWhenFileCannotBeOpened(t *testing.T) {
+	t.Parallel()
+
+	// Passing a directory as the log path fails at OpenFile rather than at
+	// MkdirAll, exercising the second fallback branch.
+	path := t.TempDir()
+
+	var stderr bytes.Buffer
+	logger, closeLog := setupLogger(slog.LevelInfo, path, &stderr)
+	logger.Warn("fallback in use")
+	closeLog()
+
+	output := stderr.String()
+	if !strings.Contains(output, "cannot open log file") {
+		t.Errorf("stderr = %q, want a log file warning", output)
+	}
+	if !strings.Contains(output, "fallback in use") {
+		t.Errorf("stderr = %q, want fallback log output", output)
+	}
+}
+
+func TestSetupLoggerHonorsLevel(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "pico-editor.log")
+	logger, closeLog := setupLogger(slog.LevelError, path, &bytes.Buffer{})
+	logger.Info("hidden message")
+	logger.Error("visible message")
+	closeLog()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading log file: %v", err)
+	}
+	if strings.Contains(string(data), "hidden message") {
+		t.Errorf("log file = %q, want info records filtered out", data)
+	}
+	if !strings.Contains(string(data), "visible message") {
+		t.Errorf("log file = %q, want error records present", data)
+	}
+}
+
 func TestDefaultLogPath(t *testing.T) {
 	t.Run("xdg state home", func(t *testing.T) {
 		stateHome := t.TempDir()
 		t.Setenv("XDG_STATE_HOME", stateHome)
 
 		want := filepath.Join(stateHome, "pico-editor", "pico-editor.log")
+		if got := defaultLogPath(); got != want {
+			t.Errorf("defaultLogPath() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("home fallback", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("XDG_STATE_HOME", "")
+		t.Setenv("HOME", home)
+
+		want := filepath.Join(home, ".local", "state", "pico-editor", "pico-editor.log")
 		if got := defaultLogPath(); got != want {
 			t.Errorf("defaultLogPath() = %q, want %q", got, want)
 		}

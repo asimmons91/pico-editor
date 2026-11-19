@@ -2,8 +2,10 @@
 package app
 
 import (
+	"fmt"
 	"image/color"
 	"log/slog"
+	"runtime/debug"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -21,7 +23,9 @@ type Config struct {
 
 // Game is the root Ebitengine game. It owns no package-level state.
 type Game struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	step     func() error
+	fatalErr error
 }
 
 // New returns a game configured by cfg.
@@ -30,12 +34,27 @@ func New(cfg Config) *Game {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	return &Game{logger: logger}
+	game := &Game{logger: logger}
+	game.step = game.updateFrame
+	return game
 }
 
-// Update advances one tick. M0 only handles quit; later milestones run the
-// editor, Vim, and LSP message pumps here.
-func (g *Game) Update() error {
+// Update advances one tick. Ebitengine calls Update on its game goroutine, so
+// frame panics are recovered here and returned as an error to stop RunGame.
+func (g *Game) Update() (err error) {
+	if g.fatalErr != nil {
+		return g.fatalErr
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			g.fatalErr = g.reportPanic("update", recovered)
+			err = g.fatalErr
+		}
+	}()
+	return g.step()
+}
+
+func (g *Game) updateFrame() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyQ) && ctrlPressed() {
 		g.logger.Info("quit requested", "key", "ctrl+q")
 		return ebiten.Termination
@@ -45,6 +64,14 @@ func (g *Game) Update() error {
 
 // Draw renders the 256x256 canvas. M0 paints it PICO-8 black.
 func (g *Game) Draw(screen *ebiten.Image) {
+	if g.fatalErr != nil {
+		return
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			g.fatalErr = g.reportPanic("draw", recovered)
+		}
+	}()
 	screen.Fill(picoBlack)
 }
 
@@ -52,6 +79,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 // letterboxes the remainder. Nearest-neighbor sampling keeps every canvas
 // pixel sharp at any window size.
 func (g *Game) DrawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Image, _ ebiten.GeoM) {
+	if g.fatalErr != nil {
+		return
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			g.fatalErr = g.reportPanic("final screen", recovered)
+		}
+	}()
+
 	screen.Fill(picoBlack)
 
 	bounds := screen.Bounds()
@@ -68,8 +104,25 @@ func (g *Game) DrawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Imag
 }
 
 // Layout fixes the logical canvas at 256x256 device-independent pixels.
-func (g *Game) Layout(_, _ int) (int, int) {
+func (g *Game) Layout(_, _ int) (width, height int) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			g.fatalErr = g.reportPanic("layout", recovered)
+			width, height = CanvasWidth, CanvasHeight
+		}
+	}()
 	return CanvasWidth, CanvasHeight
+}
+
+// reportPanic logs a frame panic with its stack and returns the fatal error
+// that Update hands back to Ebitengine, which stops RunGame and exits non-zero.
+func (g *Game) reportPanic(where string, recovered any) error {
+	g.logger.Error("panic",
+		"where", where,
+		"panic", recovered,
+		"stack", string(debug.Stack()),
+	)
+	return fmt.Errorf("panic in %s: %v", where, recovered)
 }
 
 func ctrlPressed() bool {

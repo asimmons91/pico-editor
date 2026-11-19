@@ -25,6 +25,20 @@ func main() {
 // run is main without the process exit so that flag and version handling can
 // be tested.
 func run(args []string, stdout, stderr io.Writer) (exitCode int) {
+	// Install the panic net before flag parsing so startup panics are logged
+	// too. The fallback logger is replaced once the configured one is open.
+	logger := stderrLogger(slog.LevelInfo, stderr)
+	closeLog := func() {}
+
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.Error("panic", "panic", recovered, "stack", string(debug.Stack()))
+			fmt.Fprintf(stderr, "pico-editor: panic: %v\n", recovered)
+			exitCode = 1
+		}
+		closeLog()
+	}()
+
 	options, err := parseFlags(args, stderr)
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -37,16 +51,7 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 		return 0
 	}
 
-	logger, closeLog := setupLogger(options.level, options.logFile, stderr)
-	defer closeLog()
-
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			logger.Error("panic", "panic", recovered, "stack", string(debug.Stack()))
-			fmt.Fprintf(stderr, "pico-editor: panic: %v\n", recovered)
-			exitCode = 1
-		}
-	}()
+	logger, closeLog = setupLogger(options.level, options.logFile, stderr)
 
 	logger.Info("starting",
 		"version", version.Version,
@@ -54,6 +59,8 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 		"build_date", version.BuildDate,
 	)
 
+	// M0 and M1 use the default 4x scale. M7 feeds the configured scale here;
+	// 0 selects the automatic 80%-of-monitor path.
 	scale := app.DefaultScale
 	if monitor := ebiten.Monitor(); monitor != nil {
 		width, height := monitor.Size()
