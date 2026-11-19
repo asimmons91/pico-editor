@@ -71,7 +71,7 @@ package cart
 
 type Tab struct {
     Index      int    // zero-based, matching pico8/cartInfo and PICO-8
-    Name       string // "Tab 1" when PICO-8 stores no name
+    Name       string // "Tab N" when PICO-8 stores no name (one-based)
     StartLine  int    // first content line, full-cart, zero-based
     EndLine    int    // exclusive
     MarkerLine int    // hidden -->8 line, or -1 for the first tab
@@ -118,15 +118,15 @@ Requirements:
   For an unterminated header at EOF, the virtual line after it is returned.
 - `ReplaceCode` returns a new byte slice with only the code body replaced.
   Every byte before and after the body is preserved, including spacing, BOM,
-  section order, and non-code line endings. The one exception is the documented
-  `\n` inserted after an unterminated `__lua__` header when new code is
-  written.
+  section order, and non-code line endings.
+- An unterminated `__lua__` header is a typed save error for non-empty code;
+  never insert a header byte or merge code into the header line.
 - `ReplaceCode` restores the original code newline style (CRLF when the
   original body uses CRLF, otherwise LF) while accepting the editor's LF buffer
   text. It preserves blank lines.
 - `ReplaceCode` handles:
   - an empty code section,
-  - an empty code section whose header has no trailing newline,
+  - an unterminated `__lua__` header (typed error for non-empty code),
   - a code section with no trailing newline before a following section,
   - code ending with or without a newline,
   - a cart with no following section.
@@ -177,7 +177,9 @@ func (d *Document) Save() error
   not a newline, and is preserved. `FullText` returns the splice error rather
   than silently sending partial text.
 - `Save` splices the current code text and writes the resulting bytes with the
-  M2 atomic writer. The original `Raw` bytes are not mutated in place.
+  M2 atomic writer. The original `Raw` bytes are not mutated in place. An
+  unterminated header or other splice error leaves the file untouched and
+  surfaces a notification.
 - `Open` rejects a cart with no `__lua__` section as read-only with a clear
   error; `HasCode()` is false and `ReplaceCode` is never called.
 - An empty `__lua__` section opens as one empty tab.
@@ -187,7 +189,8 @@ func (d *Document) Save() error
 - Parse tabs from the code body; tab index 0 is the first tab, even when the
   body starts with `-->8`.
 - Tab bar row (see layout below) shows `0`, `1`, … plus a dirty marker on the
-  active tab. Tab names are shown only if pico-lsp returns a name.
+  active tab. Tab names are always available from `pkg/cart`; unnamed tabs are
+  synthesized as `Tab N` (one-based).
 - Only the active tab is drawn. Separator lines are hidden.
 - Convert public full-cart tab lines to code-body lines once:
   `localStart = tab.StartLine - BaseLine`, `localEnd = tab.EndLine - BaseLine`.

@@ -98,8 +98,8 @@ func (s *Server) Serve(ctx context.Context, stream jsonrpc2.Stream) jsonrpc2.Con
 
 ```go
 type Client struct {
-    conn   jsonrpc2.Conn
-    client protocol.Client
+    conn     jsonrpc2.Conn
+    server   protocol.Server
     ...
 }
 
@@ -110,8 +110,10 @@ func (c *Client) Stop(ctx context.Context) error
 - Create `net.Pipe()`. Wrap each end with `jsonrpc2.NewStream`; call
   `serverConn := srv.Serve(ctx, serverStream)` and keep the returned `Conn`.
 - Create the editor side with
-  `protocol.NewClient(ctx, handler, jsonrpc2.NewStream(clientPipe))`, then
-  `conn.Go(ctx, dispatcher)`.
+  `ctx, conn, server := protocol.NewClient(ctx, handler, jsonrpc2.NewStream(clientPipe))`.
+  `protocol.NewClient` starts the connection and calls `Go`; do not call `Go`
+  again. Keep `conn` for lifecycle/close and `server` for outgoing requests
+  (`Initialize`, `Completion`, and so on).
 - `Start` sends `initialize` with:
   - `processId`,
   - `clientInfo{name: "pico-editor", version}`,
