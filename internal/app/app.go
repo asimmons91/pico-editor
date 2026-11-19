@@ -64,30 +64,21 @@ func (g *Game) updateFrame() error {
 
 // Draw renders the 256x256 canvas. M0 paints it PICO-8 black.
 func (g *Game) Draw(screen *ebiten.Image) {
-	if g.fatalErr != nil {
-		return
-	}
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			g.fatalErr = g.reportPanic("draw", recovered)
-		}
-	}()
-	screen.Fill(picoBlack)
+	g.doFrame("draw", func() {
+		screen.Fill(picoBlack)
+	})
 }
 
 // DrawFinalScreen scales the canvas by an integer factor, centers it, and
 // letterboxes the remainder. Nearest-neighbor sampling keeps every canvas
 // pixel sharp at any window size.
 func (g *Game) DrawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Image, _ ebiten.GeoM) {
-	if g.fatalErr != nil {
-		return
-	}
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			g.fatalErr = g.reportPanic("final screen", recovered)
-		}
-	}()
+	g.doFrame("final screen", func() {
+		g.drawFinalScreen(screen, offscreen)
+	})
+}
 
+func (g *Game) drawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Image) {
 	screen.Fill(picoBlack)
 
 	bounds := screen.Bounds()
@@ -101,6 +92,20 @@ func (g *Game) DrawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Imag
 		float64(bounds.Min.Y+destination.Min.Y),
 	)
 	screen.DrawImage(offscreen, options)
+}
+
+// doFrame runs a frame callback, recovering any panic so it becomes a fatal
+// error for the next Update. Once a frame has failed, later frames are no-ops.
+func (g *Game) doFrame(where string, action func()) {
+	if g.fatalErr != nil {
+		return
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			g.fatalErr = g.reportPanic(where, recovered)
+		}
+	}()
+	action()
 }
 
 // Layout fixes the logical canvas at 256x256 device-independent pixels.
