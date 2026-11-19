@@ -78,9 +78,9 @@ type Tab struct {
 }
 
 type Include struct {
-    Path         string // unquoted path as written
+    Path         string // unquoted path without a .p8 tab selector
     ResolvedPath string // lexical path relative to the cart
-    Tab          int    // zero-based selected tab, or -1 for all/none
+    Tab          int    // zero-based .p8 tab selector, or -1
     Line         int    // zero-based full-cart directive line
 }
 
@@ -113,11 +113,14 @@ Requirements:
 - `HasCode()` is false for a cart with no `__lua__` section. Such a cart still
   parses for inspection, but `ReplaceCode` returns a typed error; it never
   creates a section implicitly.
-- `CodeStartLine()` is the full-cart zero-based line of the first code body
-  line, or 0 when `HasCode()` is false.
+- `CodeStartLine()` is the full-cart zero-based line where the code body
+  begins (the line after the `__lua__` header), or 0 when `HasCode()` is false.
+  For an unterminated header at EOF, the virtual line after it is returned.
 - `ReplaceCode` returns a new byte slice with only the code body replaced.
   Every byte before and after the body is preserved, including spacing, BOM,
-  section order, and non-code line endings.
+  section order, and non-code line endings. The one exception is the documented
+  `\n` inserted after an unterminated `__lua__` header when new code is
+  written.
 - `ReplaceCode` restores the original code newline style (CRLF when the
   original body uses CRLF, otherwise LF) while accepting the editor's LF buffer
   text. It preserves blank lines.
@@ -133,8 +136,10 @@ Requirements:
   exclusive, and `MarkerLine` identifies the hidden separator (-1 for the first
   tab). Empty tabs are `StartLine == EndLine`.
 - `Includes()` exposes include paths from the raw code body, including
-  quoted paths, spaces, and tab selectors such as `cart.p8:2`. It does not
-  check whether included files exist; the resolver and LSP provide that.
+  quoted paths, spaces, and `.p8` tab selectors such as `cart.p8:2`. Selectors
+  apply only to `.p8`/`.p8.png` targets; a `.lua:1` suffix is part of the file
+  name. It does not check whether included files exist; the resolver and LSP
+  provide that.
 - The include resolver facade must be public so the editor can map a `.lua`
   file to its nearest owning cart without reimplementing include rules.
 - Upstream tests must cover byte-identical `Parse`→`ReplaceCode` round-trips for
@@ -168,8 +173,9 @@ func (d *Document) Save() error
   editable.
 - The editor buffer is LF-normalized. `FullText` calls
   `Parsed.ReplaceCode(Code.Text())`; `ReplaceCode` restores the original code
-  newline style, so CRLF carts round-trip. `FullText` returns the splice error
-  rather than silently sending partial text.
+  newline style, so CRLF carts round-trip. A lone `\r` is P8SCII glyph 13 data,
+  not a newline, and is preserved. `FullText` returns the splice error rather
+  than silently sending partial text.
 - `Save` splices the current code text and writes the resulting bytes with the
   M2 atomic writer. The original `Raw` bytes are not mutated in place.
 - `Open` rejects a cart with no `__lua__` section as read-only with a clear

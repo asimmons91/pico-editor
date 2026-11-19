@@ -98,7 +98,7 @@ Five coordinate systems exist and must not be mixed implicitly:
 | --- | --- | --- | --- |
 | File byte offset | byte | `fsutil`, `cart` source maps | Reading and splicing original bytes; diagnostics source maps |
 | Line + rune offset | decoded rune index in one line | `editor` | Cursor, selection, undo, insert/delete |
-| P8SCII glyph cluster | one printable P8SCII glyph (1+ runes) | `pico-lsp/pkg/p8scii` | Cursor snapping, cluster deletion, glyph width |
+| P8SCII glyph cluster | one printable P8SCII glyph (1+ runes) | editor tokenizer, backed by `pico-lsp/pkg/p8scii` | Cursor snapping, cluster deletion, glyph width |
 | Display cell | 4 px or 8 px column on the canvas | `render`, `ui` | Layout grid, block selection, viewport, cursor drawing |
 | LSP position | line + UTF-16 code unit | `lsp` | Protocol messages only |
 

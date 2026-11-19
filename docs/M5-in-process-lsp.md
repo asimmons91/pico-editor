@@ -107,9 +107,11 @@ func Start(ctx context.Context, opts Options) (*Client, error)
 func (c *Client) Stop(ctx context.Context) error
 ```
 
-- Create `net.Pipe()`. Start `srv.Serve(ctx, serverPipe)` in a goroutine.
+- Create `net.Pipe()`. Wrap each end with `jsonrpc2.NewStream`; call
+  `serverConn := srv.Serve(ctx, serverStream)` and keep the returned `Conn`.
 - Create the editor side with
-  `protocol.NewClient(ctx, handler, clientPipe)`, then `conn.Go(ctx, dispatcher)`.
+  `protocol.NewClient(ctx, handler, jsonrpc2.NewStream(clientPipe))`, then
+  `conn.Go(ctx, dispatcher)`.
 - `Start` sends `initialize` with:
   - `processId`,
   - `clientInfo{name: "pico-editor", version}`,
@@ -117,10 +119,13 @@ func (c *Client) Stop(ctx context.Context) error
   - `capabilities` limited to what the editor implements,
   - `initializationOptions` with the public settings.
 - Then send `initialized` and open already-open documents.
-- `Stop` sends `shutdown`, waits up to 2s, sends `exit`, closes the pipe, and
-  joins the server goroutine. If the timeout expires, close the pipe and log.
-- Restart command (palette and `:lsp restart`): stop, clear caches, start, and
-  re-open documents. The editor remains usable if restart fails.
+- `Stop` sends `shutdown`, waits up to 2s, sends `exit`, calls
+  `serverConn.Close()`, cancels the server context, closes both pipes, and
+  waits for `serverConn.Done()` and the client dispatcher with the timeout. If
+  the timeout expires, log and proceed.
+- Restart creates a new `lsp.Server`; a server instance serves one connection.
+  Stop, clear caches, start, and re-open documents. The editor remains usable
+  if restart fails.
 - A server crash/EOF marks LSP `failed`, shows a notification, and leaves
   editing, saving, and Vim fully functional.
 

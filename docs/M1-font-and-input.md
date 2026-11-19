@@ -43,8 +43,9 @@ records clipboard, IME, key-repeat, and non-US-layout behavior.
 
 ## Deliverables
 
-1. pico-lsp `pkg/p8scii` with `Encode`, `Decode`, `Lookup`, and `Glyphs`,
-   including the 256-entry table and pixel widths, tested across all bytes.
+1. pico-lsp `pkg/p8scii` with `Encode`, `Decode`, `Lookup`, `GlyphFor`, and
+   `Glyphs`, including the 256-entry table and pixel widths, tested across all
+   bytes.
 2. `internal/font` with checked-in glyph data, metrics, lookup, and a generated
    atlas.
 3. `tools/fontgen` plus `go generate` wiring; CI verifies the generated file is
@@ -87,6 +88,10 @@ func Encode(text string) []byte
 // Lookup returns the glyph for one P8SCII byte.
 func Lookup(b byte) Glyph
 
+// GlyphFor resolves a canonical text cluster, including a base glyph with a
+// trailing U+FE0F.
+func GlyphFor(text string) (Glyph, bool)
+
 // Glyphs returns all 256 entries in byte order.
 func Glyphs() []Glyph
 ```
@@ -104,9 +109,9 @@ Requirements:
   width table remain upstream in `pkg/p8scii`; do not add an editor-local
   table.
 - The VS16 sequence is part of the preceding glyph. The editor tokenizer groups
-  a base glyph with a following `U+FE0F`, encodes the cluster with
-  `p8scii.Encode`, and reads the width with `p8scii.Lookup`. `😐` and `😐️` must
-  not produce two glyphs or two widths.
+  a base glyph with a following `U+FE0F` and calls `p8scii.GlyphFor`; unknown
+  clusters use the 4px replacement width. `😐` and `😐️` must not produce two
+  glyphs or two widths.
 - Tests in pico-lsp round-trip every byte and canonical glyph, including the
   VS16 entries, and assert widths and `Printable`.
 - pico-lsp publishes this package in `v1.6.0`; the editor pins the tag before
