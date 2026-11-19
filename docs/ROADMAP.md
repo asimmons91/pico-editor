@@ -1,6 +1,6 @@
 # pico-editor V1 Roadmap
 
-Status: M0 — Foundation implemented; upstream pico-lsp schedule and manual resize check pending
+Status: M0 — Foundation complete; M1 next
 Date: 2026-11-19
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise

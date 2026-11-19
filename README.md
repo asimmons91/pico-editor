@@ -7,9 +7,10 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 > PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
 > with, sponsored by, or endorsed by Lexaloffle Games.
 
-**Status:** M0 foundation. The repository builds, tests, and opens an empty
-256×256 PICO-8-black canvas at 4× (1024×1024). Editor, cart, Vim, and LSP
-features land in later milestones; see [docs/ROADMAP.md](docs/ROADMAP.md).
+**Status:** M0 complete. The repository builds, tests, and opens an empty
+256×256 PICO-8-black canvas at 4× (1024×1024). M1 adds the font, rendering,
+input foundation, and the pico-lsp `pkg/p8scii` dependency; see
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Requirements
 

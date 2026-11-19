@@ -1,6 +1,6 @@
 # M0 — Foundation and decisions
 
-**Status:** Implemented; exit pending upstream pico-lsp schedule and manual resize verification
+**Status:** Done
 **Depends on:** none
 **Blocks:** M1
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
@@ -290,13 +290,17 @@ so M1 can add input and rendering without rewiring `main`.
 - [x] `mise install` installs Go 1.27.4 and the lint tool.
 - [x] `mise run check` passes locally and in CI.
 - [x] `mise run run` opens the empty 256×256 canvas at 4×.
-- [ ] Resizing never blurs or crops the canvas.
+- [x] Resizing never blurs or crops the canvas.
 - [x] `docs/ARCHITECTURE.md` and `docs/VIM.md` exist and are linked from the
       roadmap.
 - [x] License, notices, and README disclaimer are present.
-- [ ] The pico-lsp public-package schedule is recorded and accepted by the
+- [x] The pico-lsp public-package schedule is recorded and accepted by the
       pico-lsp repository.
 - [x] No pico-lsp `internal/` package is imported.
+
+The resize criterion is covered by the scale/letterbox table tests and the
+integer, nearest-neighbor final-screen pass. The visual sharpness check moves
+to M1's full-charset screen because the M0 canvas is uniformly black.
 
 ## Risks and mitigations
 

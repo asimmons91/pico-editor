@@ -335,9 +335,9 @@ Development rules:
 - A milestone cannot exit on a pseudo-version: only a tagged pico-lsp release
   with the required public packages counts.
 - The pico-lsp public-package schedule (`pkg/p8scii` 1.6.0, `pkg/cart` 1.7.0,
-  `pkg/lsp`/`pkg/glyphs` 1.8.0) is a cross-repository commitment. It is
-  recorded here and must be mirrored in pico-lsp's own roadmap before M1
-  starts; the editor must not import an unreleased API.
+  `pkg/lsp`/`pkg/glyphs` 1.8.0) is a cross-repository commitment. pico-lsp's
+  roadmap records the same schedule; the editor must not import an unreleased
+  API.
 
 ## 13. M0 implementation notes
 
