@@ -206,13 +206,16 @@ func (s *Surface) DrawText(x, y int, text string, fg, bg uint8) int
   - `ebiten.SetWindowSize(256*scale, 256*scale)`.
   - `ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)`.
   - `ebiten.SetWindowTitle("pico-editor")`.
-- Every `Draw`:
-  - read the outside size,
-  - compute `scale = max(1, min(outsideW/256, outsideH/256))`,
-  - center at `(outsideW-256*scale)/2`, `(outsideH-256*scale)/2`,
-  - draw the 256×256 image with `Filter: ebiten.FilterNearest` and an integer
-    `GeoM.Scale`,
+- Every `DrawFinalScreen`:
+  - read the final screen bounds (physical pixels),
+  - compute `scale = max(1, min(width/256, height/256))`,
+  - center at `((width-256*scale)/2, (height-256*scale)/2)`,
+  - draw the 256×256 offscreen with `Filter: ebiten.FilterNearest` and an
+    integer `GeoM.Scale`,
   - fill the remaining area with palette index 0.
+- Scaling lives in the final-screen pass because `Game.Draw` only sees the
+  256×256 logical screen and Ebitengine's default final-screen filter is a box
+  filter. Do not scale a second time in `Draw`.
 - `ebiten.DeviceScaleFactor()` is respected by Ebitengine's window sizing; do
   not multiply coordinates by it manually. Add a table test for scale math,
   including 1.25, 1.5, and 2.0 device factors.

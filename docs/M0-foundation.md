@@ -1,6 +1,6 @@
 # M0 — Foundation and decisions
 
-**Status:** Done (local exit criteria verified; CI gate tracked by the M0 PR)
+**Status:** Implemented; exit pending upstream pico-lsp schedule and manual resize verification
 **Depends on:** none
 **Blocks:** M1
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
@@ -122,7 +122,8 @@ The document is normative for later milestones. It must contain:
    Ebitengine image, scaled with nearest-neighbor. This keeps golden tests
    headless and pixel-exact.
 7. LSP transport: pico-lsp runs in-process over `net.Pipe` using
-   `go.lsp.dev/protocol`; the UI never blocks on a request.
+   `go.lsp.dev/jsonrpc2` streams with `go.lsp.dev/protocol` types; the UI never
+   blocks on a request.
 8. Input flow: Ebitengine keys plus `AppendInputChars`, with Vim and P8SCII
    input layered above the raw event stream.
 9. Config, keymap, and command registry ownership.
@@ -280,16 +281,16 @@ so M1 can add input and rendering without rewiring `main`.
 
 ## Exit criteria
 
-- [ ] `mise install` installs Go 1.27.4 and the lint tool.
-- [ ] `mise run check` passes locally and in CI.
-- [ ] `mise run run` opens the empty 256×256 canvas at 4×.
+- [x] `mise install` installs Go 1.27.4 and the lint tool.
+- [x] `mise run check` passes locally and in CI.
+- [x] `mise run run` opens the empty 256×256 canvas at 4×.
 - [ ] Resizing never blurs or crops the canvas.
-- [ ] `docs/ARCHITECTURE.md` and `docs/VIM.md` exist and are linked from the
+- [x] `docs/ARCHITECTURE.md` and `docs/VIM.md` exist and are linked from the
       roadmap.
-- [ ] License, notices, and README disclaimer are present.
+- [x] License, notices, and README disclaimer are present.
 - [ ] The pico-lsp public-package schedule is recorded and accepted by the
       pico-lsp repository.
-- [ ] No pico-lsp `internal/` package is imported.
+- [x] No pico-lsp `internal/` package is imported.
 
 ## Risks and mitigations
 

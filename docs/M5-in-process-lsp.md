@@ -240,9 +240,9 @@ Rules:
 - Render at most 10 items in a popup anchored below the cursor, clipped to the
   canvas. Show label and detail; documentation in a side/below panel when it
   fits.
-- Navigation: `Ctrl+N` next, `Ctrl+Shift+N` previous, `Tab`/`Shift+Tab` next/
-  previous, `Enter` accept, `Esc` close. **Do not bind `Ctrl+P`**; insert-mode
-  `Ctrl+P` belongs to P8SCII puny mode.
+- Navigation: `Ctrl+N` next, `Ctrl+Shift+N` previous, `Enter`/`Tab` accept,
+  `Esc` close. **Do not bind `Ctrl+P`**; insert-mode `Ctrl+P` belongs to P8SCII
+  puny mode.
 - Accepting:
   - use `textEdit` when present (both insert and replace ranges),
   - otherwise insert `insertText` or `label` at the cursor,

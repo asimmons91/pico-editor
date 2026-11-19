@@ -29,6 +29,7 @@ and no Rune code, assets, or vendored dependencies are copied here.
 
 ## Third-party dependencies
 
-pico-editor depends on third-party Go modules, including Ebitengine and
-pico-lsp. Those modules retain their own licenses; see `go.mod` for the exact
-versions in use.
+pico-editor depends on third-party Go modules, including Ebitengine. pico-lsp
+will be added as a module dependency according to the pin schedule in
+`docs/ARCHITECTURE.md` §12 once its public packages are released. Those
+modules retain their own licenses; see `go.mod` for the exact versions in use.

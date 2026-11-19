@@ -48,7 +48,7 @@ internal/render   -> internal/font, pico-lsp pkg/p8scii
 internal/cart     -> pico-lsp pkg/cart
 internal/workspace-> pico-lsp pkg/cart
 internal/lsp      -> pico-lsp pkg/lsp, pkg/cart, pkg/p8scii
-internal/config   -> standard library only
+internal/config   -> TOML parser (selected in M7), standard library
 internal/font     -> pico-lsp pkg/p8scii
 internal/fsutil   -> standard library only
 internal/version  -> standard library only
@@ -184,6 +184,11 @@ app state -> render.Surface (256x256, palette indices)
   never cropped. HiDPI is handled by Ebitengine; the final-screen pass works in
   physical pixels and coordinates are never multiplied by the device scale
   factor manually.
+- `DrawFinalScreen` replaces Ebitengine's default final-screen transform.
+  Ebitengine APIs that use that default transform (for example
+  `ebiten.CursorPosition` and IME candidate placement) must be mapped through
+  the same canvas rectangle before use. M1 owns the mouse/IME spike; do not
+  assume the default letterbox mapping matches the drawn canvas.
 - Golden tests assert palette-index surfaces headlessly; they do not compare
   GPU screenshots. M1 adds an optional Ebitengine headless smoke test.
 
@@ -219,9 +224,10 @@ Ebitengine keys + AppendInputChars
 - pico-lsp runs inside the editor process. `pkg/lsp` exposes a server entry
   point (planned: `Serve(ctx, stream)`) and the editor dials it over a
   `net.Pipe` pair (or an equivalent in-memory duplex stream).
-- JSON-RPC framing uses `go.lsp.dev/protocol`. The server runs on its own
-  goroutine. The client has one writer (serialized), a pending-request map
-  keyed by ID, and context-based cancellation.
+- JSON-RPC framing uses `go.lsp.dev/jsonrpc2` streams with
+  `go.lsp.dev/protocol` types. The server runs on its own goroutine. The client
+  has one writer (serialized), a pending-request map keyed by ID, and
+  context-based cancellation.
 - pico-lsp never writes to stdout. Any logging goes to stderr or the configured
   log file.
 - Initialize sends client capabilities, workspace folders, and configuration.
@@ -315,6 +321,8 @@ be used at a milestone exit.
 | pico-lsp `pkg/cart` | `v1.7.0` | before M4 |
 | pico-lsp `pkg/lsp`, `pkg/glyphs` | `v1.8.0` | before M5 |
 | `go.lsp.dev/protocol` | latest tagged version at integration | M5 |
+| `go.lsp.dev/jsonrpc2` | latest tagged version at integration | M5 |
+| TOML parser | selected and pinned in M7 | M7 |
 | `golang.design/x/clipboard` | latest tagged version at integration | M1 |
 
 Development rules:
@@ -338,6 +346,10 @@ Development rules:
 - `internal/app.Game` owns the Ebitengine loop. `Layout` returns `256, 256`;
   `DrawFinalScreen` performs the integer scale, centering, and letterbox pass
   described above. M0 paints palette index 0 only.
+- Ebitengine runs game callbacks on its game goroutine, so the game methods
+  recover frame panics themselves. `Update` returns the logged fatal error to
+  stop `RunGame`; `Draw` and `DrawFinalScreen` record it for the next `Update`.
+  `main` keeps a top-level recover for startup panics. Both paths exit 1.
 - `internal/app/window.go` contains the pure scale and rectangle math; tests
   cover non-integer device scale inputs and letterboxing.
 - `internal/version` supplies `Version`, `Commit`, and `BuildDate` for

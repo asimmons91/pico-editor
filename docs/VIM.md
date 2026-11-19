@@ -281,7 +281,7 @@ The following are explicitly not implemented in V1:
 
 - Macros (`q`, `@`), marks (`m`, `` ` ``, `'`), sessions, and persistent undo.
 - Plugins, scripts, `:source`, `:normal`, `:g`, `:v`, `:terminal`, `:set`,
-  `:map`, abbreviations, and expression registers.
+  `:map`, autocommands (`:autocmd`), abbreviations, and expression registers.
 - Splits, windows, Vim tabs, folding, and diff mode.
 - `R` replace mode, `g?` rot13, `gq` formatting, and `=` reindent filters.
 - References, rename, formatting, code actions, inlay hints, and code lens
