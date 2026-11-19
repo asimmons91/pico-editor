@@ -386,11 +386,15 @@ type Renderer struct {
     Image   *ebiten.Image
 }
 
-func (r *Renderer) Present(screen *ebiten.Image, outsideW, outsideH int)
+func (r *Renderer) Upload()
+func (r *Renderer) Present(target *ebiten.Image)
 ```
 
-The app holds one `Renderer` and one `input.Source`. No other package writes to
-the Ebitengine image.
+`Upload` writes the dirty surface to `r.Image`. `Present` draws that image at
+1:1 into the 256×256 logical screen; it never scales. The final-screen pass
+owns integer scaling, centering, and letterboxing. The app holds one
+`Renderer` and one `input.Source`. No other package writes to the Ebitengine
+image.
 
 ## Error handling
 

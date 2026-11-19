@@ -182,8 +182,11 @@ The document is normative for later milestones. It must contain:
   and the log with `0600`.
 - Never log file contents. Log paths, operation names, and durations.
 - Fatal startup errors go to stderr and the log, then exit non-zero.
-- Recover panics in command execution in later milestones; M0 only needs a
-  top-level recover that logs the stack before exiting.
+- Ebitengine runs frame callbacks on its game goroutine, outside `main`'s
+  recover. Recover panics inside `Update`, `Draw`, `DrawFinalScreen`, and
+  `Layout`, log the stack, and return the fatal error from `Update` so
+  `RunGame` exits non-zero. Keep a top-level recover for startup panics. Later
+  milestones may recover in command handlers where continuing is safe.
 - `internal/version` values are injected with
   `-ldflags "-X ...Version=... -X ...Commit=... -X ...BuildDate=..."`.
   Development builds report `dev` and `unknown`.
@@ -260,7 +263,10 @@ so M1 can add input and rendering without rewiring `main`.
   continues with stderr logging.
 - A panic during startup is logged with a stack trace and exits 1.
 - A panic during a frame is logged and exits 1 in M0; later milestones recover
-  in command handlers where continuing is safe.
+  in command handlers where continuing is safe. Ebitengine runs frame callbacks
+  on its game goroutine, so M0 recovers inside `Update`, `Draw`,
+  `DrawFinalScreen`, and `Layout` as well as keeping a top-level recover for
+  startup panics.
 
 ## Testing
 
