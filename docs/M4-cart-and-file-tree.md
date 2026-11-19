@@ -44,9 +44,9 @@ backup behavior.
 
 ## Deliverables
 
-1. Tagged pico-lsp `pkg/cart` with `Parse`, `Document`, `Tabs`, `Code`,
-   `ReplaceCode`, `Includes`, and an include resolver facade; the editor
-   consumes it.
+1. Tagged pico-lsp `pkg/cart` with `Parse`, `Document`, `Code`, `HasCode`,
+   `CodeStartLine`, `Tabs`, `Sections`, `Includes`, `ReplaceCode`, and an
+   include resolver facade; the editor consumes it.
 2. `internal/cart` adapter that holds the original bytes and the editable code
    separately.
 3. Code-only cart view with a tab bar and per-tab view state.
@@ -72,48 +72,74 @@ package cart
 type Tab struct {
     Index      int    // zero-based, matching pico8/cartInfo and PICO-8
     Name       string // "Tab 1" when PICO-8 stores no name
-    StartLine  int    // first code line, full-cart, zero-based
+    StartLine  int    // first content line, full-cart, zero-based
     EndLine    int    // exclusive
     MarkerLine int    // hidden -->8 line, or -1 for the first tab
+}
+
+type Include struct {
+    Path         string // unquoted path as written
+    ResolvedPath string // lexical path relative to the cart
+    Tab          int    // zero-based selected tab, or -1 for all/none
+    Line         int    // zero-based full-cart directive line
 }
 
 type Document struct {
     // unexported original bytes and section offsets
 }
 
-func Parse(data []byte) (*Document, error)
-func (d *Document) Code() []byte
-func (d *Document) Tabs() []Tab
-func (d *Document) Includes() []Include
-func (d *Document) ReplaceCode(code []byte) []byte
+func Parse(path string, data []byte) (*Document, error)
+func (d *Document) Path() string
+func (d *Document) Code() string
+func (d *Document) HasCode() bool
 func (d *Document) CodeStartLine() int
+func (d *Document) Tabs() []Tab
+func (d *Document) Sections() []Section
+func (d *Document) Includes() []Include
+func (d *Document) ReplaceCode(code string) ([]byte, error)
 ```
 
 Requirements:
 
+- `Parse` is pure: it never reads the filesystem, resolves `#include`, or
+  flattens includes. `Code()` retains `#include` directives unchanged.
 - `Parse` accepts a `.p8` with a header, an optional `__lua__` section, and any
-  suffix sections. It must reject malformed section markers with a typed error
-  that includes the line number.
-- `Code()` returns exactly the bytes between the `__lua__` marker line and the
-  next section marker (or EOF), without the marker line.
-- `ReplaceCode` returns a new byte slice with only that range replaced. Every
-  byte before and after the range is preserved, including spacing, line
-  endings, and section order.
+  suffix sections. It rejects non-`.p8` paths, including `.p8.png`, with typed
+  errors. Malformed section markers and duplicate `__lua__` sections produce a
+  typed error with the line number.
+- `Code()` returns exactly the bytes between the `__lua__` header line and the
+  next section header (or EOF), without the header line. It preserves CRLF and
+  LF exactly as stored. The BOM and header are not part of `Code()`.
+- `HasCode()` is false for a cart with no `__lua__` section. Such a cart still
+  parses for inspection, but `ReplaceCode` returns a typed error; it never
+  creates a section implicitly.
+- `CodeStartLine()` is the full-cart zero-based line of the first code body
+  line, or 0 when `HasCode()` is false.
+- `ReplaceCode` returns a new byte slice with only the code body replaced.
+  Every byte before and after the body is preserved, including spacing, BOM,
+  section order, and non-code line endings.
+- `ReplaceCode` restores the original code newline style (CRLF when the
+  original body uses CRLF, otherwise LF) while accepting the editor's LF buffer
+  text. It preserves blank lines.
 - `ReplaceCode` handles:
   - an empty code section,
+  - an empty code section whose header has no trailing newline,
   - a code section with no trailing newline before a following section,
   - code ending with or without a newline,
   - a cart with no following section.
-- `Tabs()` splits the code body on lines that start with `-->8` and returns
-  full-cart line numbers. `Index` is zero-based (normalize the existing internal
-  1-based value), `StartLine` is the first content line, and `MarkerLine`
-  identifies the hidden separator (-1 for the first tab).
-- `Includes()` exposes include paths already resolved by the existing cart
-  loader, including tab selectors and quoted paths.
+- `Tabs()` splits the code body on lines that start with `-->8` at column 0 and
+  returns full-cart line numbers. `Index` is zero-based (normalize the existing
+  internal 1-based value), `StartLine` is the first content line, `EndLine` is
+  exclusive, and `MarkerLine` identifies the hidden separator (-1 for the first
+  tab). Empty tabs are `StartLine == EndLine`.
+- `Includes()` exposes include paths from the raw code body, including
+  quoted paths, spaces, and tab selectors such as `cart.p8:2`. It does not
+  check whether included files exist; the resolver and LSP provide that.
 - The include resolver facade must be public so the editor can map a `.lua`
   file to its nearest owning cart without reimplementing include rules.
 - Upstream tests must cover byte-identical `Parse`→`ReplaceCode` round-trips for
-  every cart in pico-lsp's corpus, plus edits inside the code section.
+  every cart in pico-lsp's corpus, plus edits inside the code section, CRLF
+  carts, and header/empty-body boundaries.
 - pico-lsp tags the release (target `v1.7.0`) before M4 starts. The editor
   removes the local `replace` and pins the tag.
 
@@ -130,23 +156,24 @@ type Document struct {
 }
 
 func Open(path string) (*Document, error)
-func (d *Document) FullText() string
+func (d *Document) FullText() (string, error)
 func (d *Document) Save() error
 ```
 
 - The editable buffer contains **only** the `__lua__` code body. Header and
   non-code sections never enter the buffer, so they cannot be edited or
   re-encoded.
-- `BaseLine` is the full-cart line of code line 0. It is constant for the
-  lifetime of the document because the header is not editable.
-- `FullText` = `Parsed.ReplaceCode([]byte(Code.Text()))`, converted to a string.
-  It is the text sent to pico-lsp and used for diagnostics mapping.
-- `Save` = `ReplaceCode` on the current code text, then the atomic writer from
-  M2. The original `Raw` bytes are not mutated in place.
-- The code buffer's newline style is detected from the code section. `.p8`
-  files are normally LF; a CRLF code section is preserved.
-- A cart with no `__lua__` section opens read-only with a clear error; do not
-  create a section implicitly.
+- `BaseLine` is `Parsed.CodeStartLine()`, the full-cart line of code line 0. It
+  is constant for the lifetime of the document because the header is not
+  editable.
+- The editor buffer is LF-normalized. `FullText` calls
+  `Parsed.ReplaceCode(Code.Text())`; `ReplaceCode` restores the original code
+  newline style, so CRLF carts round-trip. `FullText` returns the splice error
+  rather than silently sending partial text.
+- `Save` splices the current code text and writes the resulting bytes with the
+  M2 atomic writer. The original `Raw` bytes are not mutated in place.
+- `Open` rejects a cart with no `__lua__` section as read-only with a clear
+  error; `HasCode()` is false and `ReplaceCode` is never called.
 - An empty `__lua__` section opens as one empty tab.
 
 ### 3. Code tabs
@@ -158,6 +185,7 @@ func (d *Document) Save() error
 - Only the active tab is drawn. Separator lines are hidden.
 - Convert public full-cart tab lines to code-body lines once:
   `localStart = tab.StartLine - BaseLine`, `localEnd = tab.EndLine - BaseLine`.
+  `localEnd` is exclusive; hide the line at `tab.MarkerLine - BaseLine`.
 - Display mapping:
   - `displayLine = codeLine - localStart`,
   - the `-->8` line itself is not drawn,
@@ -268,8 +296,9 @@ func (w *Workspace) ResolveInclude(path string) (*CartRef, bool)
 - The status bar shows the owning cart name for included `.lua` files.
 - M5 confirms the association with `pico8/cartInfo`; if the server disagrees,
   the server wins and logs a warning.
-- Cart tab selectors in includes (for example `cart.p8:2`) are handled by
-  `pkg/cart`; the editor only forwards paths.
+- Cart tab selectors in includes (for example `cart.p8:2`) are exposed by
+  `pkg/cart`'s `Includes()` and are not passed to `Resolver.Owner`; ownership
+  applies to `.lua` file paths.
 
 ### 8. External changes
 
@@ -357,8 +386,8 @@ guarantees byte-preserving saves.
 ### Workspace
 
 - Scan nested directories, hidden files, symlink loops, and oversized trees.
-- Include resolution for single and multiple carts, nested includes, and
-  quoted paths.
+- Include resolution for single and multiple carts, include chains (nearest
+  cart only; PICO-8 includes are non-recursive), and quoted paths.
 - Unsaved-buffer prompts on close and quit.
 
 ### Manual

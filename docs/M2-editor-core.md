@@ -105,7 +105,8 @@ Requirements:
 
 - Cursor positions are rune offsets, normalized to P8SCII cluster boundaries.
 - `SetPos` clamps to the line end and snaps to the nearest cluster boundary.
-- `CellColumn` uses `p8scii.CellWidth` for every cluster; wide glyphs advance
+- `CellColumn` uses the editor's P8SCII tokenizer for every cluster. The
+  tokenizer reads `pkg/p8scii` widths (`Glyph.Width / 4`); wide glyphs advance
   2 cells.
 - `UTF16Column` counts UTF-16 code units, matching LSP. It is computed from the
   line text, not from cell width.
