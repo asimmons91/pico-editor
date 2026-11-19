@@ -45,8 +45,8 @@ character, and compressed sizes in the status bar.
 
 ## Deliverables
 
-1. Tagged pico-lsp `pkg/lsp` and `pkg/glyphs` with public settings and a server
-   constructor; the editor consumes them.
+1. Tagged pico-lsp `pkg/lsp` and `pkg/glyphs` with a minimal in-process server
+   constructor and the public glyph catalog; the editor consumes them.
 2. `internal/lsp` client, transport, document sync, caches, and request
    wrappers.
 3. Semantic token decoding and palette mapping.
@@ -61,38 +61,34 @@ character, and compressed sizes in the status bar.
 ### 1. Upstream `pkg/lsp` (prerequisite)
 
 The editor consumes a tagged pico-lsp release. The facade wraps `internal/lsp`
-and `internal/config` without exposing internal types:
+without exposing internal types:
 
 ```go
 package lsp
 
-type Settings struct {
-    TypeChecking string
-    InlayHints   bool
-    MaxProblems  int
-    // Mirrors the public subset of internal/config.Settings.
-}
-
 type Options struct {
-    Settings         Settings
-    WorkspaceFolders []uri.URI
-    Logger           *slog.Logger
-    Version          string
+    Logger *slog.Logger
 }
 
 type Server struct{ /* unexported */ }
 
 func New(opts Options) *Server
 func (s *Server) Serve(ctx context.Context, stream jsonrpc2.Stream) jsonrpc2.Conn
-func (s *Server) Shutdown(ctx context.Context) error
 ```
 
 - `Serve` uses the existing internal server and its `go.lsp.dev/jsonrpc2`
   stream. It must not write to stdout or open a socket.
-- `Settings` defaults match pico-lsp's current defaults. Invalid values fall
-  back to defaults with a log entry.
+- Settings are LSP-native. The editor sends `initializationOptions.pico8` and
+  answers `workspace/configuration`; the default values match pico-lsp's
+  current defaults. Invalid values fall back to defaults with a log entry.
+- Workspace folders are part of the `initialize` params, not `Options`.
+- `ServerInfo.Version` comes from pico-lsp; `Options` has no version field.
+- Shutdown is caller-owned: the editor sends `shutdown`, then closes the
+  returned connection and cancels the server context. There is no
+  `Server.Shutdown` method.
 - `pkg/glyphs` exposes `Builtins`, `Build`, `FindByName`, and `FindByByte` for
-  the M6 picker.
+  direct catalog use. The M6 picker continues to use the `pico8/glyphs` LSP
+  request; both paths read the same upstream catalog.
 - Public API tests live in pico-lsp; the editor's integration tests are not a
   substitute.
 - pico-lsp tags `v1.8.0` before M5 starts; the editor pins it and removes the
@@ -102,8 +98,8 @@ func (s *Server) Shutdown(ctx context.Context) error
 
 ```go
 type Client struct {
-    conn   jsonrpc2.Conn
-    client protocol.Client
+    conn     jsonrpc2.Conn
+    server   protocol.Server
     ...
 }
 
@@ -111,9 +107,13 @@ func Start(ctx context.Context, opts Options) (*Client, error)
 func (c *Client) Stop(ctx context.Context) error
 ```
 
-- Create `net.Pipe()`. Start `srv.Serve(ctx, serverPipe)` in a goroutine.
+- Create `net.Pipe()`. Wrap each end with `jsonrpc2.NewStream`; call
+  `serverConn := srv.Serve(ctx, serverStream)` and keep the returned `Conn`.
 - Create the editor side with
-  `protocol.NewClient(ctx, handler, clientPipe)`, then `conn.Go(ctx, dispatcher)`.
+  `ctx, conn, server := protocol.NewClient(ctx, handler, jsonrpc2.NewStream(clientPipe))`.
+  `protocol.NewClient` starts the connection and calls `Go`; do not call `Go`
+  again. Keep `conn` for lifecycle/close and `server` for outgoing requests
+  (`Initialize`, `Completion`, and so on).
 - `Start` sends `initialize` with:
   - `processId`,
   - `clientInfo{name: "pico-editor", version}`,
@@ -121,10 +121,13 @@ func (c *Client) Stop(ctx context.Context) error
   - `capabilities` limited to what the editor implements,
   - `initializationOptions` with the public settings.
 - Then send `initialized` and open already-open documents.
-- `Stop` sends `shutdown`, waits up to 2s, sends `exit`, closes the pipe, and
-  joins the server goroutine. If the timeout expires, close the pipe and log.
-- Restart command (palette and `:lsp restart`): stop, clear caches, start, and
-  re-open documents. The editor remains usable if restart fails.
+- `Stop` sends `shutdown`, waits up to 2s, sends `exit`, calls
+  `serverConn.Close()`, cancels the server context, closes both pipes, and
+  waits for `serverConn.Done()` and the client dispatcher with the timeout. If
+  the timeout expires, log and proceed.
+- Restart creates a new `lsp.Server`; a server instance serves one connection.
+  Stop, clear caches, start, and re-open documents. The editor remains usable
+  if restart fails.
 - A server crash/EOF marks LSP `failed`, shows a notification, and leaves
   editing, saving, and Vim fully functional.
 
@@ -156,7 +159,9 @@ a post-V1 change with its own tests.
 ### 4. Document synchronization
 
 - `.p8`: send `cart.Document.FullText()` — the reconstructed header plus current
-  code plus suffix. URI is the cart's `file://` URI; language ID is `pico8`.
+  code plus suffix. If the splice returns an error, keep the last valid text
+  and show a notification; do not send partial cart bytes. URI is the cart's
+  `file://` URI; language ID is `pico8`.
 - `.lua`: send the full buffer; language ID is `lua`.
 - `didOpen` on buffer open; `didChange` after a 120ms edit debounce with the
   full text and a monotonically increasing version; `didSave` immediately with
@@ -345,9 +350,15 @@ internal/app/
 ## Interfaces and state
 
 ```go
+type Settings struct {
+    TypeChecking string
+    InlayHints   bool
+    MaxProblems  int
+}
+
 type Options struct {
     WorkspaceRoot string
-    Settings      lsp.Settings
+    Settings      Settings
     Log           *slog.Logger
     Version       string
 }

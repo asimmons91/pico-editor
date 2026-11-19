@@ -278,8 +278,10 @@ Crash recovery:
 - Directory: `$XDG_STATE_HOME/pico-editor/recovery/`.
 - One file per dirty buffer: `<sha256(path)>.json` plus `<...>.txt`.
 - Metadata: path, buffer kind, base version, original mtime/size, timestamp.
-- Contents: the full file text (for carts, `FullText()` including header and
-  suffix, so recovery re-parses normally).
+- Contents: the full file text (for carts, the string from `FullText()`
+  including header and suffix, so recovery re-parses normally). If the splice
+  returns an error, skip recovery for that buffer and notify; never write
+  partial cart bytes.
 - Write after 2s of idle dirty state, on focus loss, and on a quit attempt that
   is cancelled. Use atomic writes.
 - Delete on clean save, close, or explicit discard.

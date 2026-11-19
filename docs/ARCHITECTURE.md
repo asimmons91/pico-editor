@@ -98,7 +98,7 @@ Five coordinate systems exist and must not be mixed implicitly:
 | --- | --- | --- | --- |
 | File byte offset | byte | `fsutil`, `cart` source maps | Reading and splicing original bytes; diagnostics source maps |
 | Line + rune offset | decoded rune index in one line | `editor` | Cursor, selection, undo, insert/delete |
-| P8SCII glyph cluster | one printable P8SCII glyph (1+ runes) | `pico-lsp/pkg/p8scii` | Cursor snapping, cluster deletion, glyph width |
+| P8SCII glyph cluster | one printable P8SCII glyph (1+ runes) | editor tokenizer, backed by `pico-lsp/pkg/p8scii` | Cursor snapping, cluster deletion, glyph width |
 | Display cell | 4 px or 8 px column on the canvas | `render`, `ui` | Layout grid, block selection, viewport, cursor drawing |
 | LSP position | line + UTF-16 code unit | `lsp` | Protocol messages only |
 
@@ -317,9 +317,9 @@ be used at a milestone exit.
 | Go | `1.27.4` | M0 |
 | Ebitengine | `v2.10.6` | M0 |
 | golangci-lint | `2.15.0` (mise) | M0 |
-| pico-lsp `pkg/p8scii` | `v1.6.0` | before M1 |
-| pico-lsp `pkg/cart` | `v1.7.0` | before M4 |
-| pico-lsp `pkg/lsp`, `pkg/glyphs` | `v1.8.0` | before M5 |
+| pico-lsp `pkg/p8scii` (pico-lsp M17) | `v1.6.0` | before M1 |
+| pico-lsp `pkg/cart` (pico-lsp M18) | `v1.7.0` | before M4 |
+| pico-lsp `pkg/lsp`, `pkg/glyphs` (pico-lsp M19) | `v1.8.0` | before M5 |
 | `go.lsp.dev/protocol` | latest tagged version at integration | M5 |
 | `go.lsp.dev/jsonrpc2` | latest tagged version at integration | M5 |
 | TOML parser | selected and pinned in M7 | M7 |
@@ -335,9 +335,9 @@ Development rules:
 - A milestone cannot exit on a pseudo-version: only a tagged pico-lsp release
   with the required public packages counts.
 - The pico-lsp public-package schedule (`pkg/p8scii` 1.6.0, `pkg/cart` 1.7.0,
-  `pkg/lsp`/`pkg/glyphs` 1.8.0) is a cross-repository commitment. pico-lsp's
-  roadmap records the same schedule; the editor must not import an unreleased
-  API.
+  `pkg/lsp`/`pkg/glyphs` 1.8.0; pico-lsp milestones M17–M19) is a
+  cross-repository commitment. pico-lsp's roadmap records the same schedule;
+  the editor must not import an unreleased API.
 
 ## 13. M0 implementation notes
 

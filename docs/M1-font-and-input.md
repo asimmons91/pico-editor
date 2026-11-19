@@ -22,10 +22,9 @@ records clipboard, IME, key-repeat, and non-US-layout behavior.
 
 ### In scope
 
-- Consuming the tagged pico-lsp `pkg/p8scii` package (mapping, widths,
-  clusters).
+- Consuming the tagged pico-lsp `pkg/p8scii` package (mapping and widths).
 - Checked-in 1-bit glyph data and a build-time atlas generator.
-- P8SCII width table and cluster-aware text measurement.
+- P8SCII width consumption and cluster-aware text measurement.
 - 16-color PICO-8 palette and a software 256×256 surface.
 - Integer window scaling, HiDPI handling, letterboxing, and cursor drawing.
 - Keyboard, text, modifier, key-repeat, and clipboard abstraction.
@@ -44,8 +43,9 @@ records clipboard, IME, key-repeat, and non-US-layout behavior.
 
 ## Deliverables
 
-1. pico-lsp `pkg/p8scii` with `Decode`, `Encode`, `Lookup`, `Width`,
-   `CellWidth`, `NextCluster`, and `PrevCluster`, tested across all 256 bytes.
+1. pico-lsp `pkg/p8scii` with `Encode`, `Decode`, `Lookup`, `GlyphFor`, and
+   `Glyphs`, including the 256-entry table and pixel widths, tested across all
+   bytes.
 2. `internal/font` with checked-in glyph data, metrics, lookup, and a generated
    atlas.
 3. `tools/fontgen` plus `go generate` wiring; CI verifies the generated file is
@@ -71,41 +71,49 @@ Required public API:
 ```go
 package p8scii
 
+// Glyph describes one P8SCII byte.
+type Glyph struct {
+    Byte      byte
+    Text      string // canonical Unicode spelling
+    Width     int    // pixels at 1x: 4 or 8; 0 for control bytes
+    Printable bool
+}
+
 // Decode converts P8SCII bytes to canonical Unicode text.
 func Decode(code []byte) string
 
 // Encode converts canonical Unicode text back to P8SCII bytes.
 func Encode(text string) []byte
 
-// Lookup returns the P8SCII byte for a canonical glyph string.
-func Lookup(glyph string) (byte, bool)
+// Lookup returns the glyph for one P8SCII byte.
+func Lookup(b byte) Glyph
 
-// Width returns the cell count for a P8SCII byte: 0 for control bytes,
-// 1 for bytes 16–127, and 2 for bytes 128–255.
-func Width(b byte) int
+// GlyphFor resolves a canonical text cluster, including a base glyph with a
+// trailing U+FE0F.
+func GlyphFor(text string) (Glyph, bool)
 
-// CellWidth returns the display width of the first cluster in text.
-func CellWidth(text string) int
-
-// NextCluster and PrevCluster step whole P8SCII glyphs, including
-// base + VS16 sequences.
-func NextCluster(text string, i int) int
-func PrevCluster(text string, i int) int
+// Glyphs returns all 256 entries in byte order.
+func Glyphs() []Glyph
 ```
 
 Requirements:
 
 - Widths come from the P8SCII byte, never from Unicode East Asian width or
   grapheme libraries.
-- Bytes `0–15` are control codes with width 0 and no glyph.
-- Bytes `16–127` occupy one 4px cell; bytes `128–255` occupy two 4px cells
-  (8px).
-- The VS16 sequence is part of the preceding glyph. `😐` and `😐️` must not
-  produce two glyphs or two widths.
-- The mapping table is the existing pico-lsp table. Do not add editor-local
-  overrides.
-- Tests round-trip every byte and every canonical glyph, including the VS16
-  entries.
+- Bytes `0–15` are control codes: `Printable` is false, width is 0, and they
+  must not be drawn as cells. Their canonical `Text` still round-trips.
+- Bytes `16–127` are 4 pixels wide (one 4px cell); bytes `128–255` are 8 pixels
+  wide (two cells).
+- The editor converts pixels to display cells with `Glyph.Width / 4` and owns
+  cluster iteration, cursor snapping, and tab stops. The canonical mapping and
+  width table remain upstream in `pkg/p8scii`; do not add an editor-local
+  table.
+- The VS16 sequence is part of the preceding glyph. The editor tokenizer groups
+  a base glyph with a following `U+FE0F` and calls `p8scii.GlyphFor`; unknown
+  clusters use the 4px replacement width. `😐` and `😐️` must not produce two
+  glyphs or two widths.
+- Tests in pico-lsp round-trip every byte and canonical glyph, including the
+  VS16 entries, and assert widths and `Printable`.
 - pico-lsp publishes this package in `v1.6.0`; the editor pins the tag before
   this milestone starts.
 
@@ -410,8 +418,9 @@ image.
 
 ### Automated
 
-- `pkg/p8scii`: all 256 bytes round-trip; widths; VS16 clusters; invalid UTF-8
-  handling matches pico-lsp.
+- `pkg/p8scii`: all 256 bytes round-trip and widths.
+- The editor tokenizer: VS16 clusters, invalid UTF-8 handling, and behavior
+  matching pico-lsp.
 - `internal/font`: exactly 256 records; no ink outside width; generated file
   matches `go generate`; lookup for every byte.
 - `internal/render`: golden PNGs of the full-charset screen at 1×, 2×, 3×, and
@@ -452,7 +461,7 @@ image.
 | --- | --- |
 | Glyph data is wrong or incomplete | Check in once with provenance; screenshot-compare all 256; fail the build on bad records. |
 | Width table drifts from pico-lsp | Widths live in `pkg/p8scii`; the editor never owns a second table. |
-| VS16 sequences split incorrectly | Cluster helpers in `pkg/p8scii`; property tests over every VS16 glyph. |
+| VS16 sequences split incorrectly | Editor tokenizer groups base + VS16, uses `pkg/p8scii` for width, and runs property tests over every VS16 glyph. |
 | Clipboard is flaky on Wayland | Isolate behind an interface; degrade to internal registers; document backend behavior. |
 | IME preedit cannot be positioned | Accept committed text only; do not promise preedit; P8SCII kana input is independent. |
 | Key repeat differs from OS expectations | Central timer with fixed 400ms/50ms values; tune once against PICO-8 and Vim feel. |
