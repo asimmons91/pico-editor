@@ -1,6 +1,6 @@
 # M0 — Foundation and decisions
 
-**Status:** Draft
+**Status:** Done
 **Depends on:** none
 **Blocks:** M1
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
@@ -122,7 +122,8 @@ The document is normative for later milestones. It must contain:
    Ebitengine image, scaled with nearest-neighbor. This keeps golden tests
    headless and pixel-exact.
 7. LSP transport: pico-lsp runs in-process over `net.Pipe` using
-   `go.lsp.dev/protocol`; the UI never blocks on a request.
+   `go.lsp.dev/jsonrpc2` streams with `go.lsp.dev/protocol` types; the UI never
+   blocks on a request.
 8. Input flow: Ebitengine keys plus `AppendInputChars`, with Vim and P8SCII
    input layered above the raw event stream.
 9. Config, keymap, and command registry ownership.
@@ -181,8 +182,11 @@ The document is normative for later milestones. It must contain:
   and the log with `0600`.
 - Never log file contents. Log paths, operation names, and durations.
 - Fatal startup errors go to stderr and the log, then exit non-zero.
-- Recover panics in command execution in later milestones; M0 only needs a
-  top-level recover that logs the stack before exiting.
+- Ebitengine runs frame callbacks on its game goroutine, outside `main`'s
+  recover. Recover panics inside `Update`, `Draw`, `DrawFinalScreen`, and
+  `Layout`, log the stack, and return the fatal error from `Update` so
+  `RunGame` exits non-zero. Keep a top-level recover for startup panics. Later
+  milestones may recover in command handlers where continuing is safe.
 - `internal/version` values are injected with
   `-ldflags "-X ...Version=... -X ...Commit=... -X ...BuildDate=..."`.
   Development builds report `dev` and `unknown`.
@@ -259,7 +263,10 @@ so M1 can add input and rendering without rewiring `main`.
   continues with stderr logging.
 - A panic during startup is logged with a stack trace and exits 1.
 - A panic during a frame is logged and exits 1 in M0; later milestones recover
-  in command handlers where continuing is safe.
+  in command handlers where continuing is safe. Ebitengine runs frame callbacks
+  on its game goroutine, so M0 recovers inside `Update`, `Draw`,
+  `DrawFinalScreen`, and `Layout` as well as keeping a top-level recover for
+  startup panics.
 
 ## Testing
 
@@ -280,16 +287,20 @@ so M1 can add input and rendering without rewiring `main`.
 
 ## Exit criteria
 
-- [ ] `mise install` installs Go 1.27.4 and the lint tool.
-- [ ] `mise run check` passes locally and in CI.
-- [ ] `mise run run` opens the empty 256×256 canvas at 4×.
-- [ ] Resizing never blurs or crops the canvas.
-- [ ] `docs/ARCHITECTURE.md` and `docs/VIM.md` exist and are linked from the
+- [x] `mise install` installs Go 1.27.4 and the lint tool.
+- [x] `mise run check` passes locally and in CI.
+- [x] `mise run run` opens the empty 256×256 canvas at 4×.
+- [x] Resizing never blurs or crops the canvas.
+- [x] `docs/ARCHITECTURE.md` and `docs/VIM.md` exist and are linked from the
       roadmap.
-- [ ] License, notices, and README disclaimer are present.
-- [ ] The pico-lsp public-package schedule is recorded and accepted by the
+- [x] License, notices, and README disclaimer are present.
+- [x] The pico-lsp public-package schedule is recorded and accepted by the
       pico-lsp repository.
-- [ ] No pico-lsp `internal/` package is imported.
+- [x] No pico-lsp `internal/` package is imported.
+
+The resize criterion is covered by the scale/letterbox table tests and the
+integer, nearest-neighbor final-screen pass. The visual sharpness check moves
+to M1's full-charset screen because the M0 canvas is uniformly black.
 
 ## Risks and mitigations
 

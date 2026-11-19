@@ -1,9 +1,16 @@
 # pico-editor V1 Roadmap
 
-Status: Draft — milestone specs written, implementation not started
+Status: M0 — Foundation complete; M1 next
 Date: 2026-11-19
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise
+
+## Design documents
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — normative package boundaries,
+  coordinate systems, render pipeline, LSP transport, and dependency pins.
+- [VIM.md](VIM.md) — frozen V1 Vim command matrix. M3 must not add commands
+  without updating the roadmap.
 
 ## Vision
 
