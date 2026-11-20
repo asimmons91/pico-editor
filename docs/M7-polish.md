@@ -1,6 +1,6 @@
 # M7 — Polish and hardening
 
-**Status:** Draft
+**Status:** Implemented
 **Depends on:** M1–M6
 **Blocks:** M8
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
@@ -349,16 +349,19 @@ Budgets on the reference machine:
 
 ## Architecture and files
 
+The M4–M6 implementation kept palette, dialog, status, tree, and popup UI in
+`internal/app`; M7 follows that established layout rather than introducing an
+`internal/ui` package. User-facing UI files:
+
 ```text
 internal/app/
-  commands.go      registry and default bindings
-  recovery.go      recovery journal
-  focus.go         refresh-on-focus
-internal/ui/
-  palette.go       palette UI
+  commands.go      registry, keymap dispatch, default bindings
+  settings.go      reload, config stamp, LSP settings mapping
+  recovery.go      recovery journal, startup list, idle scheduling
+  notifications.go toast stack, history, messages overlay
   status.go        status segments and truncation
-  notifications.go toast and history
-  dialogs.go       modal errors and prompts
+  palette.go       palette UI
+  dialog.go        modal errors, conflicts, prompts
 internal/config/
   settings.go      TOML loading and precedence
   keymap.go        keymap parsing and validation
@@ -426,15 +429,50 @@ the next frame boundary.
 
 ## Exit criteria
 
-- [ ] All V1 features are discoverable through the palette and documented.
-- [ ] No P0/P1 bugs remain in editing, saving, LSP, input, or recovery.
-- [ ] Screenshot/golden tests cover font, palette, tabs, status, and dialogs.
-- [ ] Settings and keymaps load, validate, and reload as specified.
-- [ ] Refresh-on-focus handles clean and dirty external changes.
-- [ ] Crash recovery works after a forced kill.
-- [ ] Logs rotate and contain no file or clipboard contents.
-- [ ] A 64KB cart opens and edits within the performance budgets.
-- [ ] `mise run check` passes.
+- [x] All V1 features are discoverable through the palette and documented.
+- [x] No P0/P1 bugs remain in editing, saving, LSP, input, or recovery.
+- [x] Screenshot/golden tests cover font, palette, tabs, status, and dialogs.
+- [x] Settings and keymaps load, validate, and reload as specified.
+- [x] Refresh-on-focus handles clean and dirty external changes.
+- [x] Crash recovery works after a forced kill.
+- [x] Logs rotate and contain no file or clipboard contents.
+- [x] A 64KB cart opens and edits within the performance budgets.
+- [x] `mise run check` passes.
+
+## Results
+
+- **TOML:** `github.com/BurntSushi/toml v1.6.0`; `MetaData.Undecoded()` drives
+  unknown-key warnings, and every scalar validates against the documented range.
+- **UI layout:** palette, status, notifications, recovery, and dialogs stay in
+  `internal/app` with the existing M4–M6 UI. No `internal/ui` package was added.
+- **Semantic colors:** the final M7 table is implemented in `internal/lsp` and
+  rendered with current-line, selection, search, and current-match backgrounds;
+  deprecated tokens add the status-bar `!` marker.
+- **Status bar:** 64-cell layout with the documented 20/40/64-cell truncation
+  tests. Notification text replaces the rightmost optional segments.
+- **Keymaps:** defaults, rebinding, unbinding, reserved Vim/input/LSP bindings,
+  and config-layer precedence are covered by tests. `Ctrl+Tab` remains a fixed
+  insert-mode tab switch for counted inserts.
+- **Custom glyphs:** `[[lsp.glyphs]]` feeds pico-lsp's public `pkg/glyphs`
+  definitions and is documented in `CONFIG.md`.
+- **Notifications:** dedupe, timeout, persistent errors, bounded history, and
+  routine-LSP no-toast behavior are tested.
+- **Refresh-on-focus:** clean reload, dirty conflict, tree rescan, config mtime
+  reload, and forced cart-info refresh are implemented; no watcher was added.
+- **Recovery:** atomic JSON+text journal, dirty-cart `FullText()`, 1MB/100-entry
+  caps, startup list, and explicit Recover/Discard/Later actions are tested.
+- **Logging:** `$XDG_STATE_HOME/pico-editor/pico-editor.log`, mode `0600`,
+  1MB rotation with three backups, `--log-file -` stderr mode.
+- **Docs/screenshots:** `README.md`, `USAGE.md`, `CONFIG.md`, `KEYMAP.md`, and
+  `TROUBLESHOOTING.md`; five committed 2× golden PNGs under `docs/images/`.
+- **Performance:** benchmarks for buffer insert, viewport draw, token apply,
+  and palette filter; the 64KB cart acceptance test opens and edits in
+  milliseconds on the reference machine. Idle frames do not rebuild the
+  surface, and buffer-path bookkeeping only runs after input or a save. CI
+  records benchmark output without a pass/fail threshold on shared runners.
+- **Bug pass:** no open P0/P1 defects are known in editing, saving, LSP, input,
+  or recovery. The M1–M6 manual checklists remain tracked in `docs/spikes/` for
+  the X11/Wayland release pass.
 
 ## Risks and mitigations
 

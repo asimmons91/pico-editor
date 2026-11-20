@@ -88,6 +88,35 @@ func Open(path string) (*Document, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", absolute, err)
 	}
+	return openData(absolute, data, info, data)
+}
+
+// OpenData parses recovered cart bytes without writing the original file. It is
+// used by the M7 crash-recovery journal, whose text includes the cart header
+// and every non-code section. The returned document is initially clean
+// relative to the recovered text; callers mark the on-disk code text with
+// MarkSavedCodeText to make the buffer dirty.
+func OpenData(path string, data []byte) (*Document, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrInvalidPath, path, err)
+	}
+	absolute = filepath.Clean(absolute)
+	if len(data) > maxCartSize {
+		return nil, fmt.Errorf("open %s: %w", absolute, errors.New("cart is too large"))
+	}
+	var info os.FileInfo
+	var diskData []byte
+	if stat, statErr := os.Stat(absolute); statErr == nil && stat.Mode().IsRegular() && stat.Size() <= maxCartSize {
+		if current, readErr := os.ReadFile(absolute); readErr == nil {
+			info = stat
+			diskData = current
+		}
+	}
+	return openData(absolute, data, info, diskData)
+}
+
+func openData(absolute string, data []byte, info os.FileInfo, diskData []byte) (*Document, error) {
 	parsed, err := p8cart.Parse(absolute, data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", absolute, err)
@@ -102,7 +131,6 @@ func Open(path string) (*Document, error) {
 	code.TrailingNewline = trailing
 	code.Newline = "\n"
 	code.HadBOM = false
-	code.Mode = info.Mode() & modeBits
 	code.SetWorkspaceRoot(filepath.Dir(absolute))
 
 	document := &Document{
@@ -113,17 +141,28 @@ func Open(path string) (*Document, error) {
 		BaseLine:      parsed.CodeStartLine(),
 		Tabs:          localTabs(parsed),
 		workspaceRoot: filepath.Dir(absolute),
-		disk: diskState{
+	}
+	if info != nil {
+		code.Mode = info.Mode() & modeBits
+		document.disk = diskState{
 			known:   true,
 			size:    info.Size(),
 			modTime: info.ModTime(),
 			mode:    info.Mode() & modeBits,
-			hash:    sha256.Sum256(data),
-		},
+			hash:    sha256.Sum256(diskData),
+		}
+	} else {
+		code.Mode = 0o644
 	}
 	document.ensureSyntheticTail()
 	code.MarkSavedText(code.Text())
 	return document, nil
+}
+
+// MarkSavedCodeText sets the code save point without changing the buffer. The
+// recovery path uses the on-disk code text so a recovered buffer is dirty.
+func (d *Document) MarkSavedCodeText(text string) {
+	d.Code.MarkSavedText(text)
 }
 
 // splitCode converts the cart's raw code body to LF-normalized buffer lines.
@@ -359,6 +398,9 @@ func (d *Document) SetWorkspaceRoot(root string) {
 
 // CheckExternal compares the file to the state recorded at open/last save.
 func (d *Document) CheckExternal() error {
+	if !d.disk.known {
+		return nil
+	}
 	info, err := os.Stat(d.Path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +15,19 @@ import (
 	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/vim"
 )
+
+// safeApplyLSPEvent isolates language-server event handling so one malformed
+// response becomes a logged notification, not a frame panic.
+func (s *Session) safeApplyLSPEvent(event lsp.Event) (changed bool) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			s.logger.Error("lsp event panic", "kind", event.Kind, "panic", recovered, "stack", string(debug.Stack()))
+			s.SetStatus("pico-lsp event failed; see the log", true)
+			changed = true
+		}
+	}()
+	return s.applyLSPEvent(event)
+}
 
 // AttachLSP connects the session to a running or starting language service.
 func (s *Session) AttachLSP(service *lsp.Service) {
@@ -42,7 +56,7 @@ func (s *Session) PollLSP(now time.Time) bool {
 	}
 	changed := s.LSP.Flush(now)
 	for _, event := range s.LSP.Poll() {
-		if s.applyLSPEvent(event) {
+		if s.safeApplyLSPEvent(event) {
 			changed = true
 		}
 	}
@@ -115,15 +129,16 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 		if event.Err != nil {
 			s.LSPMessage = "pico-lsp: " + shortError(event.Err)
 			s.LSPMessageError = true
+			s.SetStatus(s.LSPMessage, true)
 		}
 		return true
 	case lsp.EventRequestError:
 		if event.Err != nil {
-			s.SetStatus("lsp: "+shortError(event.Err), true)
+			s.NotifyRoutine("lsp: "+shortError(event.Err), NotifyWarning)
 		}
 		return true
 	case lsp.EventMessage:
-		s.SetStatus(event.Message, false)
+		s.NotifyRoutine(event.Message, NotifyInfo)
 		return true
 	case lsp.EventDiagnostics:
 		if len(event.Diagnostics) == 0 {
@@ -314,6 +329,9 @@ func (s *Session) afterInput(ev input.Event) {
 }
 
 func (s *Session) scheduleCompletion(now time.Time, trigger string, manual bool) {
+	if !manual && !s.Settings.LSP.AutoComplete {
+		return
+	}
 	s.completionDue = now.Add(100 * time.Millisecond)
 	s.completionTrigger = trigger
 	s.completionManual = manual
@@ -478,6 +496,10 @@ func (s *Session) RequestDefinition() {
 
 // ShowDiagnostics opens the :diag list for the active document.
 func (s *Session) ShowDiagnostics() bool {
+	if s.LSP == nil {
+		s.SetStatus("pico-lsp is disabled", false)
+		return true
+	}
 	documentURI := s.activeURI()
 	diagnostics := s.LSPDiagnostics[documentURI]
 	if len(diagnostics) == 0 {
@@ -792,6 +814,16 @@ func (s *Session) requestTokens(buffer *SessionBuffer) {
 }
 
 func (s *Session) requestActiveCartInfo() {
+	s.requestCartInfo(false)
+}
+
+// ForceCartInfo refreshes the active cart's token and size status even when the
+// buffer version has not changed. Refresh-on-focus uses it.
+func (s *Session) ForceCartInfo() {
+	s.requestCartInfo(true)
+}
+
+func (s *Session) requestCartInfo(force bool) {
 	buffer := s.CurrentBuffer()
 	if s.LSP == nil || buffer == nil || buffer.Editor.Buffer.Path == "" {
 		return
@@ -799,7 +831,7 @@ func (s *Session) requestActiveCartInfo() {
 	if s.LSP.Status() != lsp.StatusReady {
 		return
 	}
-	if buffer.LSPCartAsked == buffer.Editor.Buffer.Version {
+	if !force && buffer.LSPCartAsked == buffer.Editor.Buffer.Version {
 		return
 	}
 	buffer.LSPCartAsked = buffer.Editor.Buffer.Version

@@ -73,6 +73,9 @@ func TestTokenPriorityAndModifiers(t *testing.T) {
 	if style.Color != ColorDeprecated {
 		t.Fatalf("deprecated color = %d", style.Color)
 	}
+	if !style.Deprecated {
+		t.Fatal("deprecated modifier did not set the marker flag")
+	}
 }
 
 func TestSettingsNormalize(t *testing.T) {
@@ -111,5 +114,45 @@ func TestPathForURIRejectsRemote(t *testing.T) {
 	path, ok := PathForURI(URIForPath("/tmp/game.p8"))
 	if !ok || path != "/tmp/game.p8" {
 		t.Fatalf("path = %q, ok = %t", path, ok)
+	}
+}
+
+func TestM7ColorTable(t *testing.T) {
+	table := map[string]struct {
+		color    uint8
+		priority int
+	}{
+		"keyword":   {ColorKeyword, PriorityKeyword},
+		"string":    {ColorString, PriorityString},
+		"number":    {ColorNumber, PriorityNumber},
+		"comment":   {ColorComment, PriorityComment},
+		"operator":  {ColorOperator, PriorityOperator},
+		"variable":  {ColorVariable, PriorityVariable},
+		"parameter": {ColorParameter, PriorityParameter},
+		"property":  {ColorProperty, PriorityProperty},
+		"function":  {ColorFunction, PriorityFunction},
+		"type":      {ColorType, PriorityType},
+		"class":     {ColorType, PriorityType},
+		"enum":      {ColorType, PriorityType},
+		"namespace": {ColorNamespace, PriorityNamespace},
+		"macro":     {ColorMacro, PriorityType},
+		"regexp":    {ColorRegexp, PriorityString},
+		"decorator": {ColorDecorator, PriorityType},
+		"modifier":  {ColorModifier, PriorityComment},
+		"unknown":   {ColorDefault, PriorityDefault},
+	}
+	for tokenType, want := range table {
+		style := StyleFor(tokenType, nil)
+		if style.Color != want.color || style.Priority != want.priority {
+			t.Errorf("StyleFor(%q) = %+v, want color %d priority %d", tokenType, style, want.color, want.priority)
+		}
+	}
+	for modifier, color := range map[string]uint8{
+		"readonly": ColorReadonly, "static": ColorReadonly,
+		"defaultLibrary": ColorLibrary, "deprecated": ColorDeprecated,
+	} {
+		if style := StyleFor("variable", []string{modifier}); style.Color != color {
+			t.Errorf("modifier %q color = %d, want %d", modifier, style.Color, color)
+		}
 	}
 }

@@ -145,7 +145,7 @@ func (v *Vim) executeEx(ed *editor.Editor, line string) {
 	case "help":
 		topic := strings.TrimSpace(argument)
 		switch topic {
-		case "", "keys", "input", "lsp", "config":
+		case "", "keys", "input", "lsp", "config", "troubleshooting":
 		default:
 			v.message("E149: Sorry, no help for " + topic)
 			v.ringBell()
@@ -185,9 +185,9 @@ func (v *Vim) executeEx(ed *editor.Editor, line string) {
 			v.ringBell()
 		}
 	case "messages":
-		v.info(":messages is available in M7")
+		v.queue(Action{Kind: ActionMessages})
 	case "reload":
-		v.info(":reload is available in M7")
+		v.queue(Action{Kind: ActionConfigReload})
 	default:
 		v.message(msgNotEditorCommand)
 		v.ringBell()

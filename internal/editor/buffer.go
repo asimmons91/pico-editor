@@ -229,6 +229,20 @@ func (b *Buffer) Dirty() bool {
 	return b.textHash() != b.savedHash
 }
 
+// SetText replaces the buffer contents with canonical text without changing
+// the save point, path, or newline style. Recovery uses it to load journal text
+// and then MarkSavedText with the on-disk text so the buffer starts dirty.
+func (b *Buffer) SetText(text string) error {
+	lines, _, trailing, _, err := parseFileData([]byte(text))
+	if err != nil {
+		return err
+	}
+	b.Lines = lines
+	b.TrailingNewline = trailing
+	b.invalidate()
+	return nil
+}
+
 // MarkSaved records the current text as the save point. It invalidates cached
 // text data first, so callers that load Lines directly (for example the M4 cart
 // adapter) get a correct hash rather than a stale one.

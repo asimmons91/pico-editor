@@ -4,6 +4,7 @@ package lsp
 
 import (
 	"log/slog"
+	"time"
 )
 
 // Status is the lifecycle state of the embedded language server.
@@ -207,4 +208,6 @@ type Options struct {
 	Settings      Settings
 	Log           *slog.Logger
 	Version       string
+	// Debounce overrides documentDebounce when positive.
+	Debounce time.Duration
 }

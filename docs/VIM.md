@@ -194,7 +194,7 @@ written as zero or more modifiers followed by a key name:
 | `:ls` | List file buffers |
 | `:tabn` / `:tabp` | Next / previous cart code tab |
 | `:help` | Open the help overlay |
-| `:help <topic>` | Open a help topic (`keys`, `input`, `lsp`, `config`) |
+| `:help <topic>` | Open a help topic (`keys`, `input`, `lsp`, `config`, `troubleshooting`) |
 | `:diag` | List diagnostics (M5) |
 | `:lsp restart` | Restart the in-process language server (M5) |
 | `:messages` | Show recent notifications (M7) |

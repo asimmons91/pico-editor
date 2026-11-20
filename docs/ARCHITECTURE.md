@@ -19,8 +19,8 @@ Planned layout (packages appear as their milestone lands):
 
 ```text
 cmd/pico-editor/     process entry point: flags, logging, version, window bootstrap
-internal/app/        application state, layout composition, Update loop, commands
-internal/ui/         PICO-8 chrome: file tree, tabs, status bar, popups, palette
+internal/app/        application state, layout composition, Update loop, commands, UI chrome
+                     (tree, tabs, status, palette, notifications, dialogs)
 internal/font/       embedded 1-bit glyph atlas and metrics
 internal/render/     PICO-8 palette, software Surface, text and cursor drawing
 internal/input/      key, text, focus, mouse, repeat, and clipboard adapters
@@ -39,8 +39,7 @@ Dependency direction:
 ```text
 cmd/pico-editor
   -> internal/app
-       -> internal/{ui,editor,vim,input,cart,workspace,lsp,config,render,fsutil}
-internal/ui       -> internal/{render,font,editor,cart,config}
+       -> internal/{editor,vim,input,cart,workspace,lsp,config,render,font,fsutil}
 internal/vim      -> internal/{input,editor}
 internal/input    -> pico-lsp pkg/p8scii
 internal/editor   -> pico-lsp pkg/p8scii, internal/fsutil
@@ -48,7 +47,7 @@ internal/render   -> internal/font, pico-lsp pkg/p8scii
 internal/cart     -> internal/{editor,fsutil}, pico-lsp pkg/cart
 internal/workspace-> pico-lsp pkg/cart
 internal/lsp      -> internal/editor, pico-lsp pkg/lsp
-internal/config   -> TOML parser (selected in M7), standard library
+internal/config   -> github.com/BurntSushi/toml, internal/input, standard library
 internal/font     -> pico-lsp pkg/p8scii
 internal/fsutil   -> standard library only
 internal/version  -> standard library only
@@ -57,7 +56,8 @@ internal/version  -> standard library only
 Rules:
 
 - Imports form a DAG. Core packages (`editor`, `vim`, `cart`, `lsp`) never
-  import `ui` or `app`; only `app` assembles them.
+  import `app`; only `app` assembles them. V1 keeps all chrome in `internal/app`
+  rather than adding an `internal/ui` package.
 - `app` is the only place that wires dependencies. A small `Config` struct is
   passed from `main`, so tests can replace the logger, clock, clipboard, and
   LSP client.
@@ -252,12 +252,14 @@ Ebitengine keys + AppendInputChars
   2. `<workspace>/.pico-editor.toml`.
 - Precedence is workspace > global > defaults. Tables merge field by field;
   arrays replace. Invalid files warn and keep the last valid configuration;
-  defaults are always available. M7 implements parsing, validation, and reload.
+  defaults are always available. M7 implements parsing, validation, custom
+  glyph definitions, and reload.
 - Keymaps live in the same files. Key notation is defined in
   [VIM.md](VIM.md) and used identically by the config parser, the command
   matrix, and documentation.
-- `internal/app` owns the command registry and stable command IDs. `internal/ui`
-  renders the palette and help; it does not own command semantics.
+- `internal/app` owns the command registry and stable command IDs and draws the
+  palette and help; it does not delegate command semantics to a separate UI
+  package in V1.
   `internal/vim` exposes its commands to the registry rather than hard-coding
   key bindings above it.
 - Ex commands, palette commands, and keymap bindings all dispatch through the
@@ -323,7 +325,7 @@ be used at a milestone exit.
 | `go.lsp.dev/protocol` | `v1.0.1` | M5 |
 | `go.lsp.dev/jsonrpc2` | `v1.0.1` | M5 |
 | `go.lsp.dev/uri` | `v1.0.1` (transitive) | M5 |
-| TOML parser | selected and pinned in M7 | M7 |
+| TOML parser | `github.com/BurntSushi/toml v1.6.0` | M7 |
 | `golang.design/x/clipboard` | `v0.11.0` (pure Go on Linux) | M1 |
 
 `pkg/cart` in pico-lsp `v1.7.0` brings `go.lsp.dev/jsonrpc2`, `protocol`, and
@@ -407,10 +409,9 @@ Development rules:
   register and surface a notification. The M1 charset screen remains available
   behind `--debug-charset`; no argument now opens an empty normal-mode buffer.
 - The M3 screen draws buffer text with search-match and visual-selection
-  backgrounds, a block/bar cursor, a one-row mode/file/position status, the
-  command-line prompt in place of the status row, and a small scrollable help
-  and buffer-list overlay. M7 replaces the interim status with the compact
-  segmented status bar and expands help topics.
+  backgrounds, a block/bar cursor, and a one-row status. M7 replaces the interim
+  row with the compact segmented status bar, notifications, and expanded help
+  topics; the command-line prompt still replaces the status row.
 - Clipboard access uses `golang.design/x/clipboard` `v0.11.0` behind
   `input.Clipboard`, initialized lazily. Reads run on a background goroutine and
   are applied through a channel on the Update goroutine. On GNOME Wayland the
@@ -465,16 +466,16 @@ Development rules:
   saves, after a 300 ms edit debounce, and when the active buffer changes.
 - `internal/lsp/positions.go` centralizes full-cart, code-buffer, and UTF-16
   conversion. Tokens and diagnostics store cluster-expanded rune ranges;
-  `internal/app/screen.go` draws only the active cart tab. The M7 semantic color
-  table is already implemented in `internal/lsp/colors.go`.
+  `internal/app/screen.go` draws only the active cart tab. M7 implements the
+  final semantic color table in `internal/lsp/colors.go`.
 - LSP-backed UI lives in `internal/app/lsp_session.go` and
   `internal/app/lsp_ui.go`: diagnostics underlines and `:diag`, completion
   (`Ctrl+Space`, `Ctrl+N`/`Ctrl+Shift+N`, `Enter`/`Tab`, popup-first `Esc`),
   `K` hover, signature help, `gd`/`Ctrl+]` definition, cross-file jump actions,
   and `:lsp restart`. `Ctrl+P` remains reserved for M6.
-- LSP failure is non-fatal: the status row keeps a persistent error message,
-  editing/saving/Vim continue, and `:lsp restart` creates a fresh server on the
-  same service. M7 moves this into the notification system and command palette.
+- LSP failure is non-fatal: the status row keeps `LSP!`, editing/saving/Vim
+  continue, routine request errors go to message history, and `:lsp restart`
+  creates a fresh server on the same service.
 - M5 tests use a copied subset of pico-lsp `v1.6.0` testdata under
   `internal/lsp/testdata`. Integration tests exercise the real server over
   `net.Pipe` for tokens, diagnostics, completion (including `p8_left`), hover,

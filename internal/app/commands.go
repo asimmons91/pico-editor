@@ -1,8 +1,11 @@
 package app
 
 import (
+	"fmt"
+	"runtime/debug"
 	"strings"
 
+	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/vim"
 )
@@ -39,6 +42,9 @@ func (g *Game) buildCommands() []Command {
 	lspReady := func(*Game) bool {
 		return g.session != nil && g.session.LSP != nil && g.session.LSPStatus == lsp.StatusReady
 	}
+	lspPresent := func(*Game) bool {
+		return g.session != nil && g.session.LSP != nil
+	}
 
 	return []Command{
 		{ID: "file.save", Title: "File: save", Category: "File", Key: "ctrl+s", Enabled: currentBuffer, Run: func(g *Game) (bool, bool) {
@@ -50,7 +56,11 @@ func (g *Game) buildCommands() []Command {
 				g.session.SetStatus("save in progress; close again when it finishes", true)
 				return false, true
 			}
-			return g.session.RequestQuit(false)
+			quit, changed := g.session.RequestQuit(false)
+			if !quit {
+				g.writeRecovery()
+			}
+			return quit, changed
 		}},
 		{ID: "file.reload", Title: "File: reload", Category: "File", Key: ":e", Enabled: currentBuffer, Run: func(g *Game) (bool, bool) {
 			return false, g.session.OpenPath("", false)
@@ -86,14 +96,13 @@ func (g *Game) buildCommands() []Command {
 		{ID: "help.input", Title: "Help: input", Category: "Help", Key: ":help input", Enabled: hasSession, Run: func(g *Game) (bool, bool) {
 			return false, g.session.OpenHelp("input")
 		}},
-		{ID: "diag.list", Title: "LSP: diagnostics list", Category: "LSP", Key: ":diag", Enabled: hasSession, Run: func(g *Game) (bool, bool) {
+		{ID: "diag.list", Title: "LSP: diagnostics list", Category: "LSP", Key: ":diag", Enabled: lspPresent, Run: func(g *Game) (bool, bool) {
 			return false, g.session.ShowDiagnostics()
 		}},
 		{ID: "messages.show", Title: "Messages: show history", Category: "Messages", Key: "ctrl+shift+m", Enabled: hasSession, Run: func(g *Game) (bool, bool) {
-			g.session.SetStatus("message history arrives in M7", false)
-			return false, true
+			return false, g.showMessages()
 		}},
-		{ID: "lsp.restart", Title: "LSP: restart pico-lsp", Category: "LSP", Key: ":lsp restart", Enabled: lspReady, Run: func(g *Game) (bool, bool) {
+		{ID: "lsp.restart", Title: "LSP: restart pico-lsp", Category: "LSP", Key: ":lsp restart", Enabled: lspPresent, Run: func(g *Game) (bool, bool) {
 			g.restartLSP()
 			return false, true
 		}},
@@ -104,8 +113,7 @@ func (g *Game) buildCommands() []Command {
 			return false, g.session.TogglePuny()
 		}},
 		{ID: "config.reload", Title: "Config: reload settings", Category: "Config", Enabled: hasSession, Run: func(g *Game) (bool, bool) {
-			g.session.SetStatus("settings arrive in M7", false)
-			return false, true
+			return false, g.reloadConfig()
 		}},
 		{ID: "app.quit", Title: "App: quit", Category: "App", Key: "ctrl+q", Enabled: hasSession, Run: func(g *Game) (bool, bool) {
 			return g.requestQuitAll()
@@ -118,6 +126,76 @@ func (g *Game) commandEnabled(command Command) bool {
 		return true
 	}
 	return command.Enabled(g)
+}
+
+// runCommand executes one registry command with panic recovery so a bug in a
+// command cannot take down the frame loop. Fatal render/init failures still
+// flow through the normal doFrame path.
+func (g *Game) runCommand(command Command) (quit, changed bool) {
+	g.logger.Debug("command", "id", command.ID)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			g.logger.Error("command panic", "command", command.ID, "panic", recovered, "stack", string(debug.Stack()))
+			g.notifyError("Command failed", fmt.Errorf("%s: %v", command.ID, recovered))
+			quit, changed = false, true
+		}
+	}()
+	if !g.commandEnabled(command) {
+		return false, false
+	}
+	return command.Run(g)
+}
+
+// tryKeymap looks up one key event in the active mode's keymap and runs the
+// bound command. It runs before Vim so a rebound global shortcut wins, but the
+// keymap validator prevents Vim grammar keys from entering the table.
+func (g *Game) tryKeymap(event input.Event) (handled, quit bool) {
+	if g.session == nil || event.Kind != input.KindKeyDown || event.Repeat {
+		return false, false
+	}
+	mode := keymapModeForVim(g.session.Vim.Mode)
+	key := input.FormatKey(event.Key, event.Mods)
+	commandID, ok := g.settings.CommandFor(mode, key)
+	if !ok {
+		return false, false
+	}
+	for _, command := range g.commands {
+		if command.ID != commandID {
+			continue
+		}
+		quit, _ := g.runCommand(command)
+		return true, quit
+	}
+	g.notifyError("Unknown command", fmt.Errorf("%s is bound to %s but is not registered", key, commandID))
+	return true, false
+}
+
+func keymapModeForVim(mode vim.Mode) string {
+	switch mode {
+	case vim.ModeInsert:
+		return "insert"
+	case vim.ModeVisualChar, vim.ModeVisualLine, vim.ModeVisualBlock:
+		return "visual"
+	case vim.ModeCommandLine:
+		return "command"
+	default:
+		return "normal"
+	}
+}
+
+// displayKey returns the active-mode binding for a command, falling back to
+// the registry's default label.
+func (g *Game) displayKey(command Command) string {
+	if g.session != nil {
+		if key := g.settings.KeyFor(keymapModeForVim(g.session.Vim.Mode), command.ID); key != "" {
+			return key
+		}
+		if strings.HasPrefix(command.Key, ":") {
+			return command.Key
+		}
+		return ""
+	}
+	return command.Key
 }
 
 func commandSearchText(command Command) string {

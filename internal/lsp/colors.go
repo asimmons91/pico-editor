@@ -42,8 +42,9 @@ const (
 
 // TokenStyle is the palette color and overlap priority for a token.
 type TokenStyle struct {
-	Color    uint8
-	Priority int
+	Color      uint8
+	Priority   int
+	Deprecated bool
 }
 
 // StyleFor maps a semantic token type and modifiers to a palette style.
@@ -55,6 +56,7 @@ func StyleFor(tokenType string, modifiers []string) TokenStyle {
 			style.Color = ColorReadonly
 		case "deprecated":
 			style.Color = ColorDeprecated
+			style.Deprecated = true
 		case "defaultLibrary":
 			style.Color = ColorLibrary
 		}
@@ -65,42 +67,48 @@ func StyleFor(tokenType string, modifiers []string) TokenStyle {
 func baseStyle(tokenType string) TokenStyle {
 	switch tokenType {
 	case "comment":
-		return TokenStyle{ColorComment, PriorityComment}
+		return TokenStyle{Color: ColorComment, Priority: PriorityComment}
 	case "string":
-		return TokenStyle{ColorString, PriorityString}
+		return TokenStyle{Color: ColorString, Priority: PriorityString}
 	case "number":
-		return TokenStyle{ColorNumber, PriorityNumber}
+		return TokenStyle{Color: ColorNumber, Priority: PriorityNumber}
 	case "keyword":
-		return TokenStyle{ColorKeyword, PriorityKeyword}
+		return TokenStyle{Color: ColorKeyword, Priority: PriorityKeyword}
 	case "type", "class", "enum", "interface", "struct", "typeParameter":
-		return TokenStyle{ColorType, PriorityType}
+		return TokenStyle{Color: ColorType, Priority: PriorityType}
 	case "function", "method":
-		return TokenStyle{ColorFunction, PriorityFunction}
+		return TokenStyle{Color: ColorFunction, Priority: PriorityFunction}
 	case "property", "enumMember", "event":
-		return TokenStyle{ColorProperty, PriorityProperty}
+		return TokenStyle{Color: ColorProperty, Priority: PriorityProperty}
 	case "variable":
-		return TokenStyle{ColorVariable, PriorityVariable}
+		return TokenStyle{Color: ColorVariable, Priority: PriorityVariable}
 	case "operator":
-		return TokenStyle{ColorOperator, PriorityOperator}
+		return TokenStyle{Color: ColorOperator, Priority: PriorityOperator}
 	case "parameter":
-		return TokenStyle{ColorParameter, PriorityParameter}
+		return TokenStyle{Color: ColorParameter, Priority: PriorityParameter}
 	case "namespace":
-		return TokenStyle{ColorNamespace, PriorityNamespace}
+		return TokenStyle{Color: ColorNamespace, Priority: PriorityNamespace}
 	case "macro":
-		return TokenStyle{ColorMacro, PriorityType}
+		return TokenStyle{Color: ColorMacro, Priority: PriorityType}
 	case "regexp":
-		return TokenStyle{ColorRegexp, PriorityString}
+		return TokenStyle{Color: ColorRegexp, Priority: PriorityString}
 	case "decorator":
-		return TokenStyle{ColorDecorator, PriorityType}
+		return TokenStyle{Color: ColorDecorator, Priority: PriorityType}
 	case "modifier":
-		return TokenStyle{ColorModifier, PriorityComment}
+		return TokenStyle{Color: ColorModifier, Priority: PriorityComment}
 	default:
-		return TokenStyle{ColorDefault, PriorityDefault}
+		return TokenStyle{Color: ColorDefault, Priority: PriorityDefault}
 	}
 }
 
 // ColorAt chooses the highest-priority token covering runeOffset on line.
 func (t TokenSet) ColorAt(line, runeOffset int) (uint8, bool) {
+	style, ok := t.StyleAt(line, runeOffset)
+	return style.Color, ok
+}
+
+// StyleAt chooses the highest-priority token covering runeOffset on line.
+func (t TokenSet) StyleAt(line, runeOffset int) (TokenStyle, bool) {
 	tokens := t.Tokens
 	if t.ByLine != nil {
 		tokens = t.ByLine[line]
@@ -118,7 +126,14 @@ func (t TokenSet) ColorAt(line, runeOffset int) (uint8, bool) {
 		}
 	}
 	if !found {
-		return ColorDefault, false
+		return TokenStyle{Color: ColorDefault, Priority: PriorityDefault}, false
 	}
-	return best.Color, true
+	return best, true
+}
+
+// DeprecatedAt reports whether the highest-priority token at the position has
+// the deprecated modifier.
+func (t TokenSet) DeprecatedAt(line, runeOffset int) bool {
+	style, ok := t.StyleAt(line, runeOffset)
+	return ok && style.Deprecated
 }

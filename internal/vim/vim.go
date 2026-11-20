@@ -29,6 +29,8 @@ const (
 	ActionJump
 	ActionGlyphPick
 	ActionInputMode
+	ActionMessages
+	ActionConfigReload
 )
 
 func (k ActionKind) String() string {
@@ -65,6 +67,10 @@ func (k ActionKind) String() string {
 		return "glyph-pick"
 	case ActionInputMode:
 		return "input-mode"
+	case ActionMessages:
+		return "messages"
+	case ActionConfigReload:
+		return "config-reload"
 	default:
 		return "none"
 	}

@@ -1,11 +1,11 @@
 # pico-editor V1 Roadmap
 
-Status: M6 — P8SCII input UX implemented; M7 (polish and hardening) next.
+Status: M7 — polish and hardening implemented; M8 (Linux release) next.
 Interactive M1 spot checks remain tracked in `docs/spikes/M1-input.md`, the M3
 manual checklist lives in `docs/spikes/M3-vim.md`, the M4 manual checklist is in
-`docs/spikes/M4-cart.md`, and the M5 integration notes are in
-`docs/spikes/M5-lsp.md`.
-Date: 2026-11-20
+`docs/spikes/M4-cart.md`, the M5 integration notes are in
+`docs/spikes/M5-lsp.md`, and the M6 checklist is in `docs/spikes/M6-input.md`.
+M7 results are in `docs/M7-polish.md`.Date: 2026-11-20
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise
 
@@ -76,8 +76,7 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 
 ```text
 cmd/pico-editor/          Ebitengine entry point and window lifecycle
-internal/app/             Application state, layout, event loop, commands
-internal/ui/              PICO-8 chrome, file tree, tabs, status, popups
+internal/app/             Application state, layout, event loop, commands, UI chrome
 internal/font/            Embedded 1-bit glyph data and metrics
 internal/render/          Palette, software surface, text and cursor drawing
 internal/input/           Keyboard, text, clipboard, and P8SCII input modes
@@ -314,7 +313,8 @@ Exit criteria:
 
 Detailed spec: [M7-polish.md](M7-polish.md)
 
-Goal: turn the feature set into a coherent V1.
+Goal: turn the feature set into a coherent V1. Implemented; results and the
+resolved architecture decisions are recorded in the spec.
 
 Deliverables:
 
@@ -460,6 +460,10 @@ normative.
 | Tab insertion | Spaces to the next tab stop, matching VIM.md | M2 |
 | M5 pico-lsp pin | `v1.6.0` includes `pkg/lsp` and `pkg/glyphs`; M17–M19 shipped together | M5 |
 | M6 pico-lsp pin | `v1.7.0` expands `pkg/glyphs` to every printable P8SCII byte for the picker | M6 |
+| M7 TOML parser | `github.com/BurntSushi/toml v1.6.0` | M7 |
+| M7 UI layout | Chrome, palette, dialogs, status, notifications, and recovery stay in `internal/app`; no `internal/ui` package in V1 | M7 |
+| M7 custom glyphs | `[[lsp.glyphs]]` maps to pico-lsp `pkg/glyphs` definitions | M7 |
+| M7 config errors | Malformed global TOML opens an in-app Use defaults / Quit dialog; workspace errors warn and keep the global layer | M7 |
 | M5 semantic colors | M7 final palette table implemented in M5 | M5 |
 | M5 LSP failure | Persistent status message plus `:lsp restart`; no modal | M5 |
 | M5 status bar | Compact LSP suffix in the existing row; M7 redesigns it | M5 |

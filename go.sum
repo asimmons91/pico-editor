@@ -1,3 +1,5 @@
+github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk=
+github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/asimmons91/pico-lsp v1.7.0 h1:TXsJBQ9rVfnkJeM4VzZjd3Y1IfZ+lGtIbSe7jby9ED0=
 github.com/asimmons91/pico-lsp v1.7.0/go.mod h1:uWBuMl/C7PHg/niGRh5c6VkD+I72V50M4Jz0ARr8Uew=
 github.com/ebitengine/gomobile v0.0.0-20260820040257-d11f821a26a6 h1:Tnc3YtzxhgsvNdNrER9wWkGJbyjOwyUuzjUY5rZK72k=

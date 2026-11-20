@@ -15,6 +15,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/asimmons91/pico-editor/internal/cart"
+	"github.com/asimmons91/pico-editor/internal/config"
 	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/lsp"
@@ -75,9 +76,14 @@ type dialogContext struct {
 	pending *pendingSave
 }
 
+// disableRecoveryForTests is set by the package TestMain so one test's journal
+// cannot appear in another test's startup prompt.
+var disableRecoveryForTests bool
+
 // Game is the root Ebitengine game. It owns no package-level state.
 type Game struct {
 	logger           *slog.Logger
+	baseLogger       *slog.Logger
 	step             func() error
 	fatalErr         error
 	source           input.Source
@@ -105,8 +111,21 @@ type Game struct {
 	lsp              *lsp.Service
 	lspCtx           context.Context
 	lspCancel        context.CancelFunc
+	lspAllowed       bool
+	lspVersion       string
 	commands         []Command
 	palette          *Palette
+	settings         config.Settings
+	settingsErr      error
+	settingsWarnings []config.Warning
+	configStamp      string
+	configErrText    string
+	notifications    *NotificationCenter
+	recovery         *recoveryStore
+	recoveryList     *RecoveryList
+	pendingRecovery  *RecoveryList
+	recoveryDue      time.Time
+	knownBuffers     map[string]bool
 }
 
 // New returns a game configured by cfg.
@@ -115,6 +134,8 @@ func New(cfg Config) *Game {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	baseLogger := logger
+	logger = logger.With("component", "app")
 	clipboard := cfg.Clipboard
 	if clipboard == nil {
 		clipboard = input.NewSystemClipboard()
@@ -127,16 +148,23 @@ func New(cfg Config) *Game {
 	if now == nil {
 		now = time.Now
 	}
+	settings := config.DefaultSettings()
 	game := &Game{
 		logger:           logger,
+		baseLogger:       baseLogger,
 		clipboard:        clipboard,
 		clipboardResults: make(chan clipboardResult, 8),
 		saveResults:      make(chan saveResult, 4),
 		renderer:         NewRenderer(CanvasWidth, CanvasHeight, logger),
 		charset:          charset,
-		blink:            NewBlink(now()),
+		blink:            NewBlinkInterval(now(), time.Duration(settings.Editor.BlinkMS)*time.Millisecond),
 		scale:            DefaultScale,
 		now:              now,
+		settings:         settings,
+		notifications:    newNotificationCenter(now),
+		lspAllowed:       cfg.EnableLSP,
+		lspVersion:       cfg.Version,
+		knownBuffers:     make(map[string]bool),
 	}
 	game.source = input.NewEbitenSource(game.mapCursor)
 	game.step = game.updateFrame
@@ -166,29 +194,153 @@ func New(cfg Config) *Game {
 		if root == "" {
 			root, _ = os.Getwd()
 		}
+		if root != "" {
+			loaded, warnings, err := config.LoadSettings(root)
+			game.settings = loaded
+			game.settingsWarnings = warnings
+			game.settingsErr = err
+			game.configStamp = configStamp(root)
+			game.notifications.configure(
+				time.Duration(loaded.Notifications.TimeoutMS)*time.Millisecond,
+				loaded.Notifications.History,
+			)
+			game.blink.SetInterval(now(), time.Duration(loaded.Editor.BlinkMS)*time.Millisecond)
+		}
 		if game.startupErr == nil {
-			session, openErr := NewSessionAt(root, path, logger)
+			session, openErr := NewSessionAtOptions(root, path, logger, SessionOptions{Settings: game.settings})
 			if openErr != nil {
 				game.startupErr = openErr
 			} else {
 				game.session = session
-				if cfg.EnableLSP {
+				session.notify = game.pushNotification
+				if session.Status != "" {
+					severity := NotifyInfo
+					if session.StatusError {
+						severity = NotifyError
+					}
+					game.notifications.Push(session.Status, severity, true)
+				}
+				for _, warning := range game.settingsWarnings {
+					game.notifications.Push(warning.String(), NotifyWarning, true)
+				}
+				if game.settingsErr != nil {
+					game.logger.Error("config", "error", game.settingsErr)
+				}
+				if cfg.EnableLSP && game.settings.LSP.Enabled {
 					game.startLSP(session, cfg.Version)
+				}
+				if game.settings.Recovery.Enabled && !disableRecoveryForTests {
+					game.initRecovery()
 				}
 			}
 		}
 	}
 	game.commands = game.buildCommands()
+	if game.settingsErr != nil && game.session != nil {
+		game.showConfigError()
+	} else {
+		game.activateRecovery()
+	}
+	game.syncKnownBuffers()
 	game.redraw()
 	return game
+}
+
+// InitialScale resolves the configured scale against the current monitor. main
+// calls it before creating the window; tests do not need Ebitengine.
+func (g *Game) InitialScale() int {
+	requested := g.settings.Editor.Scale
+	if monitor := ebiten.Monitor(); monitor != nil {
+		width, height := monitor.Size()
+		return ResolveScale(requested, width, height)
+	}
+	return ResolveScale(requested, 0, 0)
+}
+
+func (g *Game) pushNotification(message string, severity NotificationSeverity, toast bool) {
+	if g.notifications != nil {
+		g.notifications.Push(message, severity, toast)
+	}
+}
+
+func (g *Game) notifyError(title string, err error) {
+	if err == nil {
+		return
+	}
+	g.logger.Error(title, "error", err)
+	g.pushNotification(title+": "+shortError(err), NotifyError, true)
+}
+
+func (g *Game) initRecovery() {
+	if g.session == nil {
+		return
+	}
+	store := g.recovery
+	if store == nil {
+		store = newRecoveryStore(config.RecoveryDir(), g.baseLogger.With("component", "recovery"), g.now)
+	}
+	entries, err := store.List()
+	if err != nil {
+		g.logger.Warn("recovery list", "error", err)
+		return
+	}
+	g.recovery = store
+	if len(entries) > 0 {
+		g.pendingRecovery = &RecoveryList{Entries: entries}
+	}
+}
+
+func (g *Game) activateRecovery() {
+	if g.pendingRecovery == nil {
+		return
+	}
+	g.recoveryList = g.pendingRecovery
+	g.pendingRecovery = nil
+}
+
+func (g *Game) showConfigError() {
+	if g.session == nil || g.settingsErr == nil {
+		return
+	}
+	g.session.ShowDialog(DialogConfigError, "Config error",
+		g.settingsErr.Error()+"\nUse the built-in defaults or quit?",
+		[]DialogOption{{Label: "Use defaults"}, {Label: "Quit"}}, 0)
+}
+
+func (g *Game) syncKnownBuffers() {
+	if g.session == nil {
+		return
+	}
+	current := make(map[string]bool, len(g.session.Buffers))
+	for _, buffer := range g.session.Buffers {
+		if buffer == nil || buffer.Editor == nil {
+			continue
+		}
+		path := buffer.Editor.Buffer.Path
+		if path == "" {
+			continue
+		}
+		current[path] = true
+	}
+	if g.recovery != nil {
+		for path := range g.knownBuffers {
+			if !current[path] {
+				if err := g.recovery.Delete(path); err != nil {
+					g.logger.Warn("recovery delete", "path", path, "error", err)
+				}
+			}
+		}
+	}
+	g.knownBuffers = current
 }
 
 func (g *Game) startLSP(session *Session, version string) {
 	service := lsp.New(lsp.Options{
 		WorkspaceRoot: session.Workspace.Root,
-		Settings:      lsp.DefaultSettings(),
-		Log:           g.logger,
+		Settings:      lspSettingsFromConfig(g.settings.LSP),
+		Log:           g.baseLogger,
 		Version:       version,
+		Debounce:      time.Duration(g.settings.LSP.DebounceMS) * time.Millisecond,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	g.lsp = service
@@ -254,18 +406,40 @@ func (g *Game) Update() (err error) {
 func (g *Game) updateFrame() error {
 	err := g.update()
 	if errors.Is(err, ebiten.Termination) {
+		g.clearOpenRecovery()
 		g.stopLSP()
 	}
 	return err
 }
 
+// clearOpenRecovery deletes journal entries for buffers that are closing on a
+// normal or forced quit. A crash never reaches this path, so journals remain.
+func (g *Game) clearOpenRecovery() {
+	if g.recovery == nil || g.session == nil {
+		return
+	}
+	for _, buffer := range g.session.Buffers {
+		if buffer == nil || buffer.Editor == nil || buffer.Editor.Buffer.Path == "" {
+			continue
+		}
+		if err := g.recovery.Delete(buffer.Editor.Buffer.Path); err != nil {
+			g.logger.Warn("recovery delete", "path", buffer.Editor.Buffer.Path, "error", err)
+		}
+	}
+}
+
 func (g *Game) update() error {
 	now := g.now()
 	changed := g.blink.Update(now)
-	if quit, saveChanged := g.pollSave(); quit {
-		return ebiten.Termination
-	} else if saveChanged {
+	if g.notifications != nil && g.notifications.Tick(now) {
 		changed = true
+	}
+	saveChanged := false
+	if quit, polled := g.pollSave(); quit {
+		return ebiten.Termination
+	} else if polled {
+		changed = true
+		saveChanged = true
 	}
 	if g.shouldTerminate() {
 		return ebiten.Termination
@@ -304,6 +478,12 @@ func (g *Game) update() error {
 			changed = true
 		}
 	}
+	if len(events) > 0 || saveChanged {
+		g.syncKnownBuffers()
+	}
+	if g.maybeScheduleRecovery(now) {
+		changed = true
+	}
 	if g.shouldTerminate() {
 		return ebiten.Termination
 	}
@@ -314,6 +494,17 @@ func (g *Game) update() error {
 }
 
 func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
+	switch event.Kind {
+	case input.KindKeyDown:
+		g.logger.Debug("key", "key", input.FormatKey(event.Key, event.Mods), "repeat", event.Repeat)
+	case input.KindText:
+		g.logger.Debug("text", "runes", len(event.Runes))
+	case input.KindFocus:
+		g.logger.Debug("focus", "focused", event.Focused)
+	}
+	if g.recoveryList != nil && event.Kind == input.KindKeyDown {
+		return g.handleRecoveryList(event)
+	}
 	if g.palette != nil {
 		if g.session != nil && g.session.DialogOpen() {
 			// An async save conflict can open a dialog after the palette was
@@ -333,13 +524,15 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 			return false, true
 		}
 		if !event.Focused {
-			return false, false
+			return false, g.writeRecovery()
 		}
 		if g.session.DialogOpen() || g.saveBusy {
 			return false, false
 		}
+		g.checkConfigOnFocus()
 		conflict := g.session.RefreshFromDisk()
 		changed = true
+		g.session.ForceCartInfo()
 		if conflict != nil && !g.session.DialogOpen() {
 			g.showExternalConflict(conflict)
 		}
@@ -418,34 +611,16 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 		if g.session.DialogOpen() {
 			return g.handleSessionEvent(event)
 		}
-		if key == input.KeyF1 && event.Mods == 0 && !event.Repeat && g.session.Vim.Mode != vim.ModeCommandLine {
-			return false, g.session.OpenHelp("")
+		if !event.Repeat && (key == input.KeyEsc || key == input.KeyEnter) && g.notifications != nil && g.notifications.HasError() && g.session.CanDismissNotification() {
+			if g.notifications.Dismiss() {
+				return false, true
+			}
+		}
+		if handled, quit := g.tryKeymap(event); handled {
+			return quit, true
 		}
 		if event.Mods&input.ModCtrl != 0 && !event.Repeat {
 			switch {
-			case key == input.KeyP && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0 && g.session.Vim.Mode != vim.ModeCommandLine:
-				g.openPalette()
-				return false, true
-			case key == input.KeyM && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
-				g.session.SetStatus("message history arrives in M7", false)
-				return false, true
-			case key == input.KeyQ && event.Mods&(input.ModShift|input.ModAlt|input.ModMeta) == 0:
-				return g.requestQuitAll()
-			case key == input.KeyS && event.Mods&(input.ModAlt|input.ModMeta) == 0:
-				_, changed := g.startSaveFor(g.session.CurrentBuffer(), vim.Action{Kind: vim.ActionSave}, SaveOptions{})
-				return false, changed
-			case key == input.KeyTab && event.Mods&(input.ModAlt|input.ModMeta) == 0:
-				delta := 1
-				if event.Mods&input.ModShift != 0 {
-					delta = -1
-				}
-				if g.session.Vim.Mode == vim.ModeInsert {
-					g.session.QueueTabSwitch(delta)
-					return false, true
-				}
-				return false, g.session.SwitchTab(delta)
-			case key == input.KeyB && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
-				return false, g.session.ToggleTree()
 			case key == input.KeyV && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
 				changed, actions := g.session.ClipboardPaste()
 				quit, actionChanged := g.applyActions(actions)
@@ -454,8 +629,16 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 				changed, actions := g.session.VisualClipboardYank()
 				quit, actionChanged := g.applyActions(actions)
 				return quit, changed || actionChanged
-			case key == input.KeyG && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
-				return false, g.session.OpenGlyphPicker()
+			case key == input.KeyTab && event.Mods&(input.ModAlt|input.ModMeta) == 0 && g.session.Vim.Mode == vim.ModeInsert:
+				// Ctrl+Tab remains available while inserting so a counted
+				// insert can cross tabs; the keymap owns normal-mode tab
+				// switching.
+				delta := 1
+				if event.Mods&input.ModShift != 0 {
+					delta = -1
+				}
+				g.session.QueueTabSwitch(delta)
+				return false, true
 			}
 		}
 		return g.handleSessionEvent(event)
@@ -536,6 +719,7 @@ func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
 			if sessionQuit {
 				return true, true
 			}
+			g.writeRecovery()
 		case vim.ActionOpen:
 			g.session.OpenPath(action.Path, action.Force)
 		case vim.ActionSwitchBuffer:
@@ -564,6 +748,10 @@ func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
 			g.session.OpenGlyphPicker()
 		case vim.ActionInputMode:
 			g.session.SetInputMode(action.Topic)
+		case vim.ActionMessages:
+			g.showMessages()
+		case vim.ActionConfigReload:
+			g.reloadConfig()
 		}
 	}
 	return false, changed
@@ -601,7 +789,7 @@ func (g *Game) handleSaveError(buffer *SessionBuffer, action vim.Action, options
 	switch {
 	case errors.Is(err, cart.ErrReadOnly), errors.Is(err, editor.ErrReadOnly):
 		g.cancelSaveAll()
-		g.session.ShowError("Cannot save", err)
+		g.session.ShowErrorDetail("Cannot save", "save", buffer.Editor.Buffer.Path, err)
 	case errors.Is(err, cart.ErrDeleted), errors.Is(err, fs.ErrNotExist) &&
 		(errors.Is(err, editor.ErrExternalChange) || errors.Is(err, cart.ErrExternalChange)):
 		g.showSaveDialog(DialogDeleted, buffer, action, options, err)
@@ -715,7 +903,17 @@ func (g *Game) handleDialogResult() bool {
 			g.forceQuit = true
 		default:
 			g.cancelSaveAll()
+			g.writeRecovery()
 		}
+	case DialogConfigError:
+		if choice == 1 {
+			g.pendingQuit = true
+			g.forceQuit = true
+			g.saveAll = false
+			return true
+		}
+		g.settingsErr = nil
+		g.activateRecovery()
 	}
 	return true
 }
@@ -729,7 +927,7 @@ func (g *Game) reloadSessionBuffer(buffer *SessionBuffer) (*SessionBuffer, bool)
 		return nil, false
 	}
 	if err := g.session.reloadBufferAtPreserving(buffer, index); err != nil {
-		g.session.ShowError("Reload failed", err)
+		g.session.ShowErrorDetail("Reload failed", "reload", buffer.Editor.Buffer.Path, err)
 		return nil, false
 	}
 	return g.session.Buffers[index], true
@@ -846,6 +1044,11 @@ func (g *Game) pollSave() (quit, changed bool) {
 	case result := <-g.saveResults:
 		g.saveBusy = false
 		quit, _ := g.session.CompleteSave(result.job, result.err)
+		if result.err == nil && result.job != nil && result.job.Buffer != nil && !result.job.Buffer.Dirty() && g.recovery != nil {
+			if err := g.recovery.Delete(result.job.Buffer.Path); err != nil {
+				g.logger.Warn("recovery delete", "path", result.job.Buffer.Path, "error", err)
+			}
+		}
 		if !quit && g.saveAll {
 			if result.err != nil {
 				g.cancelSaveAll()
@@ -946,14 +1149,25 @@ func (g *Game) setScale(scale int) {
 
 func (g *Game) redraw() {
 	if g.session != nil {
+		if notification, ok := g.notifications.Active(); ok {
+			g.session.DisplayMessage = notification.Message
+			g.session.DisplayMessageError = notification.Severity == NotifyError
+		} else {
+			g.session.DisplayMessage = ""
+			g.session.DisplayMessageError = false
+		}
 		g.session.Draw(&g.renderer.Surface, g.blink.Visible())
 	} else {
 		g.charset.CursorVisible = g.blink.Visible()
 		g.charset.Draw(&g.renderer.Surface)
 	}
+	if g.recoveryList != nil {
+		g.drawRecoveryList(&g.renderer.Surface)
+	}
 	if g.palette != nil {
 		g.drawPalette(&g.renderer.Surface)
 	}
+	g.drawNotifications(&g.renderer.Surface)
 	g.renderer.MarkDirty()
 }
 

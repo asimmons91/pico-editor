@@ -2,28 +2,30 @@
 
 ## Read first
 
-- M0 (foundation) through M6 (P8SCII input UX) are implemented:
+- M0 (foundation) through M7 (polish and hardening) are implemented:
   `cmd/pico-editor`, `internal/app`, `internal/editor`, `internal/vim`,
-  `internal/cart`, `internal/workspace`, `internal/lsp`, `internal/fsutil`,
-  `internal/font`, `internal/fontgen`, `internal/render`, `internal/input`,
-  `internal/version`, mise tasks, and CI exist. `docs/ROADMAP.md` links one
-  detailed spec per milestone (`docs/M0-foundation.md` through
-  `docs/M8-linux-release.md`); start with the roadmap, then read
-  `docs/ARCHITECTURE.md`, `docs/VIM.md`, and `docs/INPUT.md`. M1 results and
-  the remaining interactive spot checks live in `docs/spikes/M1-input.md`; M2
-  results and resolved decisions live in `docs/M2-editor-core.md`; M3 results
-  and the manual checklist live in `docs/spikes/M3-vim.md`; M4 results and the
-  manual checklist live in `docs/spikes/M4-cart.md`; M5 integration notes and
-  the manual checklist live in `docs/spikes/M5-lsp.md`; M6 capture results and
-  the manual checklist live in `docs/spikes/M6-input.md`, with raw data in
-  `testdata/pico8/input/`.
+  `internal/cart`, `internal/workspace`, `internal/lsp`, `internal/config`,
+  `internal/fsutil`, `internal/font`, `internal/fontgen`, `internal/render`,
+  `internal/input`, `internal/version`, mise tasks, and CI exist.
+  `docs/ROADMAP.md` links one detailed spec per milestone
+  (`docs/M0-foundation.md` through `docs/M8-linux-release.md`); start with the
+  roadmap, then read `docs/ARCHITECTURE.md`, `docs/VIM.md`, and
+  `docs/INPUT.md`. M1 results and the remaining interactive spot checks live in
+  `docs/spikes/M1-input.md`; M2 results and resolved decisions live in
+  `docs/M2-editor-core.md`; M3 results and the manual checklist live in
+  `docs/spikes/M3-vim.md`; M4 results and the manual checklist live in
+  `docs/spikes/M4-cart.md`; M5 integration notes and the manual checklist live
+  in `docs/spikes/M5-lsp.md`; M6 capture results and the manual checklist live
+  in `docs/spikes/M6-input.md`; M7 results are in `docs/M7-polish.md` and
+  `docs/spikes/M7-polish.md`, with raw M6 data in `testdata/pico8/input/`.
 - `docs/ROADMAP.md` is the source of truth for V1 scope, locked decisions, milestones, and deferred work. Read it before adding features; update it when a locked decision changes.
 - Do not implement post-V1 items without explicit approval: full Vim macros/marks/plugins/splits, references/rename/formatting/code actions, `.p8.png`, run-cart, macOS/Windows packaging.
 
 ## Stack and boundaries
 
 - Go 1.27.4, pinned in `mise.toml`; module `github.com/asimmons91/pico-editor`.
-- Stack: upstream Ebitengine 2.10+ (`github.com/hajimehoshi/ebiten/v2`), a checked-in 1-bit P8SCII glyph atlas, a custom Vim core, and pico-lsp in-process. Linux-first.
+- Stack: upstream Ebitengine 2.10+ (`github.com/hajimehoshi/ebiten/v2`), a checked-in 1-bit P8SCII glyph atlas, a custom Vim core, pico-lsp in-process, and `github.com/BurntSushi/toml` for the two-layer settings. Linux-first.
+- UI chrome (tree, tabs, status, palette, notifications, dialogs, recovery) lives in `internal/app`; V1 does not add an `internal/ui` package.
 - Do not vendor or fork Rune, and do not use Rune's Ebitengine fork. It is reference material only. Its GPL-3.0 code cannot be copied into this repo unless the license decision changes.
 - Upstream pico-lsp is a separate repo at `/var/home/austin/projects/pico-lsp`. Read its `AGENTS.md` before changing it; it has its own branch/PR/test rules.
 - The editor imports public pico-lsp packages (`pkg/p8scii`, `pkg/cart`,
