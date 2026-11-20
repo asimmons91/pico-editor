@@ -29,13 +29,14 @@ Automated coverage in this repo:
 - `internal/vim`: existing matrix plus tab-bounded `G`, `gg`, `J`, `%`, scroll,
   text objects, search, and ex ranges.
 - `internal/app`: cart opening, tab switching/view restoration, same-batch
-  insert text with deferred tab switches, stale tab ranges after rejected
-  section headers, empty-tab editing and no-final-newline tabs, section/marker
-  input guards, dialog accelerator suppression, conflict overwrite with backup
-  and current modes, conflict reload followed by `:wq`, read-only error,
-  deferred quits with late edits, quit Save all including edits made during the
-  save run, outside-root symlink confirmation, tree startup/filtering/scrolling,
-  external focus reloads, and tab clicks.
+  insert text and click cancellation with deferred tab switches, stale tab
+  ranges after rejected section headers, empty-tab editing and
+  no-final-newline tabs, section/marker input guards, dialog accelerator
+  suppression, conflict overwrite with backup and current modes, conflict
+  reload followed by `:wq`, read-only error, deferred quits with late edits,
+  quit Save all including edits made during the save run, outside-root symlink
+  confirmation, tree startup/filtering/scrolling, external focus reloads, and
+  tab clicks.
 
 Interactive checklist:
 
