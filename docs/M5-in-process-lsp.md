@@ -463,7 +463,8 @@ not merged.
   feature requests run asynchronously and post events that `Update` applies.
 - Full text is rebuilt through `pkg/cart.ReplaceCode` for `.p8` documents. If
   the splice fails, the last valid text remains on the server and the status
-  row reports the problem.
+  row reports the problem. Saves flush a pending debounced change before
+  `didSave`, and semantic tokens are re-requested after the edit debounce.
 - Semantic tokens and diagnostics store cluster-expanded rune ranges. The
   active cart tab draws only its own range; other tabs stay cached.
 - `internal/app/lsp_session.go` owns document sync, popup state, jump handling,

@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/font"
@@ -105,10 +106,11 @@ func (s *Session) acceptCompletion() {
 		edits = edits[:1]
 		s.SetStatus("completion additional edits overlapped; inserted the main item", true)
 	}
-	// Apply additional edits in descending order, then the main edit.
+	// Apply additional edits in descending position order so earlier offsets
+	// stay valid, then apply the main edit.
 	for i := 1; i < len(edits); i++ {
 		for j := i + 1; j < len(edits); j++ {
-			if edits[j].edit.Start.Before(edits[i].edit.Start) {
+			if edits[i].edit.Start.Before(edits[j].edit.Start) {
 				edits[i], edits[j] = edits[j], edits[i]
 			}
 		}
@@ -136,6 +138,8 @@ func (s *Session) acceptCompletion() {
 		return
 	}
 	s.syncLSPCurrent()
+	s.tokenDue = time.Now().Add(120 * time.Millisecond)
+	s.cartInfoDue = time.Now().Add(300 * time.Millisecond)
 }
 
 type completionEdit struct {

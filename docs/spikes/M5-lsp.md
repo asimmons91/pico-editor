@@ -35,13 +35,17 @@ planned `v1.8.0` tag.
 
 `mise run check` (format, lint, tests, build) and `go test -race ./...` pass.
 
-- `internal/lsp`: cluster expansion for UTF-16 token ranges, token priority and
-  modifiers, settings normalization, real-server semantic tokens, diagnostics,
-  cart info, completion, hover, signature help, definition, `p8_left` glyph
-  completion, and restart.
-- `internal/app`: semantic highlighting and diagnostic underlines drawn on the
-  indexed surface, completion acceptance, hover, definition and jump-back,
-  diagnostics list, signature popup, status segments, and restart.
+- `internal/lsp`: cluster expansion for UTF-16 token ranges, cart-base-line
+  position round trips, token priority and modifiers, settings normalization,
+  real-server semantic tokens, token refresh after edits, diagnostics, cart
+  info, completion, hover, signature help, definition, `p8_left` glyph
+  completion, save-with-pending-edit ordering, stop-during-start, pipe close,
+  and restart.
+- `internal/app`: semantic highlighting and diagnostic underlines drawn in the
+  code area, completion acceptance (including multiple additional edits),
+  automatic completion and signature triggers, hover, definition and jump-back,
+  both same-cart and cross-tab definitions, diagnostics list jump, status
+  segments, cart info after restart, and restart usability.
 - `internal/vim`: matrix fixtures for `K`, `gd`, `Ctrl+]`, `:diag`, and
   `:lsp restart`, plus a cross-file jump action.
 - Fixtures under `internal/lsp/testdata` are copied from pico-lsp `v1.6.0`;

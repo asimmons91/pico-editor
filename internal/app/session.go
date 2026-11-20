@@ -72,6 +72,8 @@ type Session struct {
 	completionManual   bool
 	signatureDue       time.Time
 	signatureRetrigger bool
+	cartInfoDue        time.Time
+	tokenDue           time.Time
 }
 
 // SessionBuffer is one open file. Cart is non-nil for .p8 buffers; its Code
@@ -257,6 +259,9 @@ func (s *Session) CompleteClipboardRead(text string, err error) (changed bool, a
 	result := s.Vim.CompleteClipboardRead(text, err, ed)
 	s.applyVimResult(result)
 	s.syncCurrentCart()
+	s.syncLSPCurrent()
+	s.tokenDue = time.Now().Add(120 * time.Millisecond)
+	s.cartInfoDue = time.Now().Add(300 * time.Millisecond)
 	return true, result.Actions
 }
 

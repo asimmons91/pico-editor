@@ -76,26 +76,44 @@ func (s *Service) DidChange(documentURI, languageID string, version int, text st
 // Flush sends debounced full-text changes and settled cart-info requests. It
 // returns true when work was queued.
 func (s *Service) Flush(now time.Time) bool {
-	var changes []document
-	var cartURIs []string
+	type change struct {
+		doc  document
+		open bool
+	}
+	var changes []change
 	s.mu.Lock()
 	if s.client == nil {
 		s.mu.Unlock()
 		return false
 	}
 	for _, doc := range s.docs {
+		if doc.NeedsOpen {
+			doc.NeedsOpen = false
+			doc.Dirty = false
+			doc.Sent = true
+			changes = append(changes, change{doc: *doc, open: true})
+			continue
+		}
 		if doc.Dirty && now.Sub(doc.LastChange) >= documentDebounce {
 			doc.Dirty = false
 			doc.Sent = true
-			changes = append(changes, *doc)
-		}
-		if doc.Cart && now.Sub(doc.LastChange) >= cartInfoDebounce && doc.CartInfoVersion != doc.Version {
-			doc.CartInfoVersion = doc.Version
-			cartURIs = append(cartURIs, doc.URI)
+			changes = append(changes, change{doc: *doc})
 		}
 	}
 	s.mu.Unlock()
-	for _, doc := range changes {
+	for _, item := range changes {
+		doc := item.doc
+		if item.open {
+			s.enqueueDocument("textDocument/didOpen", &protocol.DidOpenTextDocumentParams{
+				TextDocument: protocol.TextDocumentItem{
+					URI:        uri.URI(doc.URI),
+					LanguageID: protocol.LanguageKind(doc.LanguageID),
+					Version:    int32(doc.Version),
+					Text:       doc.Text,
+				},
+			}, doc.URI, doc.Version)
+			continue
+		}
 		s.enqueueDocument("textDocument/didChange", &protocol.DidChangeTextDocumentParams{
 			TextDocument: protocol.VersionedTextDocumentIdentifier{
 				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.URI(doc.URI)},
@@ -106,10 +124,7 @@ func (s *Service) Flush(now time.Time) bool {
 			},
 		}, doc.URI, doc.Version)
 	}
-	for _, documentURI := range cartURIs {
-		s.RequestCartInfo(documentURI)
-	}
-	return len(changes) > 0 || len(cartURIs) > 0
+	return len(changes) > 0
 }
 
 // DidSave tells the server a document was written. The server already has the
@@ -119,11 +134,29 @@ func (s *Service) DidSave(documentURI string) {
 		return
 	}
 	s.mu.Lock()
-	_, ok := s.docs[documentURI]
+	doc, ok := s.docs[documentURI]
 	c := s.client
+	var pending *document
+	if ok && doc.Dirty {
+		doc.Dirty = false
+		doc.Sent = true
+		snapshot := *doc
+		pending = &snapshot
+	}
 	s.mu.Unlock()
 	if !ok || c == nil {
 		return
+	}
+	if pending != nil {
+		s.enqueueDocument("textDocument/didChange", &protocol.DidChangeTextDocumentParams{
+			TextDocument: protocol.VersionedTextDocumentIdentifier{
+				TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.URI(pending.URI)},
+				Version:                int32(pending.Version),
+			},
+			ContentChanges: []protocol.TextDocumentContentChangeEvent{
+				&protocol.TextDocumentContentChangeWholeDocument{Text: pending.Text},
+			},
+		}, pending.URI, pending.Version)
 	}
 	s.enqueue("textDocument/didSave", &protocol.DidSaveTextDocumentParams{
 		TextDocument: protocol.TextDocumentIdentifier{URI: uri.URI(documentURI)},

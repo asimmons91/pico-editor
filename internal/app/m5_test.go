@@ -9,6 +9,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/asimmons91/pico-editor/internal/font"
 	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/render"
 )
@@ -124,6 +125,24 @@ func TestLSPCompletionAccept(t *testing.T) {
 	}
 }
 
+func TestLSPAutoCompletion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auto.lua")
+	if err := os.WriteFile(path, []byte("print\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	game := newLSPGame(t, path)
+	waitLSPReady(t, game)
+	waitLSPTokens(t, game)
+	if err := sendKeys(t, game, "0ipri"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	eventually(t, func() bool {
+		updateGame(t, game)
+		return game.session.Completion != nil
+	})
+}
+
 func TestLSPHoverAndDefinition(t *testing.T) {
 	dir := copyFixtureDir(t, "navigation")
 	path := filepath.Join(dir, "cart.p8")
@@ -168,6 +187,27 @@ func TestLSPHoverAndDefinition(t *testing.T) {
 	})
 }
 
+func TestLSPSemanticTokensRefreshAfterEdit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "refresh.lua")
+	if err := os.WriteFile(path, []byte("local x = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	game := newLSPGame(t, path)
+	waitLSPReady(t, game)
+	initial := waitLSPTokens(t, game)
+	documentURI := game.session.ActiveDocumentURI()
+	if err := sendKeys(t, game, "Olocal y = 2<esc>"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	version := game.session.CurrentEditor().Buffer.Version
+	eventually(t, func() bool {
+		updateGame(t, game)
+		tokens := game.session.LSPTokens[documentURI]
+		return tokens.Version >= version && tokens.Version > initial.Version
+	})
+}
+
 func TestLSPDiagnosticsAndDiagList(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.p8")
@@ -189,11 +229,16 @@ func TestLSPDiagnosticsAndDiagList(t *testing.T) {
 	if game.session.DiagList == nil || len(game.session.DiagList.Items) == 0 {
 		t.Fatal(":diag did not open the diagnostic list")
 	}
+	item := game.session.DiagList.Items[0]
+	wantLine := item.Range.Start.Line - game.session.CurrentBuffer().Cart.BaseLine
 	if err := sendKeys(t, game, "<enter>"); err != nil {
 		t.Fatalf("Update diag jump: %v", err)
 	}
 	if game.session.DiagList != nil {
 		t.Fatal("diagnostic list did not close after Enter")
+	}
+	if got := game.session.CurrentEditor().Cursor.Pos.Line; got != wantLine {
+		t.Fatalf("diagnostic jump line = %d, want %d", got, wantLine)
 	}
 }
 
@@ -242,8 +287,8 @@ func TestLSPDiagnosticUnderlineIsDrawn(t *testing.T) {
 	})
 	surface := newTestSurface()
 	game.session.Draw(surface, true)
-	if !surfaceHasColor(surface, 8) && !surfaceHasColor(surface, 9) {
-		t.Fatal("surface has no diagnostic underline color")
+	if !surfaceHasColorInRows(surface, 8, 0, statusRow-1) && !surfaceHasColorInRows(surface, 9, 0, statusRow-1) {
+		t.Fatal("surface has no diagnostic underline in the code area")
 	}
 }
 
@@ -265,6 +310,52 @@ func TestLSPDefinitionAcrossCartTabs(t *testing.T) {
 		updateGame(t, game)
 		buffer = game.session.CurrentBuffer()
 		return buffer.ActiveTab == 0 && buffer.Editor.Cursor.Pos.Line == 0
+	})
+}
+
+func TestLSPAutoSignature(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sig.lua")
+	if err := os.WriteFile(path, []byte("print\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	game := newLSPGame(t, path)
+	waitLSPReady(t, game)
+	waitLSPTokens(t, game)
+	if err := sendKeys(t, game, "A("); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	eventually(t, func() bool {
+		updateGame(t, game)
+		return game.session.Signature != nil
+	})
+}
+
+func TestLSPCartInfoAfterRestart(t *testing.T) {
+	dir := t.TempDir()
+	path := copyFixtureFile(t, "smoke.p8", dir, "smoke.p8")
+	game := newLSPGame(t, path)
+	waitLSPReady(t, game)
+	documentURI := game.session.ActiveDocumentURI()
+	eventually(t, func() bool {
+		updateGame(t, game)
+		info, ok := game.session.LSPCartInfo[documentURI]
+		return ok && !info.Unavailable()
+	})
+	if err := sendKeys(t, game, ":lsp restart<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, active := game.session.Vim.Prompt(); active {
+		t.Fatalf("command line still active after restart command")
+	}
+	eventually(t, func() bool {
+		updateGame(t, game)
+		return game.session.LSPStatus == lsp.StatusReady && game.lsp.Status() == lsp.StatusReady
+	})
+	eventually(t, func() bool {
+		updateGame(t, game)
+		_, ok := game.session.LSPCartInfo[documentURI]
+		return ok
 	})
 }
 
@@ -299,6 +390,22 @@ func surfaceHasColor(surface *render.Surface, color uint8) bool {
 	for _, pixel := range surface.Pix {
 		if pixel == color {
 			return true
+		}
+	}
+	return false
+}
+
+func surfaceHasColorInRows(surface *render.Surface, color uint8, firstRow, lastRow int) bool {
+	for row := max(0, firstRow); row <= lastRow && row < surface.Height/font.LineAdvance; row++ {
+		start := row * font.LineAdvance * surface.Width
+		end := start + font.LineAdvance*surface.Width
+		if end > len(surface.Pix) {
+			end = len(surface.Pix)
+		}
+		for _, pixel := range surface.Pix[start:end] {
+			if pixel == color {
+				return true
+			}
 		}
 	}
 	return false

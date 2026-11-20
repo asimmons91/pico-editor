@@ -80,6 +80,12 @@ func TestServiceSemanticTokensDiagnosticsAndCartInfo(t *testing.T) {
 	if !found {
 		t.Fatalf("diagnostics = %+v", diagnostics.Diagnostics)
 	}
+
+	service.RequestGlyphs()
+	glyphs := waitEvent(t, service, EventGlyphs)
+	if len(glyphs.Glyphs) == 0 {
+		t.Fatal("glyph catalog was empty")
+	}
 }
 
 func TestServiceCompletionHoverSignatureDefinition(t *testing.T) {
@@ -184,6 +190,62 @@ func TestServiceGlyphCompletion(t *testing.T) {
 	}
 }
 
+func TestServiceDidSaveFlushesPendingChange(t *testing.T) {
+	dir := t.TempDir()
+	path := copyFixture(t, "smoke.p8", dir, "smoke.p8")
+	service, cancel := startTestService(t, dir)
+	defer func() {
+		_ = service.Stop(context.Background())
+		cancel()
+	}()
+	document, err := cart.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	documentURI := URIForPath(path)
+	text := readFile(t, path)
+	service.DidOpen(documentURI, "pico8", document.Code.Version, text, true)
+	updated := strings.Replace(text, "x=64", "x=65", 1)
+	service.DidChange(documentURI, "pico8", document.Code.Version+1, updated, true)
+	// Save arrives before the 120 ms debounce. DidSave must flush the pending
+	// text so cart-info does not wait for a version the server never saw.
+	service.DidSave(documentURI)
+	event := waitEvent(t, service, EventCartInfo)
+	if event.CartInfo == nil {
+		t.Fatal("cart info was unavailable after save with a pending change")
+	}
+}
+
+func TestServiceServerCloseMarksFailed(t *testing.T) {
+	dir := t.TempDir()
+	path := copyFixture(t, "smoke.p8", dir, "smoke.p8")
+	service, cancel := startTestService(t, dir)
+	defer cancel()
+	document, err := cart.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.DidOpen(URIForPath(path), "pico8", document.Code.Version, readFile(t, path), true)
+	service.mu.Lock()
+	c := service.client
+	service.mu.Unlock()
+	if c == nil {
+		t.Fatal("no client to close")
+	}
+	_ = c.serverConn.Close()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, event := range service.Poll() {
+			if event.Kind == EventStatus && event.Status == StatusFailed {
+				return
+			}
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("service did not report failure after the pipe closed (status %s)", service.Status())
+}
+
 func TestServiceRestartReopensDocuments(t *testing.T) {
 	dir := t.TempDir()
 	path := copyFixture(t, "smoke.p8", dir, "smoke.p8")
@@ -212,6 +274,24 @@ func TestServiceRestartReopensDocuments(t *testing.T) {
 		t.Fatal("cart info after restart")
 	}
 	_ = service.Stop(context.Background())
+}
+
+func TestServiceStopDuringStart(t *testing.T) {
+	for i := 0; i < 10; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		service := New(Options{WorkspaceRoot: t.TempDir(), Settings: DefaultSettings()})
+		go func() { _ = service.Start(ctx) }()
+		deadline := time.Now().Add(2 * time.Second)
+		for service.Status() != StatusStarting && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		_ = service.Stop(context.Background())
+		time.Sleep(20 * time.Millisecond)
+		if status := service.Status(); status == StatusReady || status == StatusStarting {
+			t.Fatalf("iteration %d: status %q after Stop returned", i, status)
+		}
+		cancel()
+	}
 }
 
 func startTestService(t *testing.T, root string) (*Service, context.CancelFunc) {

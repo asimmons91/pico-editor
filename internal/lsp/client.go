@@ -94,7 +94,8 @@ func clientCapabilities() protocol.ClientCapabilities {
 	const raw = `{
 		"workspace": {
 			"workspaceFolders": true,
-			"configuration": true
+			"configuration": true,
+			"semanticTokens": {"refreshSupport": true}
 		},
 		"textDocument": {
 			"synchronization": {

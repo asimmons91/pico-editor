@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"go.lsp.dev/protocol"
+	"go.lsp.dev/uri"
 )
 
 const (
 	documentDebounce  = 120 * time.Millisecond
-	cartInfoDebounce  = 300 * time.Millisecond
 	eventQueueSize    = 256
 	outboundQueueSize = 256
 )
@@ -53,6 +53,8 @@ type Service struct {
 	sentVersions map[string]int
 	sentNotify   map[string]chan struct{}
 	writerCancel context.CancelFunc
+	startCancel  context.CancelFunc
+	generation   uint64
 }
 
 type document struct {
@@ -64,8 +66,7 @@ type document struct {
 	Dirty      bool
 	LastChange time.Time
 	Sent       bool
-
-	CartInfoVersion int
+	NeedsOpen  bool
 }
 
 // New returns a stopped service. Call Start to launch the embedded server.
@@ -116,24 +117,68 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	s.status = StatusStarting
 	s.stopping = false
+	s.generation++
+	generation := s.generation
+	startCtx, startCancel := context.WithCancel(ctx)
+	s.startCancel = startCancel
 	s.mu.Unlock()
 	s.emit(Event{Kind: EventStatus, Status: StatusStarting})
 
-	c, result, err := startClient(ctx, s.opts, &clientHandler{service: s})
+	c, result, err := startClient(startCtx, s.opts, &clientHandler{service: s})
 	if err != nil {
+		s.mu.Lock()
+		stopped := s.generation != generation || s.stopping
+		s.startCancel = nil
+		s.mu.Unlock()
+		startCancel()
+		if stopped {
+			return nil
+		}
 		s.fail(err)
 		return err
 	}
 
 	s.mu.Lock()
+	docs := make([]document, 0, len(s.docs))
+	opened := make(map[string]int, len(s.docs))
+	for _, doc := range s.docs {
+		doc.Sent = false
+		doc.NeedsOpen = false
+		docs = append(docs, *doc)
+		opened[doc.URI] = doc.Version
+	}
+	if s.generation != generation || s.stopping {
+		s.startCancel = nil
+		s.mu.Unlock()
+		startCancel()
+		c.stop(context.Background())
+		return nil
+	}
+	s.mu.Unlock()
+
+	out := make(chan outbound, 2*len(docs)+16)
+	for _, doc := range docs {
+		s.enqueueTo(out, "textDocument/didOpen", &protocol.DidOpenTextDocumentParams{
+			TextDocument: protocol.TextDocumentItem{
+				URI:        uri.URI(doc.URI),
+				LanguageID: protocol.LanguageKind(doc.LanguageID),
+				Version:    int32(doc.Version),
+				Text:       doc.Text,
+			},
+		}, doc.URI, doc.Version)
+	}
+
+	s.mu.Lock()
+	if s.generation != generation || s.stopping {
+		s.startCancel = nil
+		s.mu.Unlock()
+		startCancel()
+		c.stop(context.Background())
+		return nil
+	}
 	s.client = c
 	s.runCtx = ctx
 	s.applyLegend(result)
-	docs := make([]document, 0, len(s.docs))
-	for _, doc := range s.docs {
-		doc.Sent = false
-		docs = append(docs, *doc)
-	}
 	s.status = StatusReady
 	s.sentVersions = make(map[string]int)
 	for _, doc := range s.docs {
@@ -142,15 +187,50 @@ func (s *Service) Start(ctx context.Context) error {
 			delete(s.sentNotify, doc.URI)
 		}
 	}
+	s.out = out
+	// Edits that landed while initialize was in flight must follow the opens
+	// already queued above.
+	for _, doc := range s.docs {
+		var message outbound
+		if version, ok := opened[doc.URI]; !ok {
+			message = outbound{method: "textDocument/didOpen", params: &protocol.DidOpenTextDocumentParams{
+				TextDocument: protocol.TextDocumentItem{
+					URI:        uri.URI(doc.URI),
+					LanguageID: protocol.LanguageKind(doc.LanguageID),
+					Version:    int32(doc.Version),
+					Text:       doc.Text,
+				},
+			}, documentURI: doc.URI, version: doc.Version}
+		} else if doc.Version > version {
+			message = outbound{method: "textDocument/didChange", params: &protocol.DidChangeTextDocumentParams{
+				TextDocument: protocol.VersionedTextDocumentIdentifier{
+					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.URI(doc.URI)},
+					Version:                int32(doc.Version),
+				},
+				ContentChanges: []protocol.TextDocumentContentChangeEvent{
+					&protocol.TextDocumentContentChangeWholeDocument{Text: doc.Text},
+				},
+			}, documentURI: doc.URI, version: doc.Version}
+		} else {
+			continue
+		}
+		select {
+		case out <- message:
+		default:
+			if message.method == "textDocument/didOpen" {
+				doc.NeedsOpen = true
+			} else {
+				doc.Dirty = true
+			}
+		}
+	}
 	writerCtx, writerCancel := context.WithCancel(ctx)
 	s.writerCancel = writerCancel
+	s.startCancel = startCancel
+	s.emit(Event{Kind: EventStatus, Status: StatusReady})
 	s.mu.Unlock()
 
-	s.emit(Event{Kind: EventStatus, Status: StatusReady})
-	for _, doc := range docs {
-		s.sendOpen(doc)
-	}
-	go s.writer(writerCtx, c)
+	go s.writer(writerCtx, c, out, generation)
 	go s.watch(c)
 	return nil
 }
@@ -163,6 +243,12 @@ func (s *Service) Stop(ctx context.Context) error {
 	s.client = nil
 	s.runCtx = nil
 	s.stopping = true
+	s.generation++
+	startCancel := s.startCancel
+	s.startCancel = nil
+	if startCancel != nil && c == nil {
+		startCancel()
+	}
 	if s.writerCancel != nil {
 		s.writerCancel()
 		s.writerCancel = nil
@@ -184,6 +270,9 @@ func (s *Service) Stop(ctx context.Context) error {
 	s.emit(Event{Kind: EventStatus, Status: StatusOff})
 	if c != nil {
 		c.stop(ctx)
+	}
+	if startCancel != nil {
+		startCancel()
 	}
 	return nil
 }
@@ -231,12 +320,12 @@ func (s *Service) applyLegend(result *protocol.InitializeResult) {
 	}
 }
 
-func (s *Service) writer(ctx context.Context, c *client) {
+func (s *Service) writer(ctx context.Context, c *client, out <-chan outbound, generation uint64) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-s.out:
+		case msg := <-out:
 			callCtx, cancel := context.WithTimeout(ctx, requestTimeoutSlow)
 			err := c.conn.Notify(callCtx, msg.method, msg.params)
 			cancel()
@@ -245,15 +334,18 @@ func (s *Service) writer(ctx context.Context, c *client) {
 				continue
 			}
 			if msg.documentURI != "" {
-				s.markSent(msg.documentURI, msg.version)
+				s.markSent(msg.documentURI, msg.version, generation)
 			}
 		}
 	}
 }
 
-func (s *Service) markSent(documentURI string, version int) {
+func (s *Service) markSent(documentURI string, version int, generation uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.generation != generation {
+		return
+	}
 	if version > s.sentVersions[documentURI] {
 		s.sentVersions[documentURI] = version
 	}
@@ -293,14 +385,25 @@ func (s *Service) enqueue(method string, params any) {
 }
 
 func (s *Service) enqueueDocument(method string, params any, documentURI string, version int) {
+	s.mu.Lock()
+	out := s.out
+	s.mu.Unlock()
+	s.enqueueTo(out, method, params, documentURI, version)
+}
+
+func (s *Service) enqueueTo(out chan<- outbound, method string, params any, documentURI string, version int) {
 	select {
-	case s.out <- outbound{method: method, params: params, documentURI: documentURI, version: version}:
+	case out <- outbound{method: method, params: params, documentURI: documentURI, version: version}:
 	default:
 		s.log.Warn("lsp outbound queue full", "method", method)
 		if documentURI != "" {
 			s.mu.Lock()
 			if doc := s.docs[documentURI]; doc != nil {
-				doc.Dirty = true
+				if method == "textDocument/didOpen" {
+					doc.NeedsOpen = true
+				} else {
+					doc.Dirty = true
+				}
 				doc.Sent = false
 			}
 			s.mu.Unlock()

@@ -105,7 +105,7 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 		ed.Viewport.Height = luaCodeRows
 		ed.ClearLineRange()
 		ed.EnsureVisible()
-		s.ensureLSPDocument(buffer)
+		s.requestTokens(buffer)
 		return
 	}
 	ed.Viewport.Height = cartCodeRows
@@ -127,7 +127,7 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 	ed.EnsureVisible()
 	buffer.TabViews[buffer.ActiveTab] = captureView(ed)
 	buffer.SyncedVersion = ed.Buffer.Version
-	s.ensureLSPDocument(buffer)
+	s.requestTokens(buffer)
 	s.requestActiveCartInfo()
 }
 

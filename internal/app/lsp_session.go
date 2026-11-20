@@ -58,6 +58,14 @@ func (s *Session) PollLSP(now time.Time) bool {
 			s.requestSignature()
 		}
 	}
+	if s.LSPStatus == lsp.StatusReady && !s.tokenDue.IsZero() && !now.Before(s.tokenDue) {
+		s.tokenDue = time.Time{}
+		s.requestTokens(s.CurrentBuffer())
+	}
+	if s.LSPStatus == lsp.StatusReady && !s.cartInfoDue.IsZero() && !now.Before(s.cartInfoDue) {
+		s.cartInfoDue = time.Time{}
+		s.requestActiveCartInfo()
+	}
 	return changed
 }
 
@@ -73,6 +81,9 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 			s.Completion = nil
 			s.Signature = nil
 			s.Hover = nil
+			for _, buffer := range s.Buffers {
+				buffer.LSPCartAsked = -1
+			}
 		case lsp.StatusReady:
 			s.LSPMessage = ""
 			s.LSPMessageError = false
@@ -92,6 +103,9 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 		s.Completion = nil
 		s.Signature = nil
 		s.Hover = nil
+		for _, buffer := range s.Buffers {
+			buffer.LSPCartAsked = -1
+		}
 		if event.Err != nil {
 			s.LSPMessage = "pico-lsp: " + shortError(event.Err)
 			s.LSPMessageError = true
@@ -200,7 +214,7 @@ func (s *Session) applyCompletionEvent(event lsp.Event) bool {
 
 func (s *Session) eventAtCursor(event lsp.Event) bool {
 	buffer := s.CurrentBuffer()
-	if buffer == nil {
+	if buffer == nil || s.activeURI() != event.URI {
 		return false
 	}
 	return lsp.PositionFor(buffer.Editor.Buffer, s.baseLine(buffer), buffer.Editor.Cursor.Pos) == event.Position
@@ -228,6 +242,8 @@ func (s *Session) afterInput(ev input.Event) {
 		return
 	}
 	s.syncLSPDocument(buffer)
+	s.tokenDue = time.Now().Add(120 * time.Millisecond)
+	s.cartInfoDue = time.Now().Add(300 * time.Millisecond)
 	if s.Vim.Mode != vim.ModeInsert {
 		s.Completion = nil
 		s.Signature = nil
@@ -583,6 +599,12 @@ func (s *Session) withinWorkspace(path string) bool {
 	if root == "" {
 		return true
 	}
+	if resolvedRoot, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolvedRoot
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
 	relative, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
@@ -672,7 +694,11 @@ func (s *Session) closeLSPDocument(buffer *SessionBuffer) {
 		return
 	}
 	buffer.LSPOpened = false
-	s.LSP.DidClose(lsp.URIForPath(buffer.Editor.Buffer.Path))
+	documentURI := lsp.URIForPath(buffer.Editor.Buffer.Path)
+	delete(s.LSPTokens, documentURI)
+	delete(s.LSPDiagnostics, documentURI)
+	delete(s.LSPCartInfo, documentURI)
+	s.LSP.DidClose(documentURI)
 }
 
 // LSPDidSave notifies the server after a successful write.
@@ -695,6 +721,7 @@ func (s *Session) reloadLSPDocument(buffer *SessionBuffer) {
 	}
 	s.closeLSPDocument(buffer)
 	s.ensureLSPDocument(buffer)
+	s.requestTokens(buffer)
 }
 
 func (s *Session) requestTokens(buffer *SessionBuffer) {
@@ -702,6 +729,10 @@ func (s *Session) requestTokens(buffer *SessionBuffer) {
 		return
 	}
 	s.syncLSPDocument(buffer)
+	documentURI := lsp.URIForPath(buffer.Editor.Buffer.Path)
+	if cached := s.LSPTokens[documentURI]; cached.URI != "" && cached.Version == buffer.Editor.Buffer.Version {
+		return
+	}
 	s.LSP.RequestTokens(buffer.Editor.Buffer, s.baseLine(buffer), buffer.Cart != nil)
 }
 
