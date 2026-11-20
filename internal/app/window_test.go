@@ -3,6 +3,8 @@ package app
 import (
 	"image"
 	"testing"
+
+	"github.com/hajimehoshi/ebiten/v2"
 )
 
 func TestGridGeometry(t *testing.T) {
@@ -136,5 +138,115 @@ func TestCanvasRect(t *testing.T) {
 				t.Errorf("CanvasRect(%d, %d, %d) = %v, want %v", test.width, test.height, test.scale, got, test.want)
 			}
 		})
+	}
+}
+
+func TestScaleForDeviceFactors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		scale       int
+		device      float64
+		wantScale   int
+		widthPixels int
+	}{
+		{name: "1.25 at four", scale: 4, device: 1.25, wantScale: 5, widthPixels: 1280},
+		{name: "1.5 at four", scale: 4, device: 1.5, wantScale: 6, widthPixels: 1536},
+		{name: "2.0 at four", scale: 4, device: 2.0, wantScale: 8, widthPixels: 2048},
+		{name: "1.25 at two", scale: 2, device: 1.25, wantScale: 2, widthPixels: 640},
+		{name: "1.5 at two", scale: 2, device: 1.5, wantScale: 3, widthPixels: 768},
+		{name: "2.0 at two", scale: 2, device: 2.0, wantScale: 4, widthPixels: 1024},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			physical := int(float64(CanvasWidth*test.scale) * test.device)
+			if physical != test.widthPixels {
+				t.Fatalf("physical width = %d, want %d", physical, test.widthPixels)
+			}
+			if got := ScaleFor(physical, physical); got != test.wantScale {
+				t.Errorf("ScaleFor(%d, %d) = %d, want %d", physical, physical, got, test.wantScale)
+			}
+		})
+	}
+}
+
+func TestCanvasPositionRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		width, height int
+	}{
+		{name: "integer", width: 1024, height: 1024},
+		{name: "letterbox", width: 1920, height: 1080},
+		{name: "wide", width: 1280, height: 720},
+		{name: "odd", width: 1025, height: 1025},
+		{name: "odd letterbox", width: 1921, height: 1081},
+		{name: "hidpi physical", width: 1280, height: 1280},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			scale := ScaleFor(test.width, test.height)
+			rect := CanvasRect(test.width, test.height, scale)
+			defaultScale := min(
+				float64(test.width)/CanvasWidth,
+				float64(test.height)/CanvasHeight,
+			)
+			defaultX := (float64(test.width) - CanvasWidth*defaultScale) / 2
+			defaultY := (float64(test.height) - CanvasHeight*defaultScale) / 2
+			for _, point := range []image.Point{
+				{X: 0, Y: 0},
+				{X: CanvasWidth - 1, Y: CanvasHeight - 1},
+				{X: CanvasWidth / 2, Y: CanvasHeight / 2},
+			} {
+				physicalX := float64(rect.Min.X + point.X*scale)
+				physicalY := float64(rect.Min.Y + point.Y*scale)
+				cursorX := (physicalX - defaultX) / defaultScale
+				cursorY := (physicalY - defaultY) / defaultScale
+				gotX, gotY := canvasPosition(cursorX, cursorY, test.width, test.height)
+				if gotX != point.X || gotY != point.Y {
+					t.Errorf("canvasPosition(%v) = (%d, %d), want (%d, %d)",
+						point, gotX, gotY, point.X, point.Y)
+				}
+			}
+		})
+	}
+}
+
+func TestMapCursorUsesScreenBounds(t *testing.T) {
+	t.Parallel()
+
+	game := &Game{screenWidth: 1920, screenHeight: 1080}
+	scale := ScaleFor(1920, 1080)
+	rect := CanvasRect(1920, 1080, scale)
+	defaultScale := min(1920.0/CanvasWidth, 1080.0/CanvasHeight)
+	defaultX := (1920.0 - CanvasWidth*defaultScale) / 2
+	defaultY := (1080.0 - CanvasHeight*defaultScale) / 2
+	cursorX := (float64(rect.Min.X+128*scale) - defaultX) / defaultScale
+	cursorY := (float64(rect.Min.Y+128*scale) - defaultY) / defaultScale
+	if x, y := game.mapCursor(cursorX, cursorY); x != 128 || y != 128 {
+		t.Errorf("mapCursor() = (%d, %d), want (128, 128)", x, y)
+	}
+}
+
+func TestMapCursorBeforeFirstFrame(t *testing.T) {
+	t.Parallel()
+
+	game := &Game{}
+	if x, y := game.mapCursor(10.5, 20.5); x != 10 || y != 20 {
+		t.Errorf("mapCursor() = (%d, %d), want (10, 20)", x, y)
+	}
+}
+
+func TestDrawFinalScreenRecordsBounds(t *testing.T) {
+	game := newTestGame(t)
+	screen := ebiten.NewImage(1920, 1080)
+	offscreen := ebiten.NewImage(CanvasWidth, CanvasHeight)
+	game.drawFinalScreen(screen, offscreen)
+	if game.screenWidth != 1920 || game.screenHeight != 1080 {
+		t.Errorf("screen bounds = %dx%d, want 1920x1080", game.screenWidth, game.screenHeight)
 	}
 }

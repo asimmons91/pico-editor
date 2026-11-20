@@ -180,13 +180,14 @@ app state -> render.Surface (256x256, palette indices)
   filter, which would soften pixel art.
 - Window sizing is in device-independent pixels: default scale 4
   (`1024×1024`), scale 0 chooses the largest integer scale fitting 80% of the
-  current monitor clamped to 2–8. The minimum window is 256×256 so the canvas is
-  never cropped. HiDPI is handled by Ebitengine; the final-screen pass works in
-  physical pixels and coordinates are never multiplied by the device scale
-  factor manually.
+  current monitor clamped to 2–8. Manual and debug scale changes may select
+  1×; automatic sizing never goes below 2×. The minimum window is 256×256 so
+  the canvas is never cropped. HiDPI is handled by Ebitengine; the final-screen
+  pass works in physical pixels and coordinates are never multiplied by the
+  device scale factor manually.
 - `DrawFinalScreen` replaces Ebitengine's default final-screen transform.
   Ebitengine APIs that use that default transform (for example
-  `ebiten.CursorPosition` and IME candidate placement) must be mapped through
+  `ebiten.CursorPositionF` and IME candidate placement) must be mapped through
   the same canvas rectangle before use. M1 owns the mouse/IME spike; do not
   assume the default letterbox mapping matches the drawn canvas.
 - Golden tests assert palette-index surfaces headlessly; they do not compare
@@ -323,7 +324,7 @@ be used at a milestone exit.
 | `go.lsp.dev/protocol` | latest tagged version at integration | M5 |
 | `go.lsp.dev/jsonrpc2` | latest tagged version at integration | M5 |
 | TOML parser | selected and pinned in M7 | M7 |
-| `golang.design/x/clipboard` | latest tagged version at integration | M1 |
+| `golang.design/x/clipboard` | `v0.11.0` (pure Go on Linux) | M1 |
 
 Development rules:
 
@@ -350,10 +351,29 @@ Development rules:
   recover frame panics themselves. `Update` returns the logged fatal error to
   stop `RunGame`; `Draw` and `DrawFinalScreen` record it for the next `Update`.
   `main` keeps a top-level recover for startup panics. Both paths exit 1.
-- `internal/app/window.go` contains the pure scale and rectangle math; tests
-  cover non-integer device scale inputs and letterboxing.
+- `internal/app/window.go` contains the pure scale, rectangle, and cursor
+  mapping math; tests cover non-integer device-scale windows, odd dimensions,
+  and letterboxing.
 - `internal/version` supplies `Version`, `Commit`, and `BuildDate` for
   `-ldflags` injection. Development builds report `dev`/`unknown`.
 - Linux backends: Ebitengine selects Wayland or X11 automatically. If a backend
   fails to open in M0 manual testing, record the environment, backend, and
   workaround here before the milestone exits.
+- M1 adds the checked-in CC0 glyph data under `internal/font`, the deterministic
+  `tools/fontgen` generator, the indexed `internal/render.Surface`, and the
+  platform-neutral `internal/input.Tracker`. The font data was extracted once
+  from PICO-8 0.2.7 and verified pixel-for-pixel against a PICO-8 screenshot;
+  see `docs/spikes/M1-input.md`.
+- Clipboard access uses `golang.design/x/clipboard` `v0.11.0` behind
+  `input.Clipboard`, initialized lazily. Reads run on a background goroutine and
+  are applied through a channel on the Update goroutine. On GNOME Wayland the
+  package falls back to XWayland; without a data-control manager or X11 display
+  it returns a typed unavailable error and the UI degrades to internal
+  registers.
+- Ebitengine 2.10.6's experimental `exp/textinput` package is not used. V1
+  accepts committed text only and does not promise preedit or candidate-window
+  rendering.
+- `internal/app` owns `canvasPosition`/`mapCursor`: it inverts Ebitengine's
+  default letterbox transform with the last final-screen bounds and applies
+  the same integer `CanvasRect` used for drawing. `internal/input` receives the
+  mapper as a function so it does not duplicate window geometry.

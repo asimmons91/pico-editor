@@ -77,7 +77,10 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 	ebiten.SetWindowSizeLimits(app.CanvasWidth, app.CanvasHeight, -1, -1)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 
-	if err := ebiten.RunGame(app.New(app.Config{Logger: logger})); err != nil {
+	if err := ebiten.RunGame(app.New(app.Config{
+		Logger:       logger,
+		DebugCharset: options.debugCharset,
+	})); err != nil {
 		logger.Error("run", "error", err)
 		fmt.Fprintf(stderr, "pico-editor: %v\n", err)
 		return 1
@@ -88,9 +91,10 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 }
 
 type options struct {
-	showVersion bool
-	level       slog.Level
-	logFile     string
+	showVersion  bool
+	debugCharset bool
+	level        slog.Level
+	logFile      string
 }
 
 func parseFlags(args []string, stderr io.Writer) (options, error) {
@@ -102,6 +106,7 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	flags := flag.NewFlagSet("pico-editor", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.BoolVar(&opts.showVersion, "version", false, "print version information and exit")
+	flags.BoolVar(&opts.debugCharset, "debug-charset", false, "show the P8SCII full-charset debug screen")
 	flags.StringVar(&levelText, "log-level", "info", "log level: debug, info, warn, or error")
 	flags.StringVar(&opts.logFile, "log-file", "", "log file path (default: $XDG_STATE_HOME/pico-editor/pico-editor.log)")
 	flags.Usage = func() {

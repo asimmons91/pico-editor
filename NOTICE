@@ -11,8 +11,11 @@ CC0 1.0 Universal public domain dedication. pico-editor derives a 1-bit glyph
 atlas from that font for display. The checked-in atlas data is distributed
 under CC0 as well; the rest of pico-editor remains MIT-licensed.
 
-The atlas is verified against PICO-8 screenshots. It is not a generic pixel
-font and is not rendered with runtime TrueType anti-aliasing.
+The glyph bitmaps in `internal/font/glyphs.txt` were extracted once from the
+font records in the PICO-8 0.2.7 data file. They are checked in; the build never
+reads a PICO-8 installation. The atlas is verified pixel-for-pixel against
+PICO-8 0.2.7 screenshots (see `docs/spikes/M1-input.md`). It is not a generic
+pixel font and is not rendered with runtime TrueType anti-aliasing.
 
 ## PICO-8 trademark
 
@@ -29,7 +32,6 @@ and no Rune code, assets, or vendored dependencies are copied here.
 
 ## Third-party dependencies
 
-pico-editor depends on third-party Go modules, including Ebitengine. pico-lsp
-will be added as a module dependency according to the pin schedule in
-`docs/ARCHITECTURE.md` §12 once its public packages are released. Those
-modules retain their own licenses; see `go.mod` for the exact versions in use.
+pico-editor depends on third-party Go modules, including Ebitengine, pico-lsp
+`v1.6.0`, and `golang.design/x/clipboard`. Those modules retain their own
+licenses; see `go.mod` for the exact versions in use.

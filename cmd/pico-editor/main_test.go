@@ -227,3 +227,16 @@ func TestDefaultLogPath(t *testing.T) {
 		}
 	})
 }
+
+func TestParseFlagsDebugCharset(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	opts, err := parseFlags([]string{"--debug-charset"}, &stderr)
+	if err != nil {
+		t.Fatalf("parseFlags(--debug-charset) error = %v; stderr: %s", err, stderr.String())
+	}
+	if !opts.debugCharset {
+		t.Error("parseFlags(--debug-charset) did not enable debugCharset")
+	}
+}
