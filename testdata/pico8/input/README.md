@@ -27,6 +27,8 @@ one per line in the order A-Z.
 - `katakana-romaji.png` — the Katakana romaji list.
 - `gemination.png`, `gemination-keys.txt`, `gemination-capture.txt` — doubled
   consonants, `n` edge cases, and invalid sequences.
+- `shift-digits.png`, `shift-digits-keys.txt`, `shift-digits-capture.txt` — the
+  ten kana Shift+digit symbols (identical in Hiragana and Katakana).
 - `hiragana-ka.png` — `Ctrl+J`, `k`, `a`; status `HIRAGANA MODE (CTRL-J)`.
 - `katakana-mode-status.png` — `Ctrl+K`; status `KATAKANA MODE (CTRL-K)`.
 - `puny-mode-status.png` — `Ctrl+P`; status `PUNY FONT MODE (CTRL-P)`.

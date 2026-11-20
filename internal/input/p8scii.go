@@ -296,23 +296,17 @@ func (p *P8Input) kanaModeText(text string) string {
 
 func (p *P8Input) kanaDigitGlyph(key Key) string {
 	digit := int(key - Key0)
-	if p.Mode == P8ModeHiragana {
-		switch digit {
-		case 0:
-			return p8scii.Decode([]byte{0xff})
-		case 9:
-			return p8scii.Decode([]byte{0xfe})
-		default:
-			return p8scii.Decode([]byte{0x10 + byte(digit-1)})
-		}
+	if p.Mode != P8ModeHiragana && p.Mode != P8ModeKatakana {
+		return ""
 	}
-	if p.Mode == P8ModeKatakana {
-		if digit == 0 {
-			return p8scii.Decode([]byte{0x19})
-		}
+	switch digit {
+	case 0:
+		return p8scii.Decode([]byte{0xff})
+	case 9:
+		return p8scii.Decode([]byte{0xfe})
+	default:
 		return p8scii.Decode([]byte{0x10 + byte(digit-1)})
 	}
-	return ""
 }
 
 func (p *P8Input) logLayoutFallback(key Key, runes []rune) {
@@ -342,7 +336,7 @@ func isKanaConsonant(r rune) bool {
 // shifting the Hiragana P8SCII bytes by 0x32.
 //
 // Capture: PICO-8 0.2.7, testdata/pico8/input/manifest.json
-// sha256 773b2543066bb59876c83ef114ca2745457036fa61546e6567b0ff6187465720
+// sha256 2753264dbaf695d81567b3b8e585ba7ded7afe3658e7ab35b921df58e34399e1
 var kanaTable, kanaPrefixes = buildKanaTable()
 
 func buildKanaTable() (map[string]string, map[string]bool) {

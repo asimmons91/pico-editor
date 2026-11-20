@@ -251,7 +251,7 @@ func TestP8KanaShiftDigits(t *testing.T) {
 
 	kata := NewP8Input(nil)
 	kata.HandleKey(KeyK, ModCtrl)
-	wantKata := []string{"▮", "■", "□", "⁙", "⁘", "‖", "◀", "▶", "「", "」"}
+	wantKata := wantHira
 	for i, key := range []Key{Key1, Key2, Key3, Key4, Key5, Key6, Key7, Key8, Key9, Key0} {
 		kata.HandleKey(key, ModShift)
 		text, _ := kata.TransformText([]rune{'!'}, ModShift)
@@ -333,6 +333,38 @@ func TestP8KanaMatchesCapture(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestP8KanaDigitsMatchCapture(t *testing.T) {
+	keyData, err := os.ReadFile("../../testdata/pico8/input/shift-digits-keys.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	captureData, err := os.ReadFile("../../testdata/pico8/input/shift-digits-capture.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := strings.Split(strings.TrimRight(string(keyData), "\n"), "\n")
+	capture := strings.Split(string(captureData), "\n")
+	if index := slices.Index(capture, "__lua__"); index >= 0 {
+		capture = capture[index+1:]
+	}
+	for _, mode := range []P8Mode{P8ModeHiragana, P8ModeKatakana} {
+		for i, key := range keys {
+			if len(key) != 1 || key[0] < '0' || key[0] > '9' {
+				continue
+			}
+			in := NewP8Input(nil)
+			in.Mode = mode
+			in.HandleKey(Key0+Key(key[0]-'0'), ModShift)
+			text, _ := in.TransformText([]rune{'!'}, ModShift)
+			got := strings.TrimSpace(string(text))
+			want := strings.TrimSpace(capture[i])
+			if got != want {
+				t.Errorf("mode %v Shift+%s = %q, capture says %q", mode, key, got, want)
+			}
+		}
 	}
 }
 

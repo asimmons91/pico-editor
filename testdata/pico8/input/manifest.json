@@ -78,6 +78,11 @@
       "screenshot": "gemination.png",
       "keys_file": "gemination-keys.txt",
       "capture_file": "gemination-capture.txt"
+    },
+    {
+      "screenshot": "shift-digits.png",
+      "keys_file": "shift-digits-keys.txt",
+      "capture_file": "shift-digits-capture.txt"
     }
   ]
 }

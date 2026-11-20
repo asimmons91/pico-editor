@@ -181,7 +181,7 @@ func TestM6KanaInsertionAndShiftDigits(t *testing.T) {
 		{"i<c-j>nnka<esc>", "んか"},
 		{"i<c-k>ka<esc>", "カ"},
 		{"i<c-k>!<esc>", "▮"},
-		{"i<c-k>)<esc>", "」"},
+		{"i<c-k>)<esc>", "◝"},
 		{"i<c-j>)<esc>", "◝"},
 	}
 	for _, tc := range tests {

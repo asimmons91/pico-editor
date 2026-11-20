@@ -118,13 +118,11 @@ Small kana:
 - A pending sequence has no timeout in PICO-8 0.2.7. It is cleared by a
   non-letter key or by leaving insert mode.
 
-### Katakana Shift+digits
+### Kana Shift+digits
 
-In Katakana mode, Shift+1 through Shift+9 insert bytes `0x10`–`0x18`; Shift+0
-inserts `0x19`.
-
-In Hiragana mode, Shift+1 through Shift+8 insert `0x10`–`0x17`; Shift+9 inserts
-`0xfe` and Shift+0 inserts `0xff`.
+In both kana modes, Shift+1 through Shift+8 insert bytes `0x10`–`0x17`; Shift+9
+inserts `0xfe` and Shift+0 inserts `0xff`. This was verified separately in both
+Hiragana and Katakana modes against PICO-8 0.2.7.
 
 Shift+letters keep the §Shift+letter table in both kana modes.
 
