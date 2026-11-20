@@ -173,6 +173,10 @@ func (s *Service) DidClose(documentURI string) {
 	_, ok := s.docs[documentURI]
 	delete(s.docs, documentURI)
 	delete(s.sentVersions, documentURI)
+	if notify := s.sentNotify[documentURI]; notify != nil {
+		close(notify)
+		delete(s.sentNotify, documentURI)
+	}
 	for key := range s.latest {
 		if key.uri == documentURI {
 			delete(s.latest, key)

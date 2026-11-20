@@ -377,6 +377,10 @@ func (s *Service) waitDocument(ctx context.Context, documentURI string, version 
 			s.mu.Unlock()
 			return false
 		}
+		if _, ok := s.docs[documentURI]; !ok {
+			s.mu.Unlock()
+			return false
+		}
 		if s.sentVersions[documentURI] >= version {
 			s.mu.Unlock()
 			return true
