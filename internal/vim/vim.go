@@ -724,6 +724,20 @@ func (v *Vim) cancel(ed *editor.Editor) {
 	}
 }
 
+// EndInsertMode finishes an insert session. The app uses it before switching
+// buffers or cart tabs so counted inserts and dot replay cannot span tabs.
+func (v *Vim) EndInsertMode(ed *editor.Editor) {
+	if v.Mode == ModeInsert {
+		v.finishInsert(ed)
+	}
+}
+
+// ResetPending drops an armed operator, count, or visual selection without
+// changing Vim mode. Dialogs call it when they take input.
+func (v *Vim) ResetPending(ed *editor.Editor) {
+	v.cancel(ed)
+}
+
 func (v *Vim) clampNormal(ed *editor.Editor) {
 	pos := ed.Cursor.Pos
 	if pos.Line < 0 || pos.Line >= len(ed.Buffer.Lines) {

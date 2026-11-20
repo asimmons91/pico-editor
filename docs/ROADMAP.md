@@ -433,6 +433,8 @@ normative.
 | Cart tab editing | Strict active-tab line window; cursor, operators, paste, search, and `:s` stay inside the tab | M4 |
 | Cart/file tree startup | Directory or no argument opens and focuses the tree; a file opens hidden with editor focus | M4 |
 | M4 dialogs | Arrow/Tab plus Enter, with O/R/C, S/D/C accelerators and Esc cancel | M4 |
+| M4 new tab separators | Typing a new `-->8` separator in insert mode is rejected until tab creation is designed | M4 |
+| M4 section headers | Code that would introduce a cart section header is rejected at save time | M4 |
 | File watching | Refresh-on-focus in M7; full watcher post-V1 | M7 |
 | `.lua` mixed line endings | Reject with `ErrMixedNewlines`; LF and CRLF files round-trip byte-for-byte | M2 |
 | External changes | M2 checks mtime, size, and content hash on save; M4 adds the conflict dialog and backups | M2/M4 |

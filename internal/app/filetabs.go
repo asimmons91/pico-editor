@@ -59,11 +59,12 @@ func fitTabs(labels []string, active int, maxCells int) []tabHit {
 func (s *Session) fileTabLabels() []string {
 	labels := make([]string, 0, len(s.Buffers))
 	for _, buffer := range s.Buffers {
-		name := s.bufferName(buffer)
+		name := clipCells(s.bufferName(buffer), 28)
 		if buffer.Editor.Buffer.Dirty() {
-			name += "*"
+			labels = append(labels, " "+name+"* ")
+			continue
 		}
-		labels = append(labels, clipCells(" "+name+" ", 32))
+		labels = append(labels, " "+name+" ")
 	}
 	return labels
 }
@@ -131,6 +132,7 @@ func (s *Session) ClickFileTabs(x, y int) bool {
 	for _, hit := range fitTabs(s.fileTabLabels(), s.Current, GridColumns) {
 		if cell >= hit.StartCell && cell < hit.EndCell {
 			if hit.Index != s.Current {
+				s.endInsertMode()
 				s.Current = hit.Index
 				s.prepareBuffer(s.CurrentBuffer())
 			}
@@ -153,6 +155,7 @@ func (s *Session) ClickCartTabs(x, y int) bool {
 	for _, hit := range fitTabs(s.cartTabLabels(buffer), buffer.ActiveTab, GridColumns) {
 		if cell >= hit.StartCell && cell < hit.EndCell {
 			if hit.Index != buffer.ActiveTab {
+				s.endInsertMode()
 				s.saveActiveView(buffer)
 				buffer.ActiveTab = hit.Index
 				tab := buffer.Cart.Tabs[hit.Index]

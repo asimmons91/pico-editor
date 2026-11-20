@@ -383,6 +383,8 @@ guarantees byte-preserving saves.
 | Dialog input | Dialogs use arrows/Tab plus Enter, single-key accelerators drawn from the option labels (O/R/C, S/D/C), and Esc for Cancel or OK. |
 | Conflict backups | Every conflicting overwrite, cart or `.lua`, writes `<name>.bak` or `<name>.bak.1`–`.bak.9` before the atomic replace. Failed backups abort the write. |
 | Focus refresh | On focus the workspace rescans, clean changed buffers reload (carts preserve the active tab and view), dirty buffers prompt, and deleted files prompt. |
+| New tab separators | M4 rejects typing a new `-->8` separator in insert mode; code tabs derive from markers already in the cart. Adding tabs by editing markers is deferred. |
+| Section headers in code | Save fails with a typed error if code text would introduce a cart section header and truncate `__lua__`. |
 
 ## Testing
 

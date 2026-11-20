@@ -13,18 +13,26 @@ Automated coverage in this repo:
 
 - `internal/cart`: open/save byte round-trips for all-sections, BOM, CRLF,
   empty body, leading/consecutive markers, lone CR, no trailing newline, and
-  unterminated headers; edit-only-body goldens; conflict/deleted/read-only
-  handling; numbered backups; tab resynchronization; header/suffix hashes.
+  unterminated headers; edit-only-body byte comparisons; conflict/deleted/read-
+  only handling; tab resynchronization; section-header rejection; synthetic
+  trailing tabs; parse errors include the path.
+- `internal/fsutil`: numbered backup copies, collisions, missing sources,
+  symlink preservation, and backup directory-sync failures that must not look
+  like committed target writes.
 - `internal/workspace`: nested scans, sorting, hidden/ignored entries, file and
-  directory symlinks, include ownership, nearest-cart selection, refresh.
-- `internal/editor`: active line-window clamping, boundary joins/deletes, empty
-  tab materialization, undo/redo.
-- `internal/vim`: existing matrix plus tab-bounded `G`, `gg`, `J`, search, and
-  ex ranges.
-- `internal/app`: cart opening, tab switching and view restoration, empty-tab
-  editing, conflict overwrite with backup, read-only error, quit Save all,
-  outside-root symlink confirmation, tree startup/filtering, external focus
-  reloads, and tab clicks.
+  directory symlinks, child/sibling include ownership, nearest-cart selection,
+  refresh.
+- `internal/editor`: active line-window clamping, boundary joins/deletes,
+  trailing-buffer-line deletion, empty tab materialization, undo/redo,
+  read-only-file recreation.
+- `internal/vim`: existing matrix plus tab-bounded `G`, `gg`, `J`, `%`, scroll,
+  text objects, search, and ex ranges.
+- `internal/app`: cart opening, tab switching/view restoration, empty-tab
+  editing, section/marker input guards, dialog accelerator suppression,
+  conflict overwrite with backup, conflict reload followed by `:wq`,
+  read-only error, quit Save all including edits made during the save run,
+  outside-root symlink confirmation, tree startup/filtering/scrolling,
+  external focus reloads, and tab clicks.
 
 Interactive checklist:
 
@@ -50,5 +58,9 @@ Known V1 limits:
 
 - `.p8.png` remains unsupported.
 - Search and substitutions stay inside the active code tab.
+- Creating a new `-->8` separator by typing in insert mode is rejected in M4;
+  code tabs are derived from markers already in the cart.
+- Typing a line that would become a cart section header (for example
+  `__gfx__`) is rejected at save time so it cannot truncate `__lua__`.
 - Full file watching is deferred to M7; M4 refreshes on focus and on demand.
 - There is no Save as, rename, delete, or new-file command in M4.

@@ -336,7 +336,13 @@ func (b *Buffer) PrepareSaveWithOptions(options SaveOptions) (SaveSnapshot, erro
 			return SaveSnapshot{}, err
 		}
 	}
-	if b.Mode.Perm()&0o222 == 0 {
+	mode := b.Mode
+	if options.AllowExternalChange {
+		if _, statErr := os.Stat(b.Path); errors.Is(statErr, fs.ErrNotExist) {
+			mode = 0o644
+		}
+	}
+	if mode.Perm()&0o222 == 0 {
 		return SaveSnapshot{}, pathError("save", b.Path, ErrReadOnly)
 	}
 
@@ -349,7 +355,7 @@ func (b *Buffer) PrepareSaveWithOptions(options SaveOptions) (SaveSnapshot, erro
 		Path:     b.Path,
 		Target:   target,
 		Data:     data,
-		Mode:     b.Mode,
+		Mode:     mode,
 		Version:  b.Version,
 		hash:     b.textHash(),
 		diskHash: sha256.Sum256(data),
@@ -485,27 +491,9 @@ func (b *Buffer) saveTarget(allowOutsideRoot bool) (string, error) {
 	if err != nil {
 		return "", pathError("save", b.Path, err)
 	}
-	info, err := os.Lstat(absolute)
-	if errors.Is(err, fs.ErrNotExist) {
-		if directory, dirErr := filepath.EvalSymlinks(filepath.Dir(absolute)); dirErr == nil {
-			return filepath.Join(directory, filepath.Base(absolute)), nil
-		}
-		return absolute, nil
-	}
+	target, err := fsutil.ResolveTarget(absolute)
 	if err != nil {
 		return "", pathError("save", b.Path, err)
-	}
-
-	target := absolute
-	if info.Mode()&os.ModeSymlink != 0 {
-		target, err = filepath.EvalSymlinks(absolute)
-		if err != nil {
-			return "", pathError("save", b.Path, err)
-		}
-	} else if directory, dirErr := filepath.EvalSymlinks(filepath.Dir(absolute)); dirErr == nil {
-		// Resolve symlinked parent directories even when the final component
-		// is a regular file, so the boundary check compares real paths.
-		target = filepath.Join(directory, filepath.Base(absolute))
 	}
 	if isCartPath(target) {
 		return "", pathError("save", b.Path, ErrUnsupportedFile)

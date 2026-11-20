@@ -20,4 +20,7 @@ var (
 	ErrOutsideRoot = errors.New("symlink target is outside the workspace root")
 	// ErrInvalidPath reports an unusable cart path.
 	ErrInvalidPath = errors.New("invalid cart path")
+	// ErrCodeSection reports code text that would introduce a cart section
+	// marker and truncate the __lua__ body on the next load.
+	ErrCodeSection = errors.New("code contains a cart section header")
 )

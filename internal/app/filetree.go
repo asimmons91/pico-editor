@@ -251,8 +251,14 @@ func (s *Session) selectParent(rows []treeRow, index int) {
 }
 
 func clampTreeTop(top, selection, total, heightRows int) int {
+	if heightRows < 1 {
+		return 0
+	}
 	if selection >= 0 && selection < top {
 		top = selection
+	}
+	if selection >= 0 && selection >= top+heightRows {
+		top = selection - heightRows + 1
 	}
 	maxTop := max(0, total-heightRows)
 	return min(max(top, 0), maxTop)

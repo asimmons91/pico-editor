@@ -49,7 +49,7 @@ func AtomicWrite(path string, data []byte, mode fs.FileMode) error {
 }
 
 func atomicWrite(path string, data []byte, mode fs.FileMode, ops atomicOps) error {
-	target, err := resolveTarget(path)
+	target, err := ResolveTarget(path)
 	if err != nil {
 		return err
 	}
@@ -114,30 +114,6 @@ func atomicWrite(path string, data []byte, mode fs.FileMode, ops atomicOps) erro
 		return &CommitError{Err: err}
 	}
 	return nil
-}
-
-// resolveTarget returns the absolute path that should be replaced. A symlink is
-// resolved once so that the link itself survives the rename.
-func resolveTarget(path string) (string, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", fmt.Errorf("resolve %s: %w", path, err)
-	}
-	info, err := os.Lstat(absolute)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return absolute, nil
-		}
-		return "", fmt.Errorf("stat %s: %w", absolute, err)
-	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		return absolute, nil
-	}
-	target, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return "", fmt.Errorf("resolve symlink %s: %w", absolute, err)
-	}
-	return target, nil
 }
 
 func syncDir(dir string) error {

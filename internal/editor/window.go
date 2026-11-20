@@ -135,7 +135,17 @@ func (e *Editor) editInWindow(edit Edit) bool {
 	if e.WindowEmpty() {
 		return false
 	}
-	if edit.Start.Line < e.lineWindow.first || edit.Start.Line >= e.lineWindow.end {
+	if edit.Start.Line < e.lineWindow.first {
+		joinsFromSeparator := edit.Start.Line == e.lineWindow.first-1 &&
+			e.lineWindow.first > 0 &&
+			edit.Start.Rune == runeCount(e.Buffer.Lines[e.lineWindow.first-1]) &&
+			edit.Text == "" &&
+			edit.End.Line >= e.lineWindow.first &&
+			edit.End.Line < e.lineWindow.end
+		if !joinsFromSeparator {
+			return false
+		}
+	} else if edit.Start.Line >= e.lineWindow.end {
 		return false
 	}
 	if edit.End.Line < edit.Start.Line || edit.End.Line > e.lineWindow.end {

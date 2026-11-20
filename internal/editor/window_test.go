@@ -121,6 +121,18 @@ func TestEmptyWindowNewlineMaterializesOneLine(t *testing.T) {
 	}
 }
 
+func TestLineWindowDeleteLastBufferLine(t *testing.T) {
+	ed := windowEditor(t, "marker", "hello")
+	ed.SetLineRange(1, 2)
+	ed.SetCursor(Pos{Line: 1})
+	if _, err := ed.DeleteLines(1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := ed.Buffer.Text(); got != "marker" {
+		t.Fatalf("buffer = %q, want marker without the deleted last line", got)
+	}
+}
+
 func TestLineWindowUndoRedo(t *testing.T) {
 	ed := windowEditor(t, "marker", "one", "marker")
 	ed.SetCursor(Pos{Line: 1, Rune: 3})

@@ -93,6 +93,26 @@ func TestNearestCartWins(t *testing.T) {
 	}
 }
 
+func TestChildCartOwnsParentInclude(t *testing.T) {
+	root := t.TempDir()
+	lib := filepath.Join(root, "lib.lua")
+	writeFile(t, lib, "x=1\n")
+	cart := filepath.Join(root, "src", "game.p8")
+	writeFile(t, cart, "pico-8 cartridge // pico-8.com\nversion 42\n__lua__\n#include ../lib.lua\n")
+
+	workspace, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, ok := workspace.ResolveInclude(lib)
+	if !ok || ref.Path != cart {
+		t.Fatalf("ResolveInclude = %+v %t, want child cart %s", ref, ok, cart)
+	}
+	if got := workspace.Owners[lib]; got != cart {
+		t.Fatalf("Owners[lib] = %q, want %q", got, cart)
+	}
+}
+
 func TestRefreshPicksUpNewFiles(t *testing.T) {
 	root := t.TempDir()
 	workspace, err := Open(root)

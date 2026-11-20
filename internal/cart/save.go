@@ -44,7 +44,13 @@ func (d *Document) PrepareSave(options SaveOptions) (SaveSnapshot, error) {
 			return SaveSnapshot{}, err
 		}
 	}
-	if d.Code.Mode.Perm()&0o222 == 0 {
+	mode := d.Code.Mode
+	if options.AllowExternalChange {
+		if _, statErr := os.Stat(d.Path); errors.Is(statErr, fs.ErrNotExist) {
+			mode = 0o644
+		}
+	}
+	if mode.Perm()&0o222 == 0 {
 		return SaveSnapshot{}, fmt.Errorf("%w: %s", ErrReadOnly, d.Path)
 	}
 	data, err := d.FullBytes()
@@ -63,7 +69,7 @@ func (d *Document) PrepareSave(options SaveOptions) (SaveSnapshot, error) {
 		Path:     d.Path,
 		Target:   target,
 		Data:     data,
-		Mode:     d.Code.Mode,
+		Mode:     mode,
 		CodeText: d.Code.Text(),
 		Version:  d.Code.Version,
 		diskHash: sha256.Sum256(data),
@@ -129,24 +135,9 @@ func saveTarget(path, root string, allowOutsideRoot bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", path, err)
 	}
-	info, err := os.Lstat(absolute)
-	if errors.Is(err, fs.ErrNotExist) {
-		if directory, dirErr := filepath.EvalSymlinks(filepath.Dir(absolute)); dirErr == nil {
-			return filepath.Join(directory, filepath.Base(absolute)), nil
-		}
-		return absolute, nil
-	}
+	target, err := fsutil.ResolveTarget(absolute)
 	if err != nil {
-		return "", fmt.Errorf("stat %s: %w", absolute, err)
-	}
-	target := absolute
-	if info.Mode()&os.ModeSymlink != 0 {
-		target, err = filepath.EvalSymlinks(absolute)
-		if err != nil {
-			return "", fmt.Errorf("resolve symlink %s: %w", absolute, err)
-		}
-	} else if directory, dirErr := filepath.EvalSymlinks(filepath.Dir(absolute)); dirErr == nil {
-		target = filepath.Join(directory, filepath.Base(absolute))
+		return "", err
 	}
 	if root == "" {
 		root = filepath.Dir(absolute)

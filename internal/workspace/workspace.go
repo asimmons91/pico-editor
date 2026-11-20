@@ -110,6 +110,11 @@ func (w *Workspace) ResolveInclude(path string) (*CartRef, bool) {
 		return nil, false
 	}
 	absolute = filepath.Clean(absolute)
+	if strings.EqualFold(filepath.Ext(absolute), ".lua") {
+		if ref := w.Carts[absolute]; ref != nil {
+			return ref, true
+		}
+	}
 	if owner, ok := w.Owners[absolute]; ok {
 		if ref := w.Carts[owner]; ref != nil {
 			return ref, true
@@ -280,6 +285,10 @@ func (w *Workspace) scanOwners() {
 	})
 	sort.Strings(files)
 	for _, path := range files {
+		if ref := w.Carts[path]; ref != nil {
+			w.Owners[path] = ref.Path
+			continue
+		}
 		owner, err := w.resolver.Owner(path)
 		if err != nil || owner == path || !w.withinRoot(owner) {
 			continue

@@ -166,46 +166,79 @@ func (s *Session) syncCart(buffer *SessionBuffer) {
 	oldTabs := append([]cart.Tab(nil), buffer.Cart.Tabs...)
 	if err := buffer.Cart.SyncTabs(); err != nil {
 		s.logger.Warn("cart tab sync", "path", buffer.Cart.Path, "error", err)
+		buffer.SyncedVersion = buffer.Editor.Buffer.Version
 		return
 	}
 	tabs := buffer.Cart.Tabs
 	if len(tabs) == 0 {
 		return
 	}
-	if len(tabs) > len(oldTabs) {
-		extra := len(tabs) - len(oldTabs)
-		if len(buffer.TabViews) < len(tabs) {
-			buffer.TabViews = append(buffer.TabViews, make([]cart.ViewState, len(tabs)-len(buffer.TabViews))...)
+	oldViews := buffer.TabViews
+	for len(oldViews) < len(oldTabs) {
+		oldViews = append(oldViews, cart.ViewState{})
+	}
+	newViews := make([]cart.ViewState, len(tabs))
+	mapping := make([]int, len(tabs))
+	for index := range mapping {
+		mapping[index] = -1
+	}
+	switch {
+	case len(tabs) == len(oldTabs):
+		copy(newViews, oldViews[:len(oldTabs)])
+		for index := range mapping {
+			mapping[index] = index
 		}
+	case len(tabs) > len(oldTabs):
+		extra := len(tabs) - len(oldTabs)
 		active := min(buffer.ActiveTab, len(oldTabs)-1)
-		if active >= 0 && active+1 < len(buffer.TabViews) {
-			copy(buffer.TabViews[active+1+extra:], buffer.TabViews[active+1:len(buffer.TabViews)-extra])
-			for index := active + 1; index <= active+extra && index < len(buffer.TabViews); index++ {
-				buffer.TabViews[index] = cart.ViewState{}
+		insertAt := active + 1
+		if insertAt < 0 {
+			insertAt = 0
+		}
+		copy(newViews[:insertAt], oldViews[:insertAt])
+		for index := insertAt; index < insertAt+extra && index < len(newViews); index++ {
+			mapping[index] = -1
+		}
+		copy(newViews[insertAt+extra:], oldViews[insertAt:len(oldTabs)])
+		for index := 0; index < insertAt; index++ {
+			mapping[index] = index
+		}
+		for index := insertAt; index < len(oldTabs); index++ {
+			mapTo := index + extra
+			if mapTo < len(mapping) {
+				mapping[mapTo] = index
 			}
 		}
-	} else if len(tabs) < len(oldTabs) {
+	default:
 		extra := len(oldTabs) - len(tabs)
 		active := min(buffer.ActiveTab, len(tabs)-1)
-		if active >= 0 && active+1+extra <= len(buffer.TabViews) {
-			buffer.TabViews = append(buffer.TabViews[:active+1], buffer.TabViews[active+1+extra:]...)
+		removeAt := active + 1
+		if removeAt < 0 {
+			removeAt = 0
 		}
-		if len(buffer.TabViews) > len(tabs) {
-			buffer.TabViews = buffer.TabViews[:len(tabs)]
+		copy(newViews[:removeAt], oldViews[:removeAt])
+		copy(newViews[removeAt:], oldViews[removeAt+extra:])
+		for index := 0; index < removeAt; index++ {
+			mapping[index] = index
+		}
+		for index := removeAt; index < len(tabs); index++ {
+			mapping[index] = index + extra
 		}
 	}
-	for index := range buffer.TabViews {
-		if index >= len(oldTabs) || index >= len(tabs) {
+	for index := range newViews {
+		oldIndex := mapping[index]
+		if oldIndex < 0 || oldIndex >= len(oldTabs) {
 			continue
 		}
-		delta := tabs[index].StartLine - oldTabs[index].StartLine
+		newViews[index] = oldViews[oldIndex]
+		delta := tabs[index].StartLine - oldTabs[oldIndex].StartLine
 		if delta == 0 {
 			continue
 		}
-		view := &buffer.TabViews[index]
-		view.Cursor.Line = max(0, view.Cursor.Line+delta)
-		view.TopLine = max(0, view.TopLine+delta)
+		newViews[index].Cursor.Line = max(0, newViews[index].Cursor.Line+delta)
+		newViews[index].TopLine = max(0, newViews[index].TopLine+delta)
 	}
+	buffer.TabViews = newViews
 	if buffer.ActiveTab >= len(tabs) {
 		buffer.ActiveTab = len(tabs) - 1
 	}
@@ -218,6 +251,15 @@ func (s *Session) syncCart(buffer *SessionBuffer) {
 
 func (s *Session) syncCurrentCart() {
 	s.syncCart(s.CurrentBuffer())
+}
+
+// endInsertMode commits any active insert session before a buffer or cart-tab
+// switch. Counted inserts and dot replay must stay within the original tab.
+func (s *Session) endInsertMode() {
+	if ed := s.CurrentEditor(); ed != nil {
+		s.Vim.EndInsertMode(ed)
+		s.syncCurrentCart()
+	}
 }
 
 func (s *Session) currentTab() (cart.Tab, bool) {

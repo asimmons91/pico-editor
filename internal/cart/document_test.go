@@ -296,6 +296,14 @@ func TestCartSymlinkOutsideRootNeedsPermission(t *testing.T) {
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("symlink was replaced: %v %v", info, err)
 	}
+	// A deleted target under the same symlinked directory must still be
+	// checked against the workspace boundary before Recreate.
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.PrepareSave(SaveOptions{AllowExternalChange: true}); !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("missing-target PrepareSave err = %v, want ErrOutsideRoot", err)
+	}
 }
 
 func TestReadOnlyCartRefusesSave(t *testing.T) {
@@ -310,6 +318,36 @@ func TestReadOnlyCartRefusesSave(t *testing.T) {
 	}
 	if _, err := doc.PrepareSave(SaveOptions{}); !errors.Is(err, ErrReadOnly) {
 		t.Fatalf("PrepareSave err = %v, want ErrReadOnly", err)
+	}
+}
+
+func TestDeletedReadOnlyCartCanBeRecreated(t *testing.T) {
+	path := copyFixture(t, "all_sections.p8")
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := doc.PrepareSave(SaveOptions{AllowExternalChange: true})
+	if err != nil {
+		t.Fatalf("recreate PrepareSave: %v", err)
+	}
+	if snapshot.Mode.Perm() != 0o644 {
+		t.Fatalf("recreate mode = %o, want 0644", snapshot.Mode.Perm())
+	}
+	if err := snapshot.Write(); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.CommitSave(snapshot, nil); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("recreated file = %v %v", info, err)
 	}
 }
 
@@ -334,6 +372,52 @@ func TestSyncTabsAfterEdits(t *testing.T) {
 	}
 	if doc.Tabs[1].StartLine != 5 || doc.Tabs[1].MarkerLine != 4 {
 		t.Fatalf("tab 1 = %+v", doc.Tabs[1])
+	}
+}
+
+func TestCodeSectionHeaderIsRejected(t *testing.T) {
+	path := copyFixture(t, "all_sections.p8")
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.Code.Apply(editor.Edit{
+		Start: editor.Pos{Line: 0},
+		End:   editor.Pos{Line: 0},
+		Text:  "__gfx__\n",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.FullText(); !errors.Is(err, ErrCodeSection) {
+		t.Fatalf("FullText err = %v, want ErrCodeSection", err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Save(); !errors.Is(err, ErrCodeSection) {
+		t.Fatalf("Save err = %v, want ErrCodeSection", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("rejected save changed the cart")
+	}
+}
+
+func TestParseErrorIncludesPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.p8")
+	if err := os.WriteFile(path, []byte("pico-8 cartridge // pico-8.com\nversion 42\n__lua__\n____\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(path)
+	if err == nil {
+		t.Fatal("Open accepted a malformed cart")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Fatalf("error %q does not include %q", err, path)
 	}
 }
 

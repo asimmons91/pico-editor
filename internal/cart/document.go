@@ -187,11 +187,35 @@ func (d *Document) FullText() (string, error) {
 	if d.Parsed == nil || !d.Parsed.HasCode() {
 		return "", fmt.Errorf("%w: %s", ErrNoCode, d.Path)
 	}
-	data, err := d.Parsed.ReplaceCode(protectTrailingCR(d.codeText()))
+	code := d.codeText()
+	if err := validateCodeText(code); err != nil {
+		return "", err
+	}
+	data, err := d.Parsed.ReplaceCode(protectTrailingCR(code))
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// validateCodeText rejects code that pkg/cart would read back as a shortened
+// __lua__ body because a visible line became a section header. Creating a
+// section by typing is never a valid code edit.
+func validateCodeText(code string) error {
+	probe := "pico-8 cartridge // pico-8.com\nversion 42\n__lua__\n" + code
+	doc, err := p8cart.Parse("code.p8", []byte(probe))
+	if err != nil {
+		var parseErr *p8cart.ParseError
+		if errors.As(err, &parseErr) && parseErr.Line >= 3 {
+			return fmt.Errorf("%w at code line %d: %v", ErrCodeSection, parseErr.Line-2, parseErr.Err)
+		}
+		return fmt.Errorf("%w: %v", ErrCodeSection, err)
+	}
+	if doc.Code() != code {
+		line := strings.Count(doc.Code(), "\n") + 1
+		return fmt.Errorf("%w at code line %d", ErrCodeSection, line)
+	}
+	return nil
 }
 
 // codeText returns the buffer text to splice. A synthetic trailing blank line
@@ -214,6 +238,11 @@ func (d *Document) ensureSyntheticTail() {
 	}
 	last := &d.Tabs[len(d.Tabs)-1]
 	if last.StartLine != last.EndLine {
+		if d.syntheticTail && d.Code.Lines[len(d.Code.Lines)-1] == "" {
+			// The final empty line is the invisible newline of the virtual
+			// trailing row, even after content was added before it.
+			return
+		}
 		d.syntheticTail = false
 		return
 	}

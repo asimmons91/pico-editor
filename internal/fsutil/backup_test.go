@@ -58,6 +58,29 @@ func TestBackupExhaustion(t *testing.T) {
 	}
 }
 
+func TestBackupDirectorySyncFailureIsNotACommit(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "game.p8")
+	if err := os.WriteFile(path, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o300); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	_, err := Backup(path)
+	if err == nil {
+		t.Fatal("Backup succeeded without a readable directory")
+	}
+	var committed *CommitError
+	if errors.As(err, &committed) {
+		t.Fatalf("backup sync error reported as a committed target: %v", err)
+	}
+}
+
 func TestBackupMissingSource(t *testing.T) {
 	if _, err := Backup(filepath.Join(t.TempDir(), "missing.p8")); err == nil {
 		t.Fatal("Backup(missing) succeeded")

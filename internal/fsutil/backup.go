@@ -16,7 +16,7 @@ var ErrNoBackupName = errors.New("no free backup name")
 // written exclusively, fsynced, and removed on failure, so a failed backup
 // never becomes the source of an overwrite.
 func Backup(path string) (string, error) {
-	target, err := resolveTarget(path)
+	target, err := ResolveTarget(path)
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +82,7 @@ func writeBackup(path string, data []byte, mode fs.FileMode) (string, error) {
 		return "", fmt.Errorf("close backup %s: %w", path, err)
 	}
 	if err := syncDir(filepath.Dir(path)); err != nil {
-		return "", &CommitError{Err: err}
+		return "", fmt.Errorf("sync backup directory %s: %w", filepath.Dir(path), err)
 	}
 	ok = true
 	return path, nil

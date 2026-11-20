@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode"
 
 	"github.com/asimmons91/pico-editor/internal/cart"
 	"github.com/asimmons91/pico-editor/internal/editor"
@@ -41,8 +43,9 @@ type Session struct {
 	Status      string
 	StatusError bool
 
-	logger *slog.Logger
-	quit   bool
+	logger       *slog.Logger
+	quit         bool
+	suppressText rune
 }
 
 // SessionBuffer is one open file. Cart is non-nil for .p8 buffers; its Code
@@ -84,6 +87,7 @@ func (s *Session) CurrentBuffer() *SessionBuffer {
 // EndBatch resets frame-local input suppression after one Poll batch.
 func (s *Session) EndBatch() {
 	s.Vim.EndBatch()
+	s.suppressText = 0
 }
 
 // CurrentEditor returns the active editor, or nil if there is no buffer.
@@ -97,6 +101,21 @@ func (s *Session) CurrentEditor() *editor.Editor {
 // HandleEvent routes one input event to a dialog, the file tree, the help
 // overlay, or Vim.
 func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim.Action) {
+	if ev.Kind == input.KindText && s.suppressText != 0 {
+		if len(ev.Runes) > 0 && unicode.ToLower(ev.Runes[0]) == s.suppressText {
+			s.suppressText = 0
+			ev.Runes = ev.Runes[1:]
+			if len(ev.Runes) == 0 {
+				return false, false, nil
+			}
+		} else {
+			s.suppressText = 0
+		}
+	}
+	if ev.Kind == input.KindText && s.blocksTabSeparator(ev) {
+		s.SetStatus("cannot create a -->8 tab separator in insert mode", true)
+		return false, true, nil
+	}
 	if s.Dialog != nil {
 		return false, s.handleDialog(ev), nil
 	}
@@ -106,6 +125,10 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 	if s.Help != nil {
 		return false, s.handleHelp(ev), nil
 	}
+	if ev.Kind == input.KindText && s.blocksTabSeparator(ev) {
+		s.SetStatus("cannot create a -->8 tab separator in insert mode", true)
+		return false, true, nil
+	}
 	ed := s.CurrentEditor()
 	if ed == nil {
 		return false, false, nil
@@ -114,6 +137,39 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 	s.applyVimResult(result)
 	s.syncCurrentCart()
 	return false, true, result.Actions
+}
+
+// blocksTabSeparator prevents insert-mode text from turning a visible code
+// line into a hidden -->8 separator. Creating tabs by typing a separator is not
+// part of the M4 tab model; rejecting the keystroke avoids silently moving the
+// cursor or reordering text across tabs.
+func (s *Session) blocksTabSeparator(ev input.Event) bool {
+	if s.Vim.Mode != vim.ModeInsert || len(ev.Runes) == 0 {
+		return false
+	}
+	buffer := s.CurrentBuffer()
+	if buffer == nil || buffer.Cart == nil {
+		return false
+	}
+	ed := buffer.Editor
+	if ed.WindowEmpty() {
+		return false
+	}
+	pos := ed.Cursor.Pos
+	if pos.Line < 0 || pos.Line >= len(ed.Buffer.Lines) {
+		return false
+	}
+	line := ed.Buffer.Lines[pos.Line]
+	runes := []rune(line)
+	if pos.Rune < 0 || pos.Rune > len(runes) {
+		return false
+	}
+	inserted := string(ev.Runes)
+	if strings.Contains(inserted, "\n-->8") {
+		return true
+	}
+	prefix := string(runes[:pos.Rune]) + inserted
+	return strings.HasPrefix(prefix, "-->8") && !strings.HasPrefix(line, "-->8") && pos.Rune < len("-->8")
 }
 
 func (s *Session) applyVimResult(result vim.Result) (quit bool) {
@@ -213,6 +269,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 	if ed == nil {
 		return false
 	}
+	s.endInsertMode()
 	if path == "" {
 		if ed.Buffer.Dirty() && !force {
 			s.SetStatus("E37: No write since last change (add ! to override)", true)
@@ -303,6 +360,7 @@ func (s *Session) SwitchBuffer(number, delta int) (changed bool) {
 	if len(s.Buffers) == 0 {
 		return false
 	}
+	s.endInsertMode()
 	index := s.Current
 	switch {
 	case number > 0:
@@ -340,6 +398,7 @@ func (s *Session) SwitchTab(delta int) (changed bool) {
 	if delta == 0 {
 		return false
 	}
+	s.endInsertMode()
 	s.saveActiveView(buffer)
 	next := (buffer.ActiveTab + delta) % len(buffer.Cart.Tabs)
 	if next < 0 {

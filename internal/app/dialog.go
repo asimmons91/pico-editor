@@ -40,6 +40,9 @@ func (s *Session) ShowDialog(kind DialogKind, title, message string, options []D
 	if len(options) == 0 {
 		options = []DialogOption{{Label: "OK"}}
 	}
+	if ed := s.CurrentEditor(); ed != nil {
+		s.Vim.ResetPending(ed)
+	}
 	if defaultIndex < 0 || defaultIndex >= len(options) {
 		defaultIndex = 0
 	}
@@ -113,6 +116,7 @@ func (s *Session) handleDialog(ev input.Event) bool {
 			if optionAccelerator(option.Label) == letter {
 				dialog.Selected = index
 				dialog.Chosen = true
+				s.suppressText = letter
 				return true
 			}
 		}

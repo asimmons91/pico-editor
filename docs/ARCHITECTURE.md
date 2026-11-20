@@ -429,6 +429,8 @@ Development rules:
   and ex ranges are clamped to the active tab; the hidden `-->8` separator is
   never editable. Empty tabs use a virtual cursor and materialize one blank line
   on the first edit, so opening and saving an untouched cart stays byte-exact.
+  M4 rejects creating a new `-->8` separator by typing; code that would read
+  back as a cart section header is rejected at save time.
 - `internal/workspace` scans the project root with the M4 ignore list and entry
   cap, follows file symlinks but not directory symlinks, and builds cart/include
   associations through the public `pkg/cart` resolver. `ResolveInclude` returns

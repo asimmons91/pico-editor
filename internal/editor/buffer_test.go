@@ -163,6 +163,34 @@ func TestEditedCRLFAndBOMRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDeletedReadOnlyFileCanBeRecreated(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "readonly.lua", []byte("print(1)\n"), 0o444)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := buffer.PrepareSaveWithOptions(SaveOptions{AllowExternalChange: true})
+	if err != nil {
+		t.Fatalf("PrepareSaveWithOptions: %v", err)
+	}
+	if snapshot.Mode.Perm() != 0o644 {
+		t.Fatalf("recreate mode = %o, want 0644", snapshot.Mode.Perm())
+	}
+	if err := snapshot.Write(); err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.CommitSave(snapshot, nil); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("recreated file = %v %v", info, err)
+	}
+}
+
 func TestSaveRejectsReadOnlyFile(t *testing.T) {
 	t.Parallel()
 

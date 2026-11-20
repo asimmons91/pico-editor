@@ -84,6 +84,7 @@ type Game struct {
 	saveBusy         bool
 	pendingQuit      bool
 	saveAll          bool
+	saveAllQuit      bool
 	saveAllQueue     []*SessionBuffer
 	dialogContext    *dialogContext
 	mouseDown        bool
@@ -195,7 +196,7 @@ func (g *Game) updateFrame() error {
 	} else if saveChanged {
 		changed = true
 	}
-	if g.pendingQuit && !g.saveBusy {
+	if g.shouldTerminate() {
 		return ebiten.Termination
 	}
 	if clipboardChanged, quit := g.pollClipboard(); quit {
@@ -227,7 +228,7 @@ func (g *Game) updateFrame() error {
 	if g.session != nil {
 		g.session.EndBatch()
 	}
-	if g.pendingQuit && !g.saveBusy {
+	if g.shouldTerminate() {
 		return ebiten.Termination
 	}
 	if changed {
@@ -578,6 +579,7 @@ func (g *Game) handleDialogResult() bool {
 		case 0:
 			g.startSaveAll()
 		case 1:
+			g.cancelSaveAll()
 			g.pendingQuit = true
 		default:
 			g.cancelSaveAll()
@@ -599,6 +601,23 @@ func (g *Game) reloadSessionBuffer(buffer *SessionBuffer) (*SessionBuffer, bool)
 		return nil, false
 	}
 	return g.session.Buffers[index], true
+}
+
+func (g *Game) shouldTerminate() bool {
+	if !g.pendingQuit || g.saveBusy {
+		return false
+	}
+	if g.saveAllQuit && g.session != nil && !g.session.CanQuitAll() {
+		// A buffer was dirtied after the previous queue drained. Save again
+		// instead of exiting with unsaved changes.
+		g.saveAllQuit = false
+		g.saveAll = true
+		g.pendingQuit = false
+		g.saveAllQueue = g.session.unsavedBuffers()
+		g.nextSaveAll()
+		return false
+	}
+	return true
 }
 
 func (g *Game) requestQuitAll() (quit, changed bool) {
@@ -632,6 +651,7 @@ func (g *Game) startSaveAll() {
 		return
 	}
 	g.saveAll = true
+	g.saveAllQuit = false
 	g.saveAllQueue = g.session.unsavedBuffers()
 	g.nextSaveAll()
 }
@@ -656,12 +676,23 @@ func (g *Game) nextSaveAll() {
 		g.cancelSaveAll()
 		return
 	}
+	if !g.session.CanQuitAll() {
+		// Edits can land while asynchronous saves drain. Rebuild the queue so
+		// Save all never quits with a dirty buffer.
+		g.saveAllQueue = g.session.unsavedBuffers()
+		if len(g.saveAllQueue) > 0 {
+			g.nextSaveAll()
+			return
+		}
+	}
 	g.saveAll = false
+	g.saveAllQuit = true
 	g.pendingQuit = true
 }
 
 func (g *Game) cancelSaveAll() {
 	g.saveAll = false
+	g.saveAllQuit = false
 	g.saveAllQueue = nil
 }
 

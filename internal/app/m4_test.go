@@ -164,6 +164,16 @@ func TestCartTabConfinement(t *testing.T) {
 	if got := buffer.Editor.Cursor.Pos.Line; got != 1 {
 		t.Fatalf("tab 1 cursor = %d, want its first line", got)
 	}
+	if err := sendKeys(t, game, "Gdddd"); err != nil {
+		t.Fatalf("Update delete last tab: %v", err)
+	}
+	text = buffer.Editor.Buffer.Text()
+	if strings.Contains(text, "a=3") || strings.Contains(text, "c=3") {
+		t.Fatalf("tab 1 content survived deletion: %q", text)
+	}
+	if !strings.Contains(text, "-->8 second\n") {
+		t.Fatalf("separator was removed: %q", text)
+	}
 }
 
 func TestCartEmptyTabEditing(t *testing.T) {
@@ -235,6 +245,26 @@ func TestTrailingEmptyTabEditing(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "a=1\n-->8\nhello\n") {
 		t.Fatalf("trailing empty-tab edit = %q", data)
+	}
+}
+
+func TestTrailingEmptyTabOpenLineSavesOneBlank(t *testing.T) {
+	const cart = "pico-8 cartridge // pico-8.com\nversion 42\n__lua__\na=1\n-->8\n"
+	game, path := newCartGame(t, cart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, ":tabn<enter>o<esc>:w<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	waitClean(t, game, buffer)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(data), "a=1\n-->8\n\n") {
+		t.Fatalf("o in trailing empty tab = %q, want one blank line", data)
+	}
+	if strings.HasSuffix(string(data), "\n\n\n") {
+		t.Fatalf("o saved an extra blank line: %q", data)
 	}
 }
 
@@ -332,6 +362,30 @@ func TestSaveConflictOverwriteCreatesBackup(t *testing.T) {
 	}
 }
 
+func TestLongDirtyFileTabKeepsMarker(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	long := filepath.Join(filepath.Dir(game.session.CurrentEditor().Buffer.Path), strings.Repeat("x", 40)+".lua")
+	if err := os.WriteFile(long, []byte("x=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendKeys(t, game, ":e "+filepath.Base(long)+"<enter>iX<esc>"); err != nil {
+		t.Fatal(err)
+	}
+	labels := game.session.fileTabLabels()
+	if len(labels) == 0 || !strings.Contains(labels[len(labels)-1], "*") {
+		t.Fatalf("labels = %q, want a dirty marker", labels)
+	}
+}
+
+func TestClampTreeTopKeepsSelectionVisible(t *testing.T) {
+	if got := clampTreeTop(0, 80, 100, 40); got != 41 {
+		t.Fatalf("top = %d, want 41", got)
+	}
+	if got := clampTreeTop(80, 2, 100, 40); got != 2 {
+		t.Fatalf("top = %d, want 2", got)
+	}
+}
+
 func TestDirectoryStartupFocusesTreeAndOpensFile(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "game.p8"), []byte(fullCart), 0o644); err != nil {
@@ -361,6 +415,7 @@ func TestDirectoryStartupFocusesTreeAndOpensFile(t *testing.T) {
 
 func TestExternalFocusReloadsCleanAndReportsDirty(t *testing.T) {
 	game, path := newCartGame(t, fullCart)
+	game.session.CurrentEditor().SetCursor(editor.Pos{Line: 1})
 	reloaded := strings.Replace(fullCart, "a=1", "a=9", 1)
 	if err := os.WriteFile(path, []byte(reloaded), 0o644); err != nil {
 		t.Fatal(err)
@@ -371,6 +426,9 @@ func TestExternalFocusReloadsCleanAndReportsDirty(t *testing.T) {
 	current := game.session.CurrentBuffer()
 	if got := current.Editor.Buffer.Text(); !strings.Contains(got, "a=9") {
 		t.Fatalf("clean buffer did not reload: %q", got)
+	}
+	if got := current.Editor.Cursor.Pos.Line; got != 1 {
+		t.Fatalf("reloaded cursor line = %d, want preserved line 1", got)
 	}
 	if _, err := current.Editor.Buffer.Apply(editor.Edit{Start: current.Editor.Cursor.Pos, End: current.Editor.Cursor.Pos, Text: "dirty"}); err != nil {
 		t.Fatal(err)
@@ -462,6 +520,199 @@ func TestConflictReloadThenWriteQuit(t *testing.T) {
 	}
 	if string(data) != external {
 		t.Fatalf("reload wrote the file: %q", data)
+	}
+}
+
+func TestDialogAcceleratorDoesNotInsertText(t *testing.T) {
+	game, path := newCartGame(t, fullCart)
+	if err := sendKeys(t, game, "iX"); err != nil {
+		t.Fatal(err)
+	}
+	external := strings.Replace(fullCart, "a=1", "a=5", 1)
+	if err := os.WriteFile(path, []byte(external), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	game.source.(*fakeSource).events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyS, Mods: input.ModCtrl}}
+	if err := game.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if game.session.Dialog == nil || game.session.Dialog.Kind != DialogConflict {
+		t.Fatalf("dialog = %+v, want conflict", game.session.Dialog)
+	}
+	if err := sendKeys(t, game, "o"); err != nil {
+		t.Fatal(err)
+	}
+	waitClean(t, game, game.session.CurrentBuffer())
+	buffer := game.session.CurrentBuffer()
+	if got := buffer.Editor.Buffer.Lines[0]; got != "Xa=1" {
+		t.Fatalf("line = %q, want the accelerator text suppressed", got)
+	}
+}
+
+func TestTypingTabSeparatorIsRejected(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, "ggcc-->8 new<esc>"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(game.session.Status, "cannot create") {
+		t.Fatalf("status = %q, want separator rejection", game.session.Status)
+	}
+	text := buffer.Editor.Buffer.Text()
+	if got := strings.Count(text, "-->8"); got != 1 {
+		t.Fatalf("separator count = %d, want the original only: %q", got, text)
+	}
+	if got := buffer.Editor.Buffer.Lines[0]; got != "--> new" {
+		t.Fatalf("line 0 = %q, want the typed text kept as code", got)
+	}
+}
+
+func TestEmptyTabVisualOperatorsDoNotCopySeparator(t *testing.T) {
+	const cart = "pico-8 cartridge // pico-8.com\nversion 42\n__lua__\n-->8 first\na=1\n"
+	game, _ := newCartGame(t, cart)
+	buffer := game.session.CurrentBuffer()
+	before := buffer.Editor.Buffer.Text()
+	if err := sendKeys(t, game, "VU"); err != nil {
+		t.Fatal(err)
+	}
+	if got := buffer.Editor.Buffer.Text(); got != before {
+		t.Fatalf("visual operator copied the separator:\n got %q\nwant %q", got, before)
+	}
+	game.source.(*fakeSource).events = []input.Event{
+		{Kind: input.KindKeyDown, Key: input.KeyV, Mods: input.ModCtrl},
+		{Kind: input.KindKeyDown, Key: input.KeyD},
+	}
+	if err := game.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if got := buffer.Editor.Buffer.Text(); got != before {
+		t.Fatalf("block delete changed the empty tab:\n got %q\nwant %q", got, before)
+	}
+}
+
+func TestSwitchingTabsDuringCountedInsertEndsInsert(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, "2iZ"); err != nil {
+		t.Fatal(err)
+	}
+	game.source.(*fakeSource).events = eventKeyTab
+	if err := game.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if buffer.ActiveTab != 1 {
+		t.Fatalf("active tab = %d, want 1", buffer.ActiveTab)
+	}
+	text := buffer.Editor.Buffer.Text()
+	if strings.Count(text, "-->8") != 1 {
+		t.Fatalf("separator duplicated: %q", text)
+	}
+	if !strings.Contains(text, "ZZa=1") {
+		t.Fatalf("counted insert was not completed in the original tab: %q", text)
+	}
+}
+
+var eventKeyTab = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyTab, Mods: input.ModCtrl}}
+
+func TestTabViewStateFollowsInsertedSeparator(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, ":tabn<enter>G:tabp<enter>:%s/^a=1/-->8 new/<enter>o<esc>:tabn<enter>:tabn<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	if len(buffer.Cart.Tabs) != 3 {
+		t.Fatalf("tabs = %+v, want 3 after the inserted separator", buffer.Cart.Tabs)
+	}
+	if buffer.ActiveTab != 2 {
+		t.Fatalf("active tab = %d, want the shifted original tab", buffer.ActiveTab)
+	}
+	if got := buffer.Editor.Cursor.Pos.Line; got != 5 {
+		t.Fatalf("shifted cursor line = %d, want 5", got)
+	}
+}
+
+func TestSaveAllRequeuesEditsDuringSave(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.lua")
+	if err := os.WriteFile(path, []byte("a=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	game := New(Config{Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return testClock }, File: path})
+	if err := game.StartupError(); err != nil {
+		t.Fatal(err)
+	}
+	game.source = &fakeSource{}
+	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+		t.Fatal(err)
+	}
+	buffer := game.session.CurrentBuffer()
+	game.startSaveAll()
+	if _, err := buffer.Editor.Insert("Y"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		err := game.Update()
+		if err == ebiten.Termination {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("save all did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "YXa=1\n" {
+		t.Fatalf("saved = %q, want the edit made during save-all", data)
+	}
+}
+
+func TestQuitGateRequeuesLateEdits(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.lua")
+	if err := os.WriteFile(path, []byte("a=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	game := New(Config{Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return testClock }, File: path})
+	if err := game.StartupError(); err != nil {
+		t.Fatal(err)
+	}
+	game.source = &fakeSource{}
+	buffer := game.session.CurrentBuffer()
+	if _, err := buffer.Editor.Insert("X"); err != nil {
+		t.Fatal(err)
+	}
+	game.saveAllQuit = true
+	game.pendingQuit = true
+	if game.shouldTerminate() {
+		t.Fatal("quit gate ignored a late dirty edit")
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		err := game.Update()
+		if err == ebiten.Termination {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("late-edit save did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "Xa=1\n" {
+		t.Fatalf("saved = %q, want the late edit", data)
 	}
 }
 
