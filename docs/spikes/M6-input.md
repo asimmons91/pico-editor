@@ -23,7 +23,8 @@ milestone owner.
 - Shift+A–Z was captured one glyph per line and matches bytes `0x80`–`0x99`.
 - Hiragana and Katakana were captured by typing romaji one sequence per line and
   saving with `Ctrl+S`; the saved `.p8` bodies are the authoritative expected
-  values.
+  values. A broad CV/digraph/alias/c-row/invalid sweep, the doubled-consonant
+  and `n` edge cases, and the ten Shift+digit symbols are also checked in.
 - Ctrl+P was captured separately: the status reads `PUNY FONT MODE (CTRL-P)`,
   unshifted letters save as uppercase ASCII, and Shift+letter saves standard
   lowercase ASCII. It does not change rendering.
