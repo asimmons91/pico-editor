@@ -1,0 +1,222 @@
+matrix: 2.8-w
+name: write queues a save action
+buffer: abc
+keys: :w<enter>
+want.buffer: abc
+want.action: save
+want.mode: normal
+---
+matrix: 2.8-q
+name: quit on a clean buffer
+buffer: abc
+keys: :q<enter>
+want.buffer: abc
+want.action: quit
+want.mode: normal
+---
+matrix: 2.8-q-bang
+name: force quit discards changes
+buffer: abc
+keys: x:q!<enter>
+want.buffer: bc
+want.action: quit
+want.mode: normal
+---
+matrix: 2.8-wq-x
+name: write and quit
+buffer: abc
+keys: :wq<enter>
+want.buffer: abc
+want.action: save
+want.mode: normal
+---
+matrix: 2.8-x
+name: x writes and quits
+buffer: abc
+keys: :x<enter>
+want.buffer: abc
+want.action: save
+want.mode: normal
+---
+matrix: 2.8-e
+name: edit without a path reloads
+buffer: abc
+keys: :e<enter>
+want.buffer: abc
+want.action: open
+want.mode: normal
+---
+matrix: 2.8-e-bang
+name: edit with a bang reloads a dirty buffer
+buffer: abc
+keys: x:e!<enter>
+want.buffer: bc
+want.action: open
+want.mode: normal
+---
+matrix: 2.8-e-path
+name: edit with a path queues an open action
+buffer: abc
+keys: :e other.lua<enter>
+want.buffer: abc
+want.action: open
+want.mode: normal
+---
+matrix: 2.8-bn-bp
+name: buffer next and previous
+buffer: abc
+keys: :bn<enter>:bp<enter>
+want.buffer: abc
+want.action: switch-buffer,switch-buffer
+want.mode: normal
+---
+matrix: 2.8-b
+name: buffer by number
+buffer: abc
+keys: :b 2<enter>
+want.buffer: abc
+want.action: switch-buffer
+want.mode: normal
+---
+matrix: 2.8-ls
+name: list buffers
+buffer: abc
+keys: :ls<enter>
+want.buffer: abc
+want.action: list-buffers
+want.mode: normal
+---
+matrix: 2.8-tabn-tabp
+name: cart tab navigation is forwarded to the host
+buffer: abc
+keys: :tabn<enter>:tabp<enter>
+want.buffer: abc
+want.action: switch-tab,switch-tab
+want.mode: normal
+---
+matrix: 2.8-help
+name: help opens the overlay
+buffer: abc
+keys: :help<enter>
+want.buffer: abc
+want.action: help
+want.mode: normal
+---
+matrix: 2.8-help-topic
+name: help accepts a topic
+buffer: abc
+keys: :help keys<enter>
+want.buffer: abc
+want.action: help
+want.mode: normal
+---
+matrix: 2.8-diag
+name: diagnostics arrive in M5
+buffer: abc
+keys: :diag<enter>
+want.buffer: abc
+want.notify: M5
+want.mode: normal
+---
+matrix: 2.8-messages
+name: messages arrive in M7
+buffer: abc
+keys: :messages<enter>
+want.buffer: abc
+want.notify: M7
+want.mode: normal
+---
+matrix: 2.8-reload
+name: config reload arrives in M7
+buffer: abc
+keys: :reload<enter>
+want.buffer: abc
+want.notify: M7
+want.mode: normal
+---
+matrix: 2.8-substitute
+name: substitute through the command line
+buffer: old old
+keys: :s/old/new/g<enter>
+want.buffer: new new
+want.mode: normal
+---
+matrix: 2.8-commandline-edit
+name: command line backspace and completion
+buffer: abc
+keys: :helpx<bs><tab><enter>
+want.buffer: abc
+want.action: help
+want.mode: normal
+---
+matrix: 2.8-commandline-clear
+name: ctrl-u clears the command line
+buffer: abc
+keys: :xyz<c-u>help<enter>
+want.buffer: abc
+want.action: help
+want.mode: normal
+---
+matrix: 2.8-commandline-word
+name: ctrl-w deletes the previous command word
+buffer: abc
+keys: :help keys<c-w>config<enter>
+want.buffer: abc
+want.action: help
+want.mode: normal
+---
+matrix: 2.8-commandline-history
+name: up recalls command history
+buffer: abc
+keys: :help<enter>:<up><enter>
+want.buffer: abc
+want.action: help,help
+want.mode: normal
+---
+matrix: 2.8-commandline-prefix
+name: command names accept unique prefixes
+buffer: abc
+keys: :h<enter>
+want.buffer: abc
+want.action: help
+want.mode: normal
+---
+matrix: 2.8-commandline-ambiguous
+name: ambiguous command prefixes are rejected
+buffer: abc
+keys: :tab<enter>
+want.buffer: abc
+want.notify: E492
+want.mode: normal
+---
+matrix: 2.8-errors
+name: quit refuses to discard changes
+buffer: abc
+keys: x:q<enter>
+want.buffer: bc
+want.notify: E37
+want.mode: normal
+---
+matrix: 2.8-error-substitute
+name: a missing pattern is an error
+buffer: abc
+keys: :s/nope/x/<enter>
+want.buffer: abc
+want.notify: E486
+want.mode: normal
+---
+matrix: 2.8-error-name
+name: write without a file name is rejected
+buffer: abc
+path: none
+keys: :w<enter>
+want.buffer: abc
+want.mode: normal
+---
+matrix: 2.8-error-write-path
+name: write rejects a path until path-aware saves land
+buffer: abc
+keys: :w /tmp/other.lua<enter>
+want.buffer: abc
+want.notify: E488
+want.mode: normal

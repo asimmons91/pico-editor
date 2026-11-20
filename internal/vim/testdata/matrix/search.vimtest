@@ -1,0 +1,89 @@
+matrix: 2.7-search
+name: forward and backward search prompts
+buffer: foo bar\nfoo baz
+keys: /foo<enter>?bar<enter>
+want.buffer: foo bar\nfoo baz
+want.cursor: 0,4
+want.mode: normal
+---
+matrix: 2.7-cancel
+name: escape cancels search and restores the cursor
+buffer: abc
+keys: /b<esc>
+want.buffer: abc
+want.cursor: 0,0
+want.mode: normal
+---
+matrix: 2.7-n-N
+name: n and N honor the search direction
+buffer: foo bar foo baz foo
+keys: /foo<enter>nN
+want.buffer: foo bar foo baz foo
+want.cursor: 0,8
+want.mode: normal
+---
+matrix: 2.7-star-hash
+name: star searches forward for the word under the cursor
+buffer: foo bar foo
+keys: *
+want.buffer: foo bar foo
+want.cursor: 0,8
+want.highlights: 2
+want.mode: normal
+---
+matrix: 2.7-hash
+name: hash searches backward for the word under the cursor
+buffer: foo bar foo
+cursor: 0,8
+keys: #
+want.buffer: foo bar foo
+want.cursor: 0,0
+want.highlights: 2
+want.mode: normal
+---
+matrix: 2.7-noh
+name: noh clears search highlighting
+buffer: foo bar foo
+keys: /foo<enter>:noh<enter>
+want.buffer: foo bar foo
+want.mode: normal
+want.highlights: 0
+---
+matrix: 2.7-highlight
+name: search highlights all matches
+buffer: foo bar foo
+keys: /foo<enter>
+want.buffer: foo bar foo
+want.highlights: 2
+want.mode: normal
+---
+matrix: 2.7-history
+name: up and down navigate search history
+buffer: foo bar
+keys: /foo<enter>/<up><enter>
+want.buffer: foo bar
+want.mode: normal
+---
+matrix: 2.7-smartcase
+name: lowercase patterns are case insensitive
+buffer: Foo foo
+keys: /foo<enter>
+want.buffer: Foo foo
+want.cursor: 0,4
+want.mode: normal
+---
+matrix: 2.7-magic
+name: escaped dot is literal in a search
+buffer: a.b axb
+keys: /a\.b<enter>
+want.buffer: a.b axb
+want.cursor: 0,0
+want.mode: normal
+---
+matrix: 2.7-backward
+name: backward search wraps and N reverses it
+buffer: foo bar foo
+keys: ?foo<enter>N
+want.buffer: foo bar foo
+want.cursor: 0,0
+want.mode: normal

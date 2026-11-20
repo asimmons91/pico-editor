@@ -33,16 +33,9 @@ func (s Search) Find(text string, from Pos) (Match, bool, error) {
 	if s.Pattern == "" {
 		return Match{}, false, nil
 	}
-	pattern := s.Pattern
-	if !s.Regex {
-		pattern = regexp.QuoteMeta(pattern)
-	}
-	if s.SmartCase && !hasUpper(s.Pattern) {
-		pattern = "(?i)" + pattern
-	}
-	expression, err := regexp.Compile(pattern)
+	expression, err := s.compile()
 	if err != nil {
-		return Match{}, false, fmt.Errorf("%w: %v", ErrInvalidPattern, err)
+		return Match{}, false, err
 	}
 
 	index := newTextIndex(text)
@@ -126,6 +119,59 @@ func clampToBufferLines(index *textIndex, position Pos) Pos {
 	position.Line = lineCount - 1
 	position.Rune = utf8.RuneCountInString(index.lineText(position.Line))
 	return position
+}
+
+// FindAll returns every cluster-aligned match in text. The previous pattern is
+// preserved when the expression is invalid.
+func (s Search) FindAll(text string) ([]Match, error) {
+	if s.Pattern == "" {
+		return nil, nil
+	}
+	expression, err := s.compile()
+	if err != nil {
+		return nil, err
+	}
+	index := newTextIndex(text)
+	locations := expression.FindAllStringIndex(text, -1)
+	matches := make([]Match, 0, len(locations))
+	for _, location := range locations {
+		start, err := index.byteToPos(location[0])
+		if err != nil {
+			continue
+		}
+		end, err := index.byteToPos(location[1])
+		if err != nil {
+			continue
+		}
+		start = clampToBufferLines(index, start)
+		end = clampToBufferLines(index, end)
+		startLine := index.lineText(start.Line)
+		start.Rune = clusterStart(startLine, start.Rune)
+		endLine := index.lineText(end.Line)
+		if end.Rune < utf8.RuneCountInString(endLine) && clusterStart(endLine, end.Rune) != end.Rune {
+			end.Rune = clusterEnd(endLine, end.Rune)
+		}
+		if end.Before(start) {
+			end = start
+		}
+		matches = append(matches, Match{Start: start, End: end})
+	}
+	return matches, nil
+}
+
+func (s Search) compile() (*regexp.Regexp, error) {
+	pattern := s.Pattern
+	if !s.Regex {
+		pattern = regexp.QuoteMeta(pattern)
+	}
+	if s.SmartCase && !hasUpper(s.Pattern) {
+		pattern = "(?i)" + pattern
+	}
+	expression, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidPattern, err)
+	}
+	return expression, nil
 }
 
 // FindIn is Find against a buffer snapshot.

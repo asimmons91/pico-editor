@@ -1,0 +1,103 @@
+matrix: 2.6-text
+name: insert committed text
+buffer:
+keys: iabc<esc>
+want.buffer: abc
+want.mode: normal
+---
+matrix: 2.6-enter
+name: enter splits a line
+buffer:
+keys: iabc<enter>def<esc>
+want.buffer: abc\ndef
+want.mode: normal
+---
+matrix: 2.6-backspace
+name: backspace deletes before the cursor
+buffer:
+keys: iabc<bs><bs>
+want.buffer: a
+want.mode: insert
+---
+matrix: 2.6-delete
+name: delete removes the cluster under the cursor
+buffer: abc
+keys: i<del><esc>
+want.buffer: bc
+want.mode: normal
+---
+matrix: 2.6-tab
+name: tab inserts spaces to the next tab stop
+buffer:
+keys: i<tab>x<esc>
+want.buffer: \s\sx
+want.mode: normal
+---
+matrix: 2.6-ctrl-w-u
+name: ctrl-w deletes the previous word
+buffer: one two
+keys: A<c-w><esc>
+want.buffer: one\s
+want.mode: normal
+---
+matrix: 2.6-ctrl-u
+name: ctrl-u deletes to line start
+buffer: one two
+keys: A<c-u><esc>
+want.buffer:
+want.mode: normal
+---
+matrix: 2.6-esc
+name: escape moves left one cell
+buffer: abc
+cursor: 0,1
+keys: iX<esc>
+want.buffer: aXbc
+want.cursor: 0,1
+want.mode: normal
+---
+matrix: 2.6-arrows
+name: arrows move without leaving insert
+buffer: abc
+cursor: 0,1
+keys: i<left>X<esc>
+want.buffer: Xabc
+want.mode: normal
+---
+matrix: 2.6-p8-modes
+name: p8 modes are deferred to M6
+buffer: abc
+keys: i<c-j><c-k><c-p><esc>
+want.buffer: abc
+want.notify: M6
+want.mode: normal
+---
+matrix: 2.6-completion
+name: completion keys are inert until M5
+buffer: abc
+keys: i<c-space><c-n><esc>
+want.buffer: abc
+want.mode: normal
+---
+matrix: 2.6-count
+name: a count before insert repeats the inserted text
+buffer:
+keys: 3iab<esc>
+want.buffer: ababab
+want.mode: normal
+---
+matrix: 2.6-home-end
+name: home and end move within insert mode
+buffer: abc
+cursor: 0,1
+keys: i<home>X<end>Y<esc>
+want.buffer: XabcY
+want.mode: normal
+---
+matrix: 2.6-ctrl-bracket
+name: ctrl-left-bracket leaves insert mode
+buffer: abc
+cursor: 0,1
+keys: iX<c-[>x
+want.buffer: abc
+want.mode: normal

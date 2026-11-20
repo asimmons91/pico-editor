@@ -1,0 +1,95 @@
+matrix: 2.10-unnamed
+name: unnamed register receives the last yank
+buffer: one two
+keys: yw
+want.buffer: one two
+want.register: unnamed:char:one\s
+want.mode: normal
+---
+matrix: 2.10-zero
+name: zero register keeps the last yank after a delete
+buffer: one two
+keys: ywdw
+want.buffer: two
+want.register: 0:char:one\s
+want.mode: normal
+---
+matrix: 2.10-numbered
+name: numbered registers rotate delete history
+buffer: one two three
+keys: dwdw
+want.buffer: three
+want.register: 2:char:one\s
+want.mode: normal
+---
+matrix: 2.10-named
+name: named register stores a yank
+buffer: one two
+keys: "ayw
+want.buffer: one two
+want.register: a:char:one\s
+want.mode: normal
+---
+matrix: 2.10-append
+name: uppercase register appends
+buffer: one two
+keys: "ayw"Adw
+want.buffer: two
+want.register: a:char:one\sone\s
+want.mode: normal
+---
+matrix: 2.10-blackhole
+name: black hole register discards a delete
+buffer: one two
+keys: "_dw
+want.buffer: two
+want.mode: normal
+---
+matrix: 2.10-clipboard-write
+name: clipboard yank writes the system register
+buffer: one
+keys: "+yy
+want.buffer: one
+want.clipboard: one\n
+want.action: clipboard-write
+want.mode: normal
+---
+matrix: 2.10-clipboard-read
+name: clipboard paste reads and inserts linewise text
+buffer: x
+clipboard: one\n
+keys: "+p
+want.buffer: x\none
+want.action: clipboard-read
+want.mode: normal
+---
+matrix: 2.10-types
+name: linewise paste creates a new line
+buffer: a\nb
+keys: yyjp
+want.buffer: a\nb\na
+want.mode: normal
+---
+matrix: 2.10-block-paste
+name: blockwise paste inserts a rectangle
+buffer: ab\ncd\n\nef
+keys: <c-v>jy3Gp
+want.buffer: ab\ncd\na\ncef
+want.register: unnamed:block:a\nc
+want.mode: normal
+---
+matrix: 2.10-block-replace
+name: visual block paste replaces a rectangle
+buffer: ab\ncd\nef\ngh
+keys: <c-v>jy3G<c-v>jp
+want.buffer: ab\ncd\naf\nch
+want.register: unnamed:block:a\nc
+want.mode: normal
+---
+matrix: dot-clipboard-paste
+name: dot repeats a clipboard paste
+buffer: one
+clipboard: X
+keys: "+p.
+want.buffer: oXXne
+want.mode: normal

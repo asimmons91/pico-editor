@@ -259,30 +259,98 @@ func (b *Buffer) invalidate() {
 // An LF file whose line content ends in CR cannot be written unambiguously; it
 // returns ErrAmbiguousCR instead of creating bytes that would reopen as CRLF.
 func (b *Buffer) Save() error {
+	snapshot, err := b.PrepareSave()
+	if err != nil {
+		return err
+	}
+	return b.CommitSave(snapshot, snapshot.Write())
+}
+
+// SaveSnapshot captures a validated write without touching the buffer. Prepare
+// it on the Update goroutine, call Write from a background goroutine, then call
+// CommitSave on the Update goroutine. The snapshot's hash becomes the save
+// point even if the buffer changed while the write was in flight.
+type SaveSnapshot struct {
+	Path    string
+	Target  string
+	Data    []byte
+	Mode    os.FileMode
+	Version int
+
+	hash     [sha256.Size]byte // canonical text save point
+	diskHash [sha256.Size]byte // encoded bytes on disk
+}
+
+// PrepareSave performs the same checks as Save and captures the bytes to write.
+// It returns typed errors without modifying the buffer or the file.
+func (b *Buffer) PrepareSave() (SaveSnapshot, error) {
 	if b.Path == "" {
-		return ErrNoPath
+		return SaveSnapshot{}, ErrNoPath
 	}
 	if isCartPath(b.Path) {
-		return pathError("save", b.Path, ErrUnsupportedFile)
+		return SaveSnapshot{}, pathError("save", b.Path, ErrUnsupportedFile)
 	}
 	if b.hasAmbiguousCR() {
-		return pathError("save", b.Path, ErrAmbiguousCR)
+		return SaveSnapshot{}, pathError("save", b.Path, ErrAmbiguousCR)
 	}
 	if b.disk.known {
 		if err := b.checkExternal(); err != nil {
-			return err
+			return SaveSnapshot{}, err
 		}
 	}
 	if b.Mode.Perm()&0o222 == 0 {
-		return pathError("save", b.Path, ErrReadOnly)
+		return SaveSnapshot{}, pathError("save", b.Path, ErrReadOnly)
 	}
 
 	target, err := b.saveTarget()
 	if err != nil {
-		return err
+		return SaveSnapshot{}, err
 	}
 	data := b.encode()
-	return b.finishWrite(target, data, fsutil.AtomicWrite(target, data, b.Mode))
+	return SaveSnapshot{
+		Path:     b.Path,
+		Target:   target,
+		Data:     data,
+		Mode:     b.Mode,
+		Version:  b.Version,
+		hash:     b.textHash(),
+		diskHash: sha256.Sum256(data),
+	}, nil
+}
+
+// Write performs the atomic write captured by PrepareSave. It does not touch
+// the buffer and is safe to run off the Update goroutine.
+func (s SaveSnapshot) Write() error {
+	return fsutil.AtomicWrite(s.Target, s.Data, s.Mode)
+}
+
+// CommitSave records the result of a snapshot write. A CommitError means the
+// target was replaced but a post-rename step failed; the save point is still
+// updated so a retry is not blocked by a false external-change error.
+func (b *Buffer) CommitSave(snapshot SaveSnapshot, writeErr error) error {
+	var committed *fsutil.CommitError
+	if writeErr != nil && !errors.As(writeErr, &committed) {
+		return pathError("save", b.Path, writeErr)
+	}
+
+	b.savedHash = snapshot.hash
+	b.SavedVersion = snapshot.Version
+	if info, statErr := os.Stat(snapshot.Target); statErr == nil {
+		b.Mode = info.Mode() & modeBits
+		b.disk = diskState{
+			known:   true,
+			size:    info.Size(),
+			modTime: info.ModTime(),
+			mode:    b.Mode,
+			hash:    snapshot.diskHash,
+		}
+	} else {
+		b.disk.known = false
+	}
+	if writeErr != nil {
+		return pathError("save", b.Path, writeErr)
+	}
+	return nil
 }
 
 func (b *Buffer) hasAmbiguousCR() bool {
@@ -300,34 +368,17 @@ func (b *Buffer) hasAmbiguousCR() bool {
 	return false
 }
 
-// finishWrite records the result of the atomic write. A CommitError means the
-// target was already replaced but a post-rename step failed; the bytes are on
-// disk, so the save point and disk metadata are updated before returning the
-// durability error. This keeps the next save retryable instead of reporting a
-// false ErrExternalChange forever.
+// finishWrite is the synchronous compatibility wrapper around CommitSave.
 func (b *Buffer) finishWrite(target string, data []byte, writeErr error) error {
-	var committed *fsutil.CommitError
-	if writeErr != nil && !errors.As(writeErr, &committed) {
-		return pathError("save", b.Path, writeErr)
-	}
-
-	b.MarkSaved()
-	if info, statErr := os.Stat(target); statErr == nil {
-		b.Mode = info.Mode() & modeBits
-		b.disk = diskState{
-			known:   true,
-			size:    info.Size(),
-			modTime: info.ModTime(),
-			mode:    b.Mode,
-			hash:    sha256.Sum256(data),
-		}
-	} else {
-		b.disk.known = false
-	}
-	if writeErr != nil {
-		return pathError("save", b.Path, writeErr)
-	}
-	return nil
+	return b.CommitSave(SaveSnapshot{
+		Path:     b.Path,
+		Target:   target,
+		Data:     data,
+		Mode:     b.Mode,
+		Version:  b.Version,
+		hash:     b.textHash(),
+		diskHash: sha256.Sum256(data),
+	}, writeErr)
 }
 
 func (b *Buffer) encode() []byte {

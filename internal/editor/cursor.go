@@ -22,8 +22,10 @@ const (
 	MotionDown
 	MotionWordForward
 	MotionWordBackward
+	MotionWordEnd
 	MotionBigWordForward
 	MotionBigWordBackward
+	MotionBigWordEnd
 	MotionLineStart
 	MotionFirstNonBlank
 	MotionLineEnd
@@ -52,10 +54,14 @@ func (e *Editor) Move(motion Motion, count int) {
 		e.moveWordForward(count, false)
 	case MotionWordBackward:
 		e.moveWordBackward(count, false)
+	case MotionWordEnd:
+		e.moveWordEnd(count, false, true)
 	case MotionBigWordForward:
 		e.moveWordForward(count, true)
 	case MotionBigWordBackward:
 		e.moveWordBackward(count, true)
+	case MotionBigWordEnd:
+		e.moveWordEnd(count, true, true)
 	case MotionLineStart:
 		e.setCursor(Pos{Line: e.Cursor.Pos.Line}, true)
 	case MotionFirstNonBlank:
@@ -98,6 +104,21 @@ func (e *Editor) MoveBigWordForward(count int) { e.Move(MotionBigWordForward, co
 
 // MoveBigWordBackward moves to the previous whitespace-delimited word start.
 func (e *Editor) MoveBigWordBackward(count int) { e.Move(MotionBigWordBackward, count) }
+
+// MoveWordEnd moves to the last cluster of the next or current word.
+func (e *Editor) MoveWordEnd(count int) { e.Move(MotionWordEnd, count) }
+
+// MoveBigWordEnd moves to the last cluster of the next or current big word.
+func (e *Editor) MoveBigWordEnd(count int) { e.Move(MotionBigWordEnd, count) }
+
+// MoveWordEndOperator moves to the end of the current word without advancing
+// when the cursor is already there. Vim's cw/cW use it so changing the last
+// character of a word does not consume the next word.
+func (e *Editor) MoveWordEndOperator(count int, big bool) {
+	e.BreakGroup()
+	e.moveWordEnd(count, big, false)
+	e.EnsureVisible()
+}
 
 // MoveLineStart moves to column zero.
 func (e *Editor) MoveLineStart() { e.Move(MotionLineStart, 1) }
@@ -226,6 +247,22 @@ func (e *Editor) classAt(position Pos) charClass {
 	return classOf(r)
 }
 
+func (e *Editor) atWordEnd(position Pos, big bool) bool {
+	class := e.classAt(position)
+	if class == classSpace {
+		return false
+	}
+	next := e.Buffer.NextCluster(position)
+	if next == position || next.Line != position.Line {
+		return true
+	}
+	nextClass := e.classAt(next)
+	if big {
+		return nextClass == classSpace
+	}
+	return nextClass != class
+}
+
 func (e *Editor) atBufferStart(position Pos) bool {
 	return position.Line == 0 && position.Rune == 0
 }
@@ -256,6 +293,49 @@ func (e *Editor) moveWordForward(count int, big bool) {
 			}
 		}
 		for !e.atBufferEnd(position) && e.classAt(position) == classSpace {
+			position = e.Buffer.NextCluster(position)
+		}
+	}
+	e.setCursor(position, true)
+}
+
+func (e *Editor) moveWordEnd(count int, big bool, advanceAtEnd bool) {
+	position := e.Cursor.Pos
+	for i := 0; i < count; i++ {
+		if e.atBufferEnd(position) {
+			break
+		}
+		if advanceAtEnd && e.atWordEnd(position, big) {
+			next := e.Buffer.NextCluster(position)
+			if e.atBufferEnd(next) {
+				break
+			}
+			position = next
+		}
+		if e.classAt(position) == classSpace {
+			for !e.atBufferEnd(position) && e.classAt(position) == classSpace {
+				position = e.Buffer.NextCluster(position)
+			}
+		}
+		if e.atBufferEnd(position) {
+			break
+		}
+		class := e.classAt(position)
+		for {
+			next := e.Buffer.NextCluster(position)
+			if next == position || next.Line != position.Line {
+				break
+			}
+			if big {
+				if e.classAt(next) == classSpace {
+					break
+				}
+			} else if e.classAt(next) != class {
+				break
+			}
+			position = next
+		}
+		if i+1 < count && !e.atBufferEnd(position) {
 			position = e.Buffer.NextCluster(position)
 		}
 	}

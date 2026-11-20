@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"time"
-	"unicode/utf8"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/render"
+	"github.com/asimmons91/pico-editor/internal/vim"
 )
 
 // Config carries the dependencies the game needs. Later milestones extend it
@@ -24,22 +24,30 @@ type Config struct {
 	Clipboard input.Clipboard
 	// Now supplies wall-clock time for cursor blink. Nil uses time.Now.
 	Now func() time.Time
-	// DebugCharset forces the M1 charset screen and starts with the width
-	// overlay. M1 shows the screen regardless; M2 keeps the flag.
+	// DebugCharset forces the M1 charset screen instead of the editor.
 	DebugCharset bool
-	// File opens a .lua file in the temporary M2 debug buffer screen. It is
-	// mutually exclusive with DebugCharset.
+	// File opens a .lua file in the Vim-backed editor. It is mutually
+	// exclusive with DebugCharset.
 	File string
 }
 
+type clipboardOp uint8
+
+const (
+	clipboardRead clipboardOp = iota
+	clipboardWrite
+)
+
 type clipboardResult struct {
+	kind clipboardOp
 	text string
 	err  error
 }
 
-// maxPastePreviewBytes bounds the text normalized and quoted for the debug
-// log. The full clipboard text is never copied just to show a short preview.
-const maxPastePreviewBytes = 4096
+type saveResult struct {
+	job *SaveJob
+	err error
+}
 
 // Game is the root Ebitengine game. It owns no package-level state.
 type Game struct {
@@ -49,11 +57,14 @@ type Game struct {
 	source           input.Source
 	clipboard        input.Clipboard
 	clipboardResults chan clipboardResult
-	clipboardBusy    bool
 	renderer         *Renderer
 	charset          *Charset
-	debug            *DebugBuffer
+	session          *Session
+	saveResults      chan saveResult
+	saveBusy         bool
+	pendingQuit      bool
 	startupErr       error
+	closeNotified    bool
 	blink            *Blink
 	scale            int
 	now              func() time.Time
@@ -83,7 +94,8 @@ func New(cfg Config) *Game {
 	game := &Game{
 		logger:           logger,
 		clipboard:        clipboard,
-		clipboardResults: make(chan clipboardResult, 1),
+		clipboardResults: make(chan clipboardResult, 8),
+		saveResults:      make(chan saveResult, 4),
 		renderer:         NewRenderer(CanvasWidth, CanvasHeight, logger),
 		charset:          charset,
 		blink:            NewBlink(now()),
@@ -92,13 +104,16 @@ func New(cfg Config) *Game {
 	}
 	game.source = input.NewEbitenSource(game.mapCursor)
 	game.step = game.updateFrame
-	if cfg.File != "" {
-		if cfg.DebugCharset {
+	if cfg.DebugCharset {
+		if cfg.File != "" {
 			game.startupErr = fmt.Errorf("cannot combine --debug-charset with a file argument")
-		} else if debug, openErr := NewDebugBuffer(cfg.File); openErr != nil {
+		}
+	} else {
+		session, openErr := NewSession(cfg.File, logger)
+		if openErr != nil {
 			game.startupErr = openErr
 		} else {
-			game.debug = debug
+			game.session = session
 		}
 	}
 	game.redraw()
@@ -129,7 +144,22 @@ func (g *Game) Update() (err error) {
 func (g *Game) updateFrame() error {
 	now := g.now()
 	changed := g.blink.Update(now)
-	if g.pollPaste() {
+	if quit, saveChanged := g.pollSave(); quit {
+		return ebiten.Termination
+	} else if saveChanged {
+		changed = true
+	}
+	if g.pendingQuit && !g.saveBusy {
+		return ebiten.Termination
+	}
+	if clipboardChanged, quit := g.pollClipboard(); quit {
+		return ebiten.Termination
+	} else if clipboardChanged {
+		changed = true
+	}
+	if quit, closeChanged := g.handleWindowClose(ebiten.IsWindowBeingClosed()); quit {
+		return ebiten.Termination
+	} else if closeChanged {
 		changed = true
 	}
 	events := g.source.Poll()
@@ -144,9 +174,15 @@ func (g *Game) updateFrame() error {
 		quit, eventChanged := g.handleEvent(event)
 		changed = changed || eventChanged
 		if quit {
-			g.logger.Info("quit requested", "key", "ctrl+q")
+			g.logger.Info("quit requested")
 			return ebiten.Termination
 		}
+	}
+	if g.session != nil {
+		g.session.EndBatch()
+	}
+	if g.pendingQuit && !g.saveBusy {
+		return ebiten.Termination
 	}
 	if changed {
 		g.redraw()
@@ -157,13 +193,13 @@ func (g *Game) updateFrame() error {
 func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 	switch event.Kind {
 	case input.KindFocus:
-		if g.debug == nil {
+		if g.session == nil {
 			g.charset.AddLog(fmt.Sprintf("focus %t", event.Focused))
 		}
 		return false, true
 	case input.KindText:
-		if g.debug != nil {
-			return false, g.debug.HandleText(event.Runes)
+		if g.session != nil {
+			return g.handleSessionEvent(event)
 		}
 		g.charset.AddLog(fmt.Sprintf("text %q", string(event.Runes)))
 		return false, true
@@ -178,17 +214,50 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 	}
 }
 
+func (g *Game) handleWindowClose(closing bool) (quit, changed bool) {
+	if !closing {
+		return false, false
+	}
+	if g.session == nil {
+		// The charset debug screen has no unsaved state; let the platform close
+		// request terminate the game.
+		return true, false
+	}
+	if g.session.CanQuitAll() {
+		return true, false
+	}
+	if !g.closeNotified {
+		g.session.SetStatus("E37: No write since last change (add ! to override)", true)
+		g.closeNotified = true
+		return false, true
+	}
+	return false, false
+}
+
+func (g *Game) handleSessionEvent(event input.Event) (quit, changed bool) {
+	_, changed, actions := g.session.HandleEvent(event)
+	if quit, actionChanged := g.applyActions(actions); quit {
+		return true, true
+	} else {
+		changed = changed || actionChanged
+	}
+	return false, changed
+}
+
 func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 	key := event.Key
 	if key == input.KeyQ && event.Mods&input.ModCtrl != 0 && !event.Repeat {
+		if g.session != nil {
+			quit, changed = g.session.RequestQuit(false)
+			if quit {
+				return true, changed
+			}
+			return false, changed
+		}
 		return true, false
 	}
-	if key == input.KeyV && event.Mods&input.ModCtrl != 0 && !event.Repeat {
-		g.startPaste()
-		return false, true
-	}
-	if g.debug != nil {
-		return false, g.debug.HandleKey(event)
+	if g.session != nil {
+		return g.handleSessionEvent(event)
 	}
 
 	if event.Repeat {
@@ -248,23 +317,86 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 	return false, true
 }
 
-func (g *Game) startPaste() {
-	if g.clipboardBusy {
-		if g.debug != nil {
-			g.debug.SetStatus("paste pending", false)
-		} else {
-			g.charset.AddLog("paste pending")
+func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
+	for _, action := range actions {
+		changed = true
+		switch action.Kind {
+		case vim.ActionSave:
+			if g.startSave(action) {
+				return true, true
+			}
+		case vim.ActionQuit:
+			if g.saveBusy {
+				g.pendingQuit = true
+				return false, true
+			}
+			sessionQuit, _ := g.session.RequestQuit(action.Force)
+			if sessionQuit {
+				return true, true
+			}
+		case vim.ActionOpen:
+			g.session.OpenPath(action.Path, action.Force)
+		case vim.ActionSwitchBuffer:
+			g.session.SwitchBuffer(action.Number, action.Delta)
+		case vim.ActionListBuffers:
+			g.session.ShowBufferList()
+		case vim.ActionSwitchTab:
+			g.session.SwitchTab(action.Delta)
+		case vim.ActionHelp:
+			g.session.OpenHelp(action.Topic)
+		case vim.ActionClipboardRead:
+			g.startClipboardRead()
+		case vim.ActionClipboardWrite:
+			g.startClipboardWrite(action.Text)
 		}
-		return
 	}
-	if g.clipboardResults == nil {
-		g.clipboardResults = make(chan clipboardResult, 1)
+	return false, changed
+}
+
+func (g *Game) startSave(action vim.Action) (quit bool) {
+	job, err := g.session.PrepareSave(action)
+	if err != nil {
+		g.session.SetStatus(shortError(err), true)
+		return false
 	}
-	g.clipboardBusy = true
+	if job == nil {
+		return false
+	}
+	if job.OnlyIfDirty && job.Snapshot.Data == nil {
+		quit, _ := g.session.CompleteSave(job, nil)
+		return quit
+	}
+	if g.saveBusy {
+		g.session.SetStatus("save already in progress", true)
+		return false
+	}
+	g.saveBusy = true
+	go func() {
+		writeErr := job.Snapshot.Write()
+		g.saveResults <- saveResult{job: job, err: writeErr}
+	}()
+	return false
+}
+
+func (g *Game) pollSave() (quit, changed bool) {
+	if g.saveResults == nil || g.session == nil {
+		return false, false
+	}
+	select {
+	case result := <-g.saveResults:
+		g.saveBusy = false
+		quit, _ := g.session.CompleteSave(result.job, result.err)
+		return quit, true
+	default:
+		return false, false
+	}
+}
+
+func (g *Game) startClipboardRead() {
 	clipboard := g.clipboard
 	results := g.clipboardResults
 	go func() {
-		result := clipboardResult{}
+		result := clipboardResult{kind: clipboardRead}
 		func() {
 			defer func() {
 				if recovered := recover(); recovered != nil {
@@ -277,49 +409,46 @@ func (g *Game) startPaste() {
 	}()
 }
 
-func (g *Game) pollPaste() bool {
+func (g *Game) startClipboardWrite(text string) {
+	clipboard := g.clipboard
+	results := g.clipboardResults
+	go func() {
+		result := clipboardResult{kind: clipboardWrite}
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					result.err = fmt.Errorf("clipboard panic: %v", recovered)
+				}
+			}()
+			result.err = clipboard.WriteText(text)
+		}()
+		results <- result
+	}()
+}
+
+func (g *Game) pollClipboard() (changed, quit bool) {
 	if g.clipboardResults == nil {
-		return false
+		return false, false
 	}
-	select {
-	case result := <-g.clipboardResults:
-		g.clipboardBusy = false
-		g.applyPaste(result)
-		return true
-	default:
-		return false
-	}
-}
-
-func (g *Game) applyPaste(result clipboardResult) {
-	if result.err != nil {
-		if g.debug != nil {
-			g.debug.SetStatus("paste: "+shortError(result.err), true)
-		} else {
-			g.charset.AddLog("paste error: " + shortError(result.err))
+	for {
+		select {
+		case result := <-g.clipboardResults:
+			changed = true
+			if g.session == nil {
+				continue
+			}
+			if result.kind == clipboardRead {
+				_, actions := g.session.CompleteClipboardRead(input.NormalizeNewlines(result.text), result.err)
+				if actionQuit, _ := g.applyActions(actions); actionQuit {
+					return true, true
+				}
+			} else if result.err != nil {
+				g.session.SetStatus("clipboard: "+shortError(result.err), true)
+			}
+		default:
+			return changed, false
 		}
-		return
 	}
-	if g.debug != nil {
-		g.debug.SetPaste(result.text)
-		return
-	}
-	text := input.NormalizeNewlines(previewPrefix(result.text, maxPastePreviewBytes))
-	g.charset.AddLog("paste " + truncate(text, 48))
-}
-
-func previewPrefix(text string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	if len(text) <= limit {
-		return text
-	}
-	cut := limit
-	for cut > 0 && !utf8.RuneStart(text[cut]) {
-		cut--
-	}
-	return text[:cut]
 }
 
 func shortError(err error) string {
@@ -349,10 +478,10 @@ func (g *Game) setScale(scale int) {
 }
 
 func (g *Game) redraw() {
-	g.charset.CursorVisible = g.blink.Visible()
-	if g.debug != nil {
-		g.debug.Draw(&g.renderer.Surface, g.blink.Visible())
+	if g.session != nil {
+		g.session.Draw(&g.renderer.Surface, g.blink.Visible())
 	} else {
+		g.charset.CursorVisible = g.blink.Visible()
 		g.charset.Draw(&g.renderer.Surface)
 	}
 	g.renderer.MarkDirty()

@@ -1,0 +1,116 @@
+matrix: 2.9-current
+name: current-line substitute replaces the first match
+buffer: old old\nold
+keys: :s/old/new/<enter>
+want.buffer: new old\nold
+want.mode: normal
+---
+matrix: 2.9-whole
+name: whole-buffer substitute with g
+buffer: old old\nold
+keys: :%s/old/new/g<enter>
+want.buffer: new new\nnew
+want.mode: normal
+---
+matrix: 2.9-visual
+name: visual range substitute
+buffer: a\na\nc
+keys: Vj:s/a/A/g<enter>
+want.buffer: A\nA\nc
+want.mode: normal
+---
+matrix: 2.9-lines
+name: absolute line range substitute
+buffer: a\nb\nc\nd
+keys: :2,3s/.*/X/<enter>
+want.buffer: a\nX\nX\nd
+want.mode: normal
+---
+matrix: 2.9-flags
+name: case-insensitive global substitute
+buffer: Foo foo
+keys: :%s/foo/x/gi<enter>
+want.buffer: x x
+want.mode: normal
+---
+matrix: 2.9-replacement-amp
+name: ampersand inserts the whole match
+buffer: abc
+keys: :s/b/[&]/<enter>
+want.buffer: a[b]c
+want.mode: normal
+---
+matrix: 2.9-replacement-groups
+name: capture groups reorder text
+buffer: abc
+keys: :s/\(a\)\(b\)/\2\1/<enter>
+want.buffer: bac
+want.mode: normal
+---
+matrix: 2.9-replacement-slash
+name: escaped slashes appear in pattern and replacement
+buffer: a/b
+keys: :s/a\/b/c\/d/<enter>
+want.buffer: c/d
+want.mode: normal
+---
+matrix: 2.9-undo
+name: substitute is one undo entry
+buffer: old old
+keys: :%s/old/new/g<enter>u
+want.buffer: old old
+want.mode: normal
+---
+matrix: 2.9-no-match
+name: no match is an error and leaves the buffer alone
+buffer: abc
+keys: :%s/zzz/x/g<enter>
+want.buffer: abc
+want.notify: E486
+want.mode: normal
+---
+matrix: 2.9-dot-range
+name: dot range targets the current line
+buffer: a\nb\nc
+cursor: 1,0
+keys: :.s/b/B/<enter>
+want.buffer: a\nB\nc
+want.mode: normal
+---
+matrix: 2.9-invalid-regex
+name: an invalid regex leaves the buffer alone
+buffer: abc
+keys: :s/\(/x/<enter>
+want.buffer: abc
+want.notify: E486
+want.mode: normal
+---
+matrix: 2.9-missing-delimiter
+name: a missing substitute delimiter is an error
+buffer: abc
+keys: :s/abc<enter>
+want.buffer: abc
+want.notify: E486
+want.mode: normal
+---
+matrix: 2.9-empty-pattern
+name: an empty pattern without history is an error
+buffer: abc
+keys: :s//x/<enter>
+want.buffer: abc
+want.notify: E34
+want.mode: normal
+---
+matrix: 2.9-cluster-replace
+name: substitute expands matches to whole P8SCII clusters
+buffer: a❤️b
+keys: :%s/<text:❤>/<text:→>/g<enter>
+want.buffer: a→b
+want.mode: normal
+---
+matrix: 2.9-cluster-dot
+name: dot matches one P8SCII cluster once
+buffer: a❤️b
+keys: :%s/./X/g<enter>
+want.buffer: XXX
+want.mode: normal

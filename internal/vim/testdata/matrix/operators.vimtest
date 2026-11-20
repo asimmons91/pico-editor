@@ -1,0 +1,464 @@
+matrix: 2.1-insert
+name: insert before and append after
+buffer: abc
+cursor: 0,1
+keys: iX<esc>aY<esc>
+want.buffer: aXYbc
+want.mode: normal
+---
+matrix: 2.1-insert-line
+name: insert at first nonblank and end of line
+buffer: \s\sabc
+cursor: 0,3
+keys: IX<esc>A Y<esc>
+want.buffer: \s\sXabc Y
+want.mode: normal
+---
+matrix: 2.1-open-line
+name: open lines below and above
+buffer: abc
+cursor: 0,1
+keys: oX<esc>O Y<esc>
+want.buffer: abc\n Y\nX
+want.mode: normal
+---
+matrix: 2.1-dot
+name: dot repeats a simple change
+buffer: abc
+cursor: 0,0
+keys: x.
+want.buffer: c
+want.mode: normal
+---
+matrix: 2.1-undo-redo
+name: undo and redo
+buffer: abc
+cursor: 0,0
+keys: xu<c-r>
+want.buffer: bc
+want.mode: normal
+---
+matrix: 2.1-escape
+name: escape cancels a pending operator
+buffer: abc
+cursor: 0,1
+keys: d<esc>x
+want.buffer: ac
+want.mode: normal
+---
+matrix: 2.3-d-c-y
+name: delete change and yank with a motion
+buffer: one two three
+cursor: 0,4
+keys: dw
+want.buffer: one three
+want.mode: normal
+---
+matrix: 2.3-d-c-change
+name: change word enters insert
+buffer: one two
+cursor: 0,4
+keys: cwX<esc>
+want.buffer: one X
+want.mode: normal
+---
+matrix: 2.3-d-c-yank
+name: yank word leaves the buffer alone
+buffer: one two
+cursor: 0,0
+keys: yw
+want.buffer: one two
+want.register: unnamed:char:one\s
+want.mode: normal
+---
+matrix: 2.3-dd-cc-yy
+name: doubled delete removes a line
+buffer: a\nb\nc
+cursor: 1,0
+keys: dd
+want.buffer: a\nc
+want.mode: normal
+---
+matrix: 2.3-cc
+name: doubled change replaces a line
+buffer: a\nb\nc
+cursor: 1,0
+keys: ccB<esc>
+want.buffer: a\nB\nc
+want.mode: normal
+---
+matrix: 2.3-yy
+name: doubled yank stores a linewise register
+buffer: a\nb\nc
+cursor: 1,0
+keys: yy
+want.buffer: a\nb\nc
+want.register: unnamed:line:b\n
+want.mode: normal
+---
+matrix: 2.3-D-C-Y
+name: D deletes to end of line
+buffer: one two
+cursor: 0,4
+keys: D
+want.buffer: one\s
+want.mode: normal
+---
+matrix: 2.3-C
+name: C changes to end of line
+buffer: one two
+cursor: 0,4
+keys: CX<esc>
+want.buffer: one X
+want.mode: normal
+---
+matrix: 2.3-Y
+name: Y yanks to end of line
+buffer: one two
+cursor: 0,4
+keys: Y
+want.buffer: one two
+want.register: unnamed:char:two
+want.mode: normal
+---
+matrix: 2.3-x-X
+name: x and X delete clusters
+buffer: abc
+cursor: 0,1
+keys: xX
+want.buffer: c
+want.mode: normal
+---
+matrix: 2.3-s-S
+name: s changes a cluster and S changes a line
+buffer: abc\ndef
+cursor: 0,1
+keys: sX<esc>
+want.buffer: aXc\ndef
+want.mode: normal
+---
+matrix: 2.3-S
+name: S changes the whole line
+buffer: abc\ndef
+cursor: 0,1
+keys: SX<esc>
+want.buffer: X\ndef
+want.mode: normal
+---
+matrix: 2.3-r
+name: replace one cluster
+buffer: abc
+cursor: 0,1
+keys: rZ
+want.buffer: aZc
+want.mode: normal
+---
+matrix: 2.3-r-count
+name: replace count clusters
+buffer: abcde
+cursor: 0,0
+keys: 3rZ
+want.buffer: ZZZde
+want.mode: normal
+---
+matrix: 2.3-J
+name: join two lines
+buffer: one\ntwo\nthree
+cursor: 0,0
+keys: J
+want.buffer: one two\nthree
+want.mode: normal
+---
+matrix: 2.3-J-count
+name: join count lines
+buffer: one\ntwo\nthree
+cursor: 0,0
+keys: 3J
+want.buffer: one two three
+want.mode: normal
+---
+matrix: 2.3-tilde
+name: toggle case and move right
+buffer: AbC
+cursor: 0,0
+keys: ~
+want.buffer: abC
+want.mode: normal
+---
+matrix: 2.3-tilde-count
+name: toggle a count of clusters
+buffer: AbC
+cursor: 0,0
+keys: 3~
+want.buffer: aBc
+want.mode: normal
+---
+matrix: 2.3-shift
+name: shift lines right and left
+buffer: a\nb
+cursor: 0,0
+keys: >><<
+want.buffer: a\nb
+want.mode: normal
+---
+matrix: 2.3-shift-motion
+name: shift lines covered by a motion
+buffer: a\nb
+cursor: 0,0
+keys: >j
+want.buffer: \s\sa\n\s\sb
+want.mode: normal
+---
+matrix: 2.3-p-P
+name: put after the cursor
+buffer: abc
+cursor: 0,0
+keys: ylp
+want.buffer: aabc
+want.cursor: 0,1
+want.mode: normal
+---
+matrix: 2.3-p-before
+name: put before the cursor
+buffer: abc
+cursor: 0,1
+keys: ylP
+want.buffer: abbc
+want.mode: normal
+---
+matrix: 2.3-undo-redo
+name: undo and redo an operator
+buffer: one two three
+cursor: 0,0
+keys: dwu<c-r>
+want.buffer: two three
+want.mode: normal
+---
+matrix: counts-multiply
+name: counts before operator and motion multiply
+buffer: one two three four five six seven
+cursor: 0,0
+keys: 3d2w
+want.buffer: seven
+want.mode: normal
+---
+matrix: counts-lines
+name: doubled operators take a line count
+buffer: a\nb\nc\nd
+cursor: 1,0
+keys: 2dd
+want.buffer: a\nd
+want.mode: normal
+---
+matrix: counts-goto
+name: G accepts a line count
+buffer: a\nb\nc\nd
+cursor: 0,0
+keys: 2Ggg
+want.buffer: a\nb\nc\nd
+want.cursor: 0,0
+want.mode: normal
+---
+matrix: counts-zero
+name: zero is a motion unless a count started
+buffer: abc
+cursor: 0,2
+keys: 10l0
+want.buffer: abc
+want.cursor: 0,0
+want.mode: normal
+---
+matrix: dot-insert
+name: dot repeats an insert
+buffer: abc
+cursor: 0,0
+keys: iX<esc>.
+want.buffer: XXabc
+want.mode: normal
+---
+matrix: dot-operator
+name: dot repeats an operator
+buffer: one two three
+cursor: 0,0
+keys: dw.
+want.buffer: three
+want.mode: normal
+---
+matrix: dot-cw-s
+name: dot repeats change-word replacement text
+buffer: one two
+cursor: 0,0
+keys: cwX<esc>w.
+want.buffer: X X
+want.mode: normal
+---
+matrix: undo-insert-group
+name: insert sessions are one undo group
+buffer: abc
+keys: iXY<esc>u
+want.buffer: abc
+want.mode: normal
+---
+matrix: undo-substitute
+name: substitute is one undo entry
+buffer: old old
+keys: :%s/old/new/g<enter>u
+want.buffer: old old
+want.mode: normal
+---
+matrix: undo-visual
+name: undo a visual delete
+buffer: abcd
+keys: vldu
+want.buffer: abcd
+want.mode: normal
+---
+matrix: 2.3-dgg
+name: dgg deletes to the start of the buffer
+buffer: a\nb\nc\nd
+cursor: 2,0
+keys: dgg
+want.buffer: d
+want.cursor: 0,0
+want.mode: normal
+---
+matrix: 2.3-dG
+name: dG deletes to the end of the buffer
+buffer: a\nb\nc\nd
+cursor: 1,0
+keys: dG
+want.buffer: a
+want.mode: normal
+---
+matrix: 2.3-shift-textobject
+name: shift a bracket text object
+buffer: x {\n a\n b\n}
+cursor: 1,1
+keys: >i{
+want.buffer: x {\n   a\n   b\n}
+want.mode: normal
+---
+matrix: 2.3-d-halfpage
+name: delete across a half-page motion
+buffer: 1\n2\n3\n4\n5\n6\n7\n8\n9\n10
+cursor: 4,0
+keys: d<c-d>
+want.buffer: 1\n2\n3\n4
+want.mode: normal
+---
+matrix: 2.3-d-repeat-find
+name: operator with a repeated find motion
+buffer: a-b-c-d
+keys: f-;d;
+want.buffer: a-bd
+want.mode: normal
+---
+matrix: dot-find-operator
+name: dot repeats an operator with a find motion
+buffer: a-b-c-d
+keys: df-.
+want.buffer: c-d
+want.mode: normal
+---
+matrix: 2.3-invalid-g
+name: an invalid g cancels the pending operator
+buffer: abc def
+keys: dgxw
+want.buffer: abc def
+want.cursor: 0,4
+want.bell: true
+want.mode: normal
+---
+matrix: 2.3-C-empty
+name: C enters insert on an empty line
+buffer:
+keys: CX<esc>
+want.buffer: X
+want.mode: normal
+---
+matrix: 2.3-cw-empty
+name: cw enters insert on an empty line
+buffer:
+keys: cwX<esc>
+want.buffer: X
+want.mode: normal
+---
+matrix: 2.3-s-empty
+name: s enters insert on an empty line
+buffer:
+keys: sX<esc>
+want.buffer: X
+want.mode: normal
+---
+matrix: 2.3-cw-empty-middle
+name: cw enters insert on an empty middle line
+buffer: a\n\nb
+cursor: 1,0
+keys: cwX<esc>
+want.buffer: a\nX\nb
+want.mode: normal
+---
+matrix: dot-append
+name: dot repeats append at the current character
+buffer: abc\ndefgh
+keys: aX<esc>j.
+want.buffer: aXbc\ndeXfgh
+want.mode: normal
+---
+matrix: dot-append-eol
+name: dot repeats append at end of line
+buffer: abc\ndef
+keys: AX<esc>j.
+want.buffer: abcX\ndefX
+want.mode: normal
+---
+matrix: dot-first-nonblank
+name: dot repeats insert at first nonblank
+buffer: \s\sabc\n\s\sdef
+cursor: 0,2
+keys: Ifoo<esc>j.
+want.buffer: \s\sfooabc\n\s\sfoodef
+want.mode: normal
+---
+matrix: dot-open-below
+name: dot repeats open-line-below
+buffer: abc
+keys: oX<esc>.
+want.buffer: abc\nX\nX
+want.mode: normal
+---
+matrix: dot-open-above
+name: dot repeats open-line-above
+buffer: abc
+keys: OX<esc>.
+want.buffer: X\nX\nabc
+want.mode: normal
+---
+matrix: dot-change-count
+name: dot repeats a counted line change
+buffer: a\nb\nc\nd\ne\nf
+keys: 2ccX<esc>j.
+want.buffer: X\nX\ne\nf
+want.mode: normal
+---
+matrix: 2.3-cw-word-end
+name: cw at a word end changes only the current character
+buffer: ab cd
+cursor: 0,1
+keys: cwX<esc>
+want.buffer: aX cd
+want.mode: normal
+---
+matrix: 2.3-cw-one-letter
+name: cw on a one-letter word does not consume the next word
+buffer: a bc
+keys: cwX<esc>
+want.buffer: X bc
+want.mode: normal
+---
+matrix: 2.3-cw-count
+name: counted cw changes the next words
+buffer: a b c d e f
+keys: 2cwX<esc>
+want.buffer: X c d e f
+want.mode: normal

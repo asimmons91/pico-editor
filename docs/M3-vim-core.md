@@ -1,6 +1,6 @@
 # M3 — Vim curated core
 
-**Status:** Draft
+**Status:** Implemented
 **Depends on:** M2
 **Blocks:** M6
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
@@ -12,10 +12,11 @@ Daily-driver modal editing for Lua and PICO-8 code: normal, insert, visual
 character/line/block, command-line, counts, operators, text objects, registers,
 search, undo, dot repeat, and the curated ex commands including `:s`.
 
-**Demo:** Run the full command matrix against fixture files. Edit a real cart
-tab end to end with only Vim keys, including a visual-block indent and a
-`:%s/old/new/g`, then save. Normal-mode Shift commands (`J`, `K`, `P`, `X`,
-`D`, `C`, `Y`) behave as Vim commands and are never consumed by P8SCII input.
+**Demo:** Run the full command matrix against fixture files. Edit a real `.lua`
+file end to end with only Vim keys, including a visual-block indent and a
+`:%s/old/new/g`, then save. Cart code tabs use the same Vim layer after M4 adds
+the cart adapter. Normal-mode Shift commands (`J`, `K`, `P`, `X`, `D`, `C`,
+`Y`) behave as Vim commands and are never consumed by P8SCII input.
 
 ## Scope
 
@@ -132,7 +133,7 @@ update and a new matrix test.
 | `Ctrl+D` `Ctrl+U` | Half page down / up |
 | `Ctrl+F` `Ctrl+B` | Full page down / up |
 | `+` `-` `Enter` | First non-blank of next / previous line |
-| `Backspace` `Space` | Previous / next line at the same cell, wrapping at edges |
+| `Backspace` `Space` | Left / right with Vim line wrap (previous line end / next line start) |
 | `n` `N` | Next / previous search match |
 | `*` `#` | Search forward / backward for the word under the cursor |
 
@@ -432,10 +433,12 @@ func (v *Vim) Handle(ev input.Event, ed *editor.Editor) Result
 
 ### Matrix fixtures
 
-Each command in §2 has at least one fixture:
+Each command in §2 has at least one fixture. Fixtures live in
+`internal/vim/testdata/matrix/*.vimtest`, split into blocks with `---`:
 
 ```text
-name: dw at word end
+matrix: 2.3-d-c-y
+name: delete word
 mode: normal
 buffer: one two three
 cursor: 0,4
@@ -446,8 +449,12 @@ want.mode: normal
 ```
 
 - The runner loads a fixture, feeds key/text events, and compares buffer,
-  cursor, mode, registers, and notifications.
-- Every matrix row links to a fixture file by name; a missing fixture fails CI.
+  cursor, mode, selection, registers, viewport, notifications, actions, and
+  clipboard text.
+- Every matrix row maps to a `matrix:` ID; a missing fixture fails CI. Extra
+  fixtures cover aliases, counts, block operations, and error paths.
+- The runner also applies `ActionClipboardRead` against fixture clipboard text
+  so `"+`/`"*` paste behavior is exercised without a display.
 - Counts, operator combinations, text objects, visual modes, `:s` ranges, and
   register types each get dedicated cases.
 
@@ -472,16 +479,45 @@ want.mode: normal
 
 ## Exit criteria
 
-- [ ] Every matrix row has a passing fixture.
-- [ ] Normal-mode Shift+letter commands work and are not consumed by P8SCII
+- [x] Every matrix row has a passing fixture.
+- [x] Normal-mode Shift+letter commands work and are not consumed by P8SCII
       input.
-- [ ] Visual block, block `I`/`A`, and `:s` pass their fixtures.
-- [ ] Registers, dot repeat, and undo behave as specified.
-- [ ] Search with Vim magic and smartcase passes its fixtures.
-- [ ] Editing a real cart tab feels natural for a Vim user.
-- [ ] Macros, marks, plugins, splits, and `:set` remain out of scope.
-- [ ] Fuzz tests and `go test -race ./...` pass.
-- [ ] `mise run check` passes.
+- [x] Visual block, block `I`/`A`, and `:s` pass their fixtures.
+- [x] Registers, dot repeat, and undo behave as specified.
+- [x] Search with Vim magic and smartcase passes its fixtures.
+- [x] Editing a real `.lua` file feels natural for a Vim user; the cart-tab
+      manual pass runs after M4.
+- [x] Macros, marks, plugins, splits, and `:set` remain out of scope.
+- [x] Fuzz tests and `go test -race ./...` pass.
+- [x] `mise run check` passes.
+
+## Resolved implementation decisions
+
+These were settled while implementing M3; `docs/VIM.md` remains the normative
+command matrix.
+
+- No argument opens an empty unnamed buffer in NORMAL mode. `--debug-charset`
+  keeps the M1 charset demo. The temporary M2 debug screen is deleted.
+- M3 owns a minimal multi-file session for `.lua` buffers: `:e` opens or reuses
+  a file, `:bn`/`:bp`/`:b`/`:ls` operate on the buffer list, and `:tabn`/`:tabp`
+  report that only one code tab exists until M4 adds the cart adapter.
+- `Vim.Handle` returns `ActionSave`, `ActionQuit`, `ActionOpen`,
+  `ActionSwitchBuffer`, `ActionListBuffers`, `ActionSwitchTab`, `ActionHelp`,
+  `ActionClipboardRead`, and `ActionClipboardWrite`. The app applies actions on
+  the Update goroutine; saves snapshot the buffer, write off the Update
+  goroutine, and commit the save point when the result arrives.
+- `"+`/`"*` paste always reads the system clipboard asynchronously. A cached
+  value is only the fallback when the clipboard is unavailable. Yanks queue a
+  clipboard write and still update the internal register.
+- Normal-mode `Backspace` and `Space` use Vim h/l semantics with line wrap:
+  Backspace wraps to the previous line end; Space wraps to the next line start.
+- `:help` and `:help <topic>` open a small scrollable overlay. M7 expands the
+  topics and integrates help with the command palette.
+- `:q`, `Ctrl+Q`, and the window close button refuse to discard dirty buffers.
+  `:q!` discards; `:wq`/`:x` wait for the asynchronous save before closing.
+- Matrix fixtures live in section files under `internal/vim/testdata/matrix/`
+  and use a small `key: value` format with `---` separators. `matrix:` IDs cover
+  every frozen row; extra fixtures cover aliases and edge cases.
 
 ## Risks and mitigations
 
