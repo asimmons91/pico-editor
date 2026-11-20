@@ -17,4 +17,5 @@ const (
 	msgNoOtherBuffer      = "E85: There is no other file to edit"
 	msgNoBuffer           = "E86: Buffer does not exist"
 	msgSingleTab          = "only one code tab is available until M4"
+	msgTrailingCharacters = "E488: Trailing characters"
 )

@@ -164,33 +164,61 @@ func (v *Vim) CompleteClipboardRead(text string, err error, ed *editor.Editor) R
 	v.notify = ""
 	v.notifyError = false
 	v.bell = false
+	v.clipboardBusy = false
 	request := v.pendingPaste
 	v.pendingPaste = nil
 	if err != nil {
 		v.message("clipboard unavailable")
 		if value, ok := v.registers.clipboardRegister(v.lastClipboardRegister); ok {
-			if request != nil && request.visual {
-				v.pasteOverSelection(ed, value)
-			} else {
-				v.pasteValue(ed, value, request)
-			}
+			v.finishClipboardPaste(request, value, ed)
 		}
 		return v.finish()
 	}
+	text = editor.NormalizeNewlines(text)
 	selector := v.lastClipboardRegister
 	if selector == 0 {
 		selector = '+'
 	}
 	v.registers.clip[selector] = registerValue{Text: text, Kind: registerTextKind(text)}
-	if request != nil {
-		if request.visual {
-			v.pasteOverSelection(ed, v.registers.clip[selector])
-		} else {
-			v.pasteValue(ed, v.registers.clip[selector], request)
-		}
-	}
-	v.clampNormal(ed)
+	v.finishClipboardPaste(request, v.registers.clip[selector], ed)
 	return v.finish()
+}
+
+// finishClipboardPaste applies a completed read to the buffer and cursor that
+// issued the paste, not whichever buffer is current when the result arrives.
+func (v *Vim) finishClipboardPaste(request *pasteRequest, value registerValue, ed *editor.Editor) {
+	target := ed
+	if request == nil {
+		v.clampNormal(target)
+		return
+	}
+	if request.editor != nil {
+		target = request.editor
+	}
+	inInsert := v.Mode == ModeInsert
+	current := ed.Cursor.Pos
+	target.SetCursor(request.pos)
+	if request.visual && !inInsert {
+		if request.hasSelection {
+			target.Selection = request.selection
+		}
+		v.pasteOverSelection(target, value)
+		return
+	}
+	v.pasteValue(target, value, request)
+	v.recordChange(changeRecord{
+		action:   changePaste,
+		register: request.register,
+		count:    request.count,
+		backward: request.before,
+	})
+	if inInsert {
+		if ed == target {
+			ed.SetCursorPreserveDesired(current)
+		}
+		return
+	}
+	v.clampNormal(target)
 }
 
 func registerTextKind(text string) registerKind {

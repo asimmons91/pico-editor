@@ -17,7 +17,7 @@ for the milestone owner.
 
 ## Automated results
 
-- `internal/vim/testdata/matrix/*.vimtest` contains 185 fixture cases and
+- `internal/vim/testdata/matrix/*.vimtest` contains 221 fixture cases and
   covers every frozen row in [`../VIM.md`](../VIM.md). The coverage test fails
   when a `matrix:` ID is missing or duplicated.
 - The fixture runner asserts buffer text, cursor, mode, visual selection,

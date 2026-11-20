@@ -62,6 +62,7 @@ type Game struct {
 	session          *Session
 	saveResults      chan saveResult
 	saveBusy         bool
+	pendingQuit      bool
 	startupErr       error
 	closeNotified    bool
 	blink            *Blink
@@ -148,20 +149,18 @@ func (g *Game) updateFrame() error {
 	} else if saveChanged {
 		changed = true
 	}
+	if g.pendingQuit && !g.saveBusy {
+		return ebiten.Termination
+	}
 	if clipboardChanged, quit := g.pollClipboard(); quit {
 		return ebiten.Termination
 	} else if clipboardChanged {
 		changed = true
 	}
-	if g.session != nil && ebiten.IsWindowBeingClosed() {
-		if g.session.CanQuitAll() {
-			return ebiten.Termination
-		}
-		if !g.closeNotified {
-			g.session.SetStatus("E37: No write since last change (add ! to override)", true)
-			g.closeNotified = true
-			changed = true
-		}
+	if quit, closeChanged := g.handleWindowClose(ebiten.IsWindowBeingClosed()); quit {
+		return ebiten.Termination
+	} else if closeChanged {
+		changed = true
 	}
 	events := g.source.Poll()
 	if len(events) > 0 {
@@ -178,6 +177,12 @@ func (g *Game) updateFrame() error {
 			g.logger.Info("quit requested")
 			return ebiten.Termination
 		}
+	}
+	if g.session != nil {
+		g.session.EndBatch()
+	}
+	if g.pendingQuit && !g.saveBusy {
+		return ebiten.Termination
 	}
 	if changed {
 		g.redraw()
@@ -207,6 +212,26 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 	default:
 		return false, false
 	}
+}
+
+func (g *Game) handleWindowClose(closing bool) (quit, changed bool) {
+	if !closing {
+		return false, false
+	}
+	if g.session == nil {
+		// The charset debug screen has no unsaved state; let the platform close
+		// request terminate the game.
+		return true, false
+	}
+	if g.session.CanQuitAll() {
+		return true, false
+	}
+	if !g.closeNotified {
+		g.session.SetStatus("E37: No write since last change (add ! to override)", true)
+		g.closeNotified = true
+		return false, true
+	}
+	return false, false
 }
 
 func (g *Game) handleSessionEvent(event input.Event) (quit, changed bool) {
@@ -301,6 +326,10 @@ func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
 				return true, true
 			}
 		case vim.ActionQuit:
+			if g.saveBusy {
+				g.pendingQuit = true
+				return false, true
+			}
 			sessionQuit, _ := g.session.RequestQuit(action.Force)
 			if sessionQuit {
 				return true, true
@@ -409,7 +438,7 @@ func (g *Game) pollClipboard() (changed, quit bool) {
 				continue
 			}
 			if result.kind == clipboardRead {
-				_, actions := g.session.CompleteClipboardRead(result.text, result.err)
+				_, actions := g.session.CompleteClipboardRead(input.NormalizeNewlines(result.text), result.err)
 				if actionQuit, _ := g.applyActions(actions); actionQuit {
 					return true, true
 				}

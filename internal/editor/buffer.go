@@ -277,7 +277,8 @@ type SaveSnapshot struct {
 	Mode    os.FileMode
 	Version int
 
-	hash [sha256.Size]byte
+	hash     [sha256.Size]byte // canonical text save point
+	diskHash [sha256.Size]byte // encoded bytes on disk
 }
 
 // PrepareSave performs the same checks as Save and captures the bytes to write.
@@ -307,12 +308,13 @@ func (b *Buffer) PrepareSave() (SaveSnapshot, error) {
 	}
 	data := b.encode()
 	return SaveSnapshot{
-		Path:    b.Path,
-		Target:  target,
-		Data:    data,
-		Mode:    b.Mode,
-		Version: b.Version,
-		hash:    sha256.Sum256(data),
+		Path:     b.Path,
+		Target:   target,
+		Data:     data,
+		Mode:     b.Mode,
+		Version:  b.Version,
+		hash:     b.textHash(),
+		diskHash: sha256.Sum256(data),
 	}, nil
 }
 
@@ -340,7 +342,7 @@ func (b *Buffer) CommitSave(snapshot SaveSnapshot, writeErr error) error {
 			size:    info.Size(),
 			modTime: info.ModTime(),
 			mode:    b.Mode,
-			hash:    snapshot.hash,
+			hash:    snapshot.diskHash,
 		}
 	} else {
 		b.disk.known = false
@@ -369,12 +371,13 @@ func (b *Buffer) hasAmbiguousCR() bool {
 // finishWrite is the synchronous compatibility wrapper around CommitSave.
 func (b *Buffer) finishWrite(target string, data []byte, writeErr error) error {
 	return b.CommitSave(SaveSnapshot{
-		Path:    b.Path,
-		Target:  target,
-		Data:    data,
-		Mode:    b.Mode,
-		Version: b.Version,
-		hash:    sha256.Sum256(data),
+		Path:     b.Path,
+		Target:   target,
+		Data:     data,
+		Mode:     b.Mode,
+		Version:  b.Version,
+		hash:     b.textHash(),
+		diskHash: sha256.Sum256(data),
 	}, writeErr)
 }
 

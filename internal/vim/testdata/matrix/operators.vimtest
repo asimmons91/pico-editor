@@ -215,6 +215,7 @@ buffer: abc
 cursor: 0,0
 keys: ylp
 want.buffer: aabc
+want.cursor: 0,1
 want.mode: normal
 ---
 matrix: 2.3-p-before
@@ -350,4 +351,114 @@ name: operator with a repeated find motion
 buffer: a-b-c-d
 keys: f-;d;
 want.buffer: a-bd
+want.mode: normal
+---
+matrix: dot-find-operator
+name: dot repeats an operator with a find motion
+buffer: a-b-c-d
+keys: df-.
+want.buffer: c-d
+want.mode: normal
+---
+matrix: 2.3-invalid-g
+name: an invalid g cancels the pending operator
+buffer: abc def
+keys: dgxw
+want.buffer: abc def
+want.cursor: 0,4
+want.bell: true
+want.mode: normal
+---
+matrix: 2.3-C-empty
+name: C enters insert on an empty line
+buffer:
+keys: CX<esc>
+want.buffer: X
+want.mode: normal
+---
+matrix: 2.3-cw-empty
+name: cw enters insert on an empty line
+buffer:
+keys: cwX<esc>
+want.buffer: X
+want.mode: normal
+---
+matrix: 2.3-s-empty
+name: s enters insert on an empty line
+buffer:
+keys: sX<esc>
+want.buffer: X
+want.mode: normal
+---
+matrix: 2.3-cw-empty-middle
+name: cw enters insert on an empty middle line
+buffer: a\n\nb
+cursor: 1,0
+keys: cwX<esc>
+want.buffer: a\nX\nb
+want.mode: normal
+---
+matrix: dot-append
+name: dot repeats append at the current character
+buffer: abc\ndefgh
+keys: aX<esc>j.
+want.buffer: aXbc\ndeXfgh
+want.mode: normal
+---
+matrix: dot-append-eol
+name: dot repeats append at end of line
+buffer: abc\ndef
+keys: AX<esc>j.
+want.buffer: abcX\ndefX
+want.mode: normal
+---
+matrix: dot-first-nonblank
+name: dot repeats insert at first nonblank
+buffer: \s\sabc\n\s\sdef
+cursor: 0,2
+keys: Ifoo<esc>j.
+want.buffer: \s\sfooabc\n\s\sfoodef
+want.mode: normal
+---
+matrix: dot-open-below
+name: dot repeats open-line-below
+buffer: abc
+keys: oX<esc>.
+want.buffer: abc\nX\nX
+want.mode: normal
+---
+matrix: dot-open-above
+name: dot repeats open-line-above
+buffer: abc
+keys: OX<esc>.
+want.buffer: X\nX\nabc
+want.mode: normal
+---
+matrix: dot-change-count
+name: dot repeats a counted line change
+buffer: a\nb\nc\nd\ne\nf
+keys: 2ccX<esc>j.
+want.buffer: X\nX\ne\nf
+want.mode: normal
+---
+matrix: 2.3-cw-word-end
+name: cw at a word end changes only the current character
+buffer: ab cd
+cursor: 0,1
+keys: cwX<esc>
+want.buffer: aX cd
+want.mode: normal
+---
+matrix: 2.3-cw-one-letter
+name: cw on a one-letter word does not consume the next word
+buffer: a bc
+keys: cwX<esc>
+want.buffer: X bc
+want.mode: normal
+---
+matrix: 2.3-cw-count
+name: counted cw changes the next words
+buffer: a b c d e f
+keys: 2cwX<esc>
+want.buffer: X c d e f
 want.mode: normal

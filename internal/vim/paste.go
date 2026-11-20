@@ -8,11 +8,22 @@ import (
 )
 
 func (v *Vim) paste(ed *editor.Editor, before bool) {
+	if v.clipboardBusy {
+		v.info("clipboard paste pending")
+		return
+	}
 	count := v.takeCount()
 	selector := v.selectedRegister()
 	value, ok, pending := v.registerTextForPaste(selector)
 	if pending {
-		v.pendingPaste = &pasteRequest{before: before, count: count, register: selector}
+		v.clipboardBusy = true
+		v.pendingPaste = &pasteRequest{
+			before:   before,
+			count:    count,
+			register: selector,
+			editor:   ed,
+			pos:      ed.Cursor.Pos,
+		}
 		return
 	}
 	if !ok {
@@ -60,9 +71,8 @@ func (v *Vim) pasteChars(ed *editor.Editor, text string, before bool, count int)
 		v.ringBell()
 		return
 	}
-	if before {
-		ed.SetCursor(position)
-	}
+	// Vim leaves the cursor on the last pasted cluster for characterwise puts.
+	ed.SetCursor(ed.Buffer.PrevCluster(ed.Cursor.Pos))
 	v.clampNormal(ed)
 }
 

@@ -11,35 +11,39 @@ import (
 
 func (v *Vim) enterInsert(ed *editor.Editor, after, firstNonBlank bool) {
 	count := v.takeCount()
+	entry := entryInsert
 	if firstNonBlank {
+		entry = entryFirstNonBlank
 		setFirstNonBlank(ed, ed.Cursor.Pos.Line)
 	} else if after {
+		entry = entryAppend
 		line := ed.Buffer.Lines[ed.Cursor.Pos.Line]
 		if ed.Cursor.Pos.Rune < utf8.RuneCountInString(line) {
 			ed.SetCursor(ed.Buffer.NextCluster(ed.Cursor.Pos))
 		}
 	}
-	v.beginInsert(ed, count, nil)
+	v.beginInsert(ed, count, nil, entry)
 }
 
 func (v *Vim) enterInsertLineEnd(ed *editor.Editor) {
 	count := v.takeCount()
 	line := ed.Buffer.Lines[ed.Cursor.Pos.Line]
 	ed.SetCursor(editor.Pos{Line: ed.Cursor.Pos.Line, Rune: utf8.RuneCountInString(line)})
-	v.beginInsert(ed, count, nil)
+	v.beginInsert(ed, count, nil, entryAppendEOL)
 }
 
 func (v *Vim) enterInsertWithRecord(ed *editor.Editor, record *changeRecord) {
-	v.beginInsert(ed, 1, record)
+	v.beginInsert(ed, 1, record, entryInsert)
 }
 
-func (v *Vim) beginInsert(ed *editor.Editor, count int, record *changeRecord) {
+func (v *Vim) beginInsert(ed *editor.Editor, count int, record *changeRecord, entry insertEntry) {
 	ed.BeginGroup()
 	start := ed.Cursor.Pos
 	v.Mode = ModeInsert
 	v.insert = insertState{
 		active:       true,
 		count:        max(1, count),
+		entry:        entry,
 		start:        start,
 		startHistory: len(ed.History.Undo),
 		pendingDot:   record,
@@ -71,9 +75,14 @@ func (v *Vim) openLine(ed *editor.Editor, below bool) {
 		}
 	}
 	v.Mode = ModeInsert
+	entry := entryOpenBelow
+	if !below {
+		entry = entryOpenAbove
+	}
 	v.insert = insertState{
 		active:       true,
 		count:        1,
+		entry:        entry,
 		start:        ed.Cursor.Pos,
 		startHistory: len(ed.History.Undo),
 	}
@@ -177,13 +186,13 @@ func (v *Vim) finishInsert(ed *editor.Editor) {
 		if v.insert.pendingDot != nil {
 			record := *v.insert.pendingDot
 			record.text = typed
-			record.count = 1
 			v.recordChange(record)
 		} else {
 			v.recordChange(changeRecord{
 				action: changeInsert,
 				text:   typed,
 				count:  count,
+				entry:  v.insert.entry,
 			})
 		}
 	}
@@ -243,6 +252,11 @@ func (v *Vim) deleteClusters(ed *editor.Editor, forward, change bool) {
 		rangeStart = editor.Pos{Line: start.Line, Rune: position}
 	}
 	if rangeStart == rangeEnd {
+		if change && len(line) == 0 {
+			record := changeRecord{action: changeOperator, operator: OpChange, motion: 'l', count: count}
+			v.enterInsertWithRecord(ed, &record)
+			return
+		}
 		v.ringBell()
 		return
 	}

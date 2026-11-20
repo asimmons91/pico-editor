@@ -22,6 +22,8 @@ var matrixRows = []string{
 	"2.2-hjkl", "2.2-words", "2.2-words-big", "2.2-line", "2.2-gg-G", "2.2-find",
 	"2.2-percent", "2.2-paragraph", "2.2-screen", "2.2-half-page",
 	"2.2-find-F", "2.2-find-t", "2.2-find-T", "2.2-enter-motion",
+	"2.2-vertical-desired", "2.2-find-t-count", "2.2-find-t-repeat",
+	"2.2-find-T-count",
 	"2.2-full-page", "2.2-line-motion", "2.2-gg-count",
 	"2.2-percent-string", "2.2-space-bs",
 	"2.2-space-bs-wrap", "2.2-space-bs-back",
@@ -32,24 +34,33 @@ var matrixRows = []string{
 	"2.3-tilde", "2.3-tilde-count", "2.3-shift", "2.3-shift-motion",
 	"2.3-p-P", "2.3-p-before", "2.3-dgg", "2.3-dG",
 	"2.3-shift-textobject", "2.3-d-halfpage", "2.3-d-repeat-find",
+	"dot-find-operator", "dot-append", "dot-append-eol",
+	"dot-first-nonblank", "dot-open-below", "dot-open-above",
+	"dot-change-count", "2.3-cw-word-end", "2.3-cw-one-letter",
+	"2.3-cw-count", "2.3-invalid-g", "2.3-C-empty",
+	"2.3-cw-empty", "2.3-cw-empty-middle", "2.3-s-empty",
 	"2.3-undo-redo",
 	"2.4-iw-aw", "2.4-aw", "2.4-iW-aW", "2.4-aW", "2.4-paren",
 	"2.4-paren-close-alias", "2.4-brace", "2.4-bracket",
 	"2.4-dquote", "2.4-squote", "2.4-paragraph", "2.4-aparagraph",
 	"2.5-visual", "2.5-v-line", "2.5-v-block", "2.5-o", "2.5-gv",
-	"2.5-extend", "2.5-d-c-y", "2.5-change", "2.5-yank", "2.5-shift",
+	"2.5-extend", "2.5-d-c-y", "2.5-change", "2.5-yank",
+	"visual-clipboard-yank", "visual-named-yank", "2.5-shift",
 	"2.5-shift-left", "2.5-case", "2.5-case-upper", "2.5-case-lower",
 	"2.5-J", "2.5-paste", "2.5-block-IA", "2.5-block-A",
 	"2.5-block-delete", "2.5-block-yank", "2.5-block-change",
 	"2.5-block-shift", "2.5-block-change-undo", "2.5-line-change",
-	"2.5-line-case", "2.5-colon", "2.5-esc",
+	"2.5-line-case", "2.5-block-case", "2.5-block-wide-append",
+	"2.5-gv-after-delete",
+	"dot-block-delete",
+	"dot-block-change", "dot-visual-wide", "dot-visual-paste", "2.5-colon", "2.5-esc",
 	"2.6-text", "2.6-enter", "2.6-backspace", "2.6-delete", "2.6-tab",
 	"2.6-ctrl-w-u", "2.6-ctrl-u", "2.6-esc", "2.6-arrows",
 	"2.6-p8-modes", "2.6-completion", "2.6-count", "2.6-home-end",
 	"2.6-ctrl-bracket",
 	"2.7-search", "2.7-cancel", "2.7-n-N", "2.7-star-hash", "2.7-noh",
 	"2.7-highlight", "2.7-history", "2.7-smartcase", "2.7-magic",
-	"2.7-backward",
+	"2.7-backward", "2.7-hash",
 	"2.8-w", "2.8-q", "2.8-q-bang", "2.8-wq-x", "2.8-x", "2.8-e",
 	"2.8-e-bang", "2.8-e-path", "2.8-bn-bp", "2.8-b", "2.8-ls",
 	"2.8-tabn-tabp", "2.8-help", "2.8-help-topic", "2.8-diag",
@@ -58,14 +69,16 @@ var matrixRows = []string{
 	"2.8-commandline-word", "2.8-commandline-history",
 	"2.8-commandline-prefix", "2.8-commandline-ambiguous",
 	"2.8-errors", "2.8-error-substitute", "2.8-error-name",
+	"2.8-error-write-path",
 	"2.9-current", "2.9-whole", "2.9-visual", "2.9-lines", "2.9-flags",
 	"2.9-replacement-amp", "2.9-replacement-groups",
 	"2.9-replacement-slash", "2.9-undo", "2.9-no-match",
-	"2.9-dot-range",
+	"2.9-dot-range", "2.9-invalid-regex", "2.9-missing-delimiter",
+	"2.9-empty-pattern", "2.9-cluster-replace", "2.9-cluster-dot",
 	"2.10-unnamed", "2.10-zero", "2.10-numbered", "2.10-named",
 	"2.10-append", "2.10-blackhole", "2.10-clipboard-write",
 	"2.10-clipboard-read", "2.10-types", "2.10-block-paste",
-	"2.10-block-replace",
+	"2.10-block-replace", "dot-clipboard-paste",
 	"counts-multiply", "counts-lines", "counts-goto", "counts-zero",
 	"dot-insert", "dot-operator", "dot-cw-s", "undo-insert-group",
 	"undo-substitute", "undo-visual",
@@ -111,9 +124,16 @@ type fixtureSelection struct {
 
 func TestMatrixFixtures(t *testing.T) {
 	fixtures := loadFixtures(t)
+	known := make(map[string]bool, len(matrixRows))
+	for _, id := range matrixRows {
+		known[id] = true
+	}
 	covered := make(map[string]bool)
 	for _, fix := range fixtures {
 		for _, id := range fix.matrix {
+			if !known[id] {
+				t.Errorf("%s: fixture uses unknown matrix row %s", fix.file, id)
+			}
 			if covered[id] {
 				t.Errorf("%s: matrix row %s covered more than once", fix.file, id)
 			}

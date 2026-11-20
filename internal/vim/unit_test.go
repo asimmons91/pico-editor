@@ -177,3 +177,85 @@ func BenchmarkKeystroke64K(b *testing.B) {
 		v.Handle(event, ed)
 	}
 }
+
+func TestClipboardPastePinnedToOriginalEditor(t *testing.T) {
+	first := testEditor(t, "a", 0, 0)
+	second := testEditor(t, "b", 0, 0)
+	v := New()
+	results := feed(t, v, first, `"+p`)
+	foundRead := false
+	for _, result := range results {
+		for _, action := range result.Actions {
+			if action.Kind == ActionClipboardRead {
+				foundRead = true
+			}
+		}
+	}
+	if !foundRead {
+		t.Fatal("clipboard paste did not request a read")
+	}
+	v.CompleteClipboardRead("one\n", nil, second)
+	if got := strings.Join(first.Buffer.Lines, "\n"); got != "a\none" {
+		t.Fatalf("original buffer = %q, want a\\none", got)
+	}
+	if got := strings.Join(second.Buffer.Lines, "\n"); got != "b" {
+		t.Fatalf("current buffer = %q, want unchanged b", got)
+	}
+}
+
+func TestSecondClipboardPasteIsRejectedWhilePending(t *testing.T) {
+	ed := testEditor(t, "a", 0, 0)
+	v := New()
+	feed(t, v, ed, `"+p`)
+	v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyApostrophe, Mods: input.ModShift}, ed)
+	v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyEqual, Mods: input.ModShift}, ed)
+	result := v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyP}, ed)
+	if !strings.Contains(result.Notify, "pending") {
+		t.Fatalf("second paste notify = %q, want a pending notice", result.Notify)
+	}
+	v.CompleteClipboardRead("one\n", nil, ed)
+	if got := strings.Join(ed.Buffer.Lines, "\n"); got != "a\none" {
+		t.Fatalf("buffer = %q, want one paste", got)
+	}
+}
+
+func TestBatchedTextSuppression(t *testing.T) {
+	ed := testEditor(t, "abc", 0, 0)
+	v := New()
+	v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyI}, ed)
+	v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyX}, ed)
+	v.Handle(input.Event{Kind: input.KindText, Runes: []rune("ix")}, ed)
+	if got := strings.Join(ed.Buffer.Lines, "\n"); got != "xabc" {
+		t.Fatalf("buffer = %q, want xabc", got)
+	}
+
+	ed = testEditor(t, "abc", 0, 0)
+	v = New()
+	v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeySemicolon, Mods: input.ModShift}, ed)
+	v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyW}, ed)
+	v.Handle(input.Event{Kind: input.KindText, Runes: []rune(":w")}, ed)
+	_, text, _, _ := v.Prompt()
+	if text != "w" {
+		t.Fatalf("prompt = %q, want w", text)
+	}
+}
+
+func TestClipboardPasteDoesNotDisturbInsertSession(t *testing.T) {
+	ed := testEditor(t, "x", 0, 0)
+	v := New()
+	feed(t, v, ed, `"+p`)
+	feed(t, v, ed, "iZ")
+	if v.Mode != ModeInsert {
+		t.Fatalf("mode = %s, want INSERT", v.Mode)
+	}
+	v.CompleteClipboardRead("P\n", nil, ed)
+	if v.Mode != ModeInsert {
+		t.Fatalf("mode after paste = %s, want INSERT", v.Mode)
+	}
+	if ed.Cursor.Pos != (editor.Pos{Line: 0, Rune: 1}) {
+		t.Fatalf("cursor = %+v, want the insert cursor", ed.Cursor.Pos)
+	}
+	if got := strings.Join(ed.Buffer.Lines, "\n"); got != "Zx\nP" {
+		t.Fatalf("buffer = %q, want Zx\\nP", got)
+	}
+}

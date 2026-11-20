@@ -199,3 +199,71 @@ buffer: Ab\nCd\ne
 keys: VjU
 want.buffer: AB\nCD\ne
 want.mode: normal
+---
+matrix: dot-block-delete
+name: dot repeats a visual block delete
+buffer: abcd\nefgh\nijkl
+keys: <c-v>jld.
+want.buffer: \n\nijkl
+want.mode: normal
+---
+matrix: dot-block-change
+name: dot repeats a visual block change
+buffer: abcd\nefgh\nijkl
+cursor: 0,1
+keys: <c-v>jlcX<esc>j.
+want.buffer: aXd\neX\niXl
+want.mode: normal
+---
+matrix: 2.5-block-case
+name: block case transform covers the rectangle only
+buffer: AbCd\neFgH\nijkl
+keys: <c-v>jlU
+want.buffer: ABCd\nEFgH\nijkl
+want.mode: normal
+---
+matrix: 2.5-block-wide-append
+name: block append after a wide glyph uses its right edge
+buffer: ⬅️x
+keys: <c-v>AZ<esc>
+want.buffer: ⬅️Zx
+want.mode: normal
+---
+matrix: 2.5-gv-after-delete
+name: gv after deleting the last line does not panic
+buffer: a\nb\nc\nd\ne
+cursor: 4,0
+keys: VdgvJ
+want.buffer: a\nb\nc\nd
+want.mode: normal
+---
+matrix: dot-visual-wide
+name: dot repeats a characterwise visual delete across a wide glyph
+buffer: a⬅️bcdefgh
+keys: vllld.
+want.buffer: h
+want.mode: normal
+---
+matrix: dot-visual-paste
+name: dot repeats a visual paste
+buffer: abcdef
+keys: ylvlp.
+want.buffer: adef
+want.mode: normal
+---
+matrix: visual-clipboard-yank
+name: visual clipboard yank uses the clipboard register
+buffer: abcd
+keys: vl"+y
+want.buffer: abcd
+want.clipboard: ab
+want.action: clipboard-write
+want.mode: normal
+---
+matrix: visual-named-yank
+name: visual named yank stores the selection
+buffer: abcd
+keys: vl"ay
+want.buffer: abcd
+want.register: a:char:ab
+want.mode: normal

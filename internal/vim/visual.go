@@ -14,6 +14,8 @@ func (v *Vim) handleVisualRune(r rune, ed *editor.Editor) {
 		v.swapVisual(ed)
 	case 'g':
 		v.pending = pendingState{kind: pendG}
+	case '"':
+		v.pending = pendingState{kind: pendRegister}
 	case 'v':
 		if v.Mode == ModeVisualChar {
 			v.saveVisual(ed)
@@ -185,6 +187,8 @@ func (v *Vim) executeVisualOperator(op rune, ed *editor.Editor) {
 		ed.SetCursor(start)
 		v.leaveVisual(ed)
 		v.recordChange(record)
+	case 'p', 'P':
+		v.visualPaste(ed, op == 'P')
 	case 'J':
 		if err := v.joinVisualLines(ed, first, last); err != nil {
 			v.ringBell()
@@ -212,7 +216,17 @@ func (v *Vim) visualRecord(op rune, ed *editor.Editor) changeRecord {
 		record.block = true
 	case editor.SelectionChar:
 		start, end := ed.Selection.Normalized()
-		record.visualCells = ed.Buffer.Info(end).Cell - ed.Buffer.Info(start).Cell
+		steps := 0
+		position := start
+		for position.Before(end) {
+			next := ed.Buffer.NextCluster(position)
+			if next == position {
+				break
+			}
+			position = next
+			steps++
+		}
+		record.visualCells = steps
 	}
 	return record
 }
@@ -314,6 +328,7 @@ func (v *Vim) executeBlockOperator(op rune, ed *editor.Editor, record changeReco
 		v.saveVisual(ed)
 		if op == 'c' {
 			ed.ClearSelection()
+			record.operator = OpChange
 			v.startBlockChangeInsert(ed, first, last, left, right, originals, historyLen, record)
 			return
 		}
@@ -457,6 +472,7 @@ func (v *Vim) startBlockChangeInsert(ed *editor.Editor, first, last, left, right
 	v.insert = insertState{
 		active:       true,
 		count:        1,
+		entry:        entryInsert,
 		start:        ed.Cursor.Pos,
 		startHistory: historyLen,
 		pendingDot:   &record,
@@ -491,6 +507,7 @@ func (v *Vim) startBlockInsertAtRange(ed *editor.Editor, first, last, left, righ
 	v.insert = insertState{
 		active:       true,
 		count:        1,
+		entry:        entryInsert,
 		start:        ed.Cursor.Pos,
 		startHistory: historyLen,
 		block: &blockInsert{
@@ -610,10 +627,24 @@ func insertAtCell(ed *editor.Editor, line string, cell int, text string) string 
 }
 
 func (v *Vim) visualPaste(ed *editor.Editor, before bool) {
+	if v.clipboardBusy {
+		v.info("clipboard paste pending")
+		return
+	}
 	selector := v.selectedRegister()
 	value, ok, pending := v.registerTextForPaste(selector)
 	if pending {
-		v.pendingPaste = &pasteRequest{before: before, count: 1, register: selector, visual: true}
+		v.clipboardBusy = true
+		v.pendingPaste = &pasteRequest{
+			before:       before,
+			count:        1,
+			register:     selector,
+			visual:       true,
+			editor:       ed,
+			pos:          ed.Cursor.Pos,
+			selection:    ed.Selection,
+			hasSelection: true,
+		}
 		v.saveVisual(ed)
 		return
 	}
@@ -632,7 +663,7 @@ func (v *Vim) pasteOverSelection(ed *editor.Editor, value registerValue) {
 	first, last := ed.Selection.LineRange()
 	block := ed.Selection.Kind == editor.SelectionBlock
 	v.saveVisual(ed)
-	record := changeRecord{action: changeVisual, caseOp: 'p', visualKind: ed.Selection.Kind}
+	record := v.visualRecord('p', ed)
 	if block {
 		_, _, left, right := ed.Selection.BlockRange(ed.Buffer)
 		record.visualCells = right - left

@@ -1,6 +1,7 @@
 package vim
 
 import (
+	"strings"
 	"unicode/utf8"
 
 	"github.com/asimmons91/pico-editor/internal/editor"
@@ -29,11 +30,15 @@ type changeRecord struct {
 	linewise bool
 	backward bool
 	block    bool
+	entry    insertEntry
 
 	visualKind  editor.SelectionKind
 	visualLines int
 	visualCells int
 	caseOp      rune
+
+	find    findSpec
+	hasFind bool
 }
 
 func (v *Vim) recordChange(record changeRecord) {
@@ -67,15 +72,64 @@ func (v *Vim) replay(ed *editor.Editor, record changeRecord) bool {
 		if record.text == "" {
 			return false
 		}
-		ed.BeginGroup()
 		repeats := max(1, record.count)
-		for i := 0; i < repeats; i++ {
-			if _, err := ed.Insert(record.text); err != nil {
-				ed.EndGroup()
-				return false
+		text := strings.Repeat(record.text, repeats)
+		line := ed.Cursor.Pos.Line
+		switch record.entry {
+		case entryAppend:
+			lineText := ed.Buffer.Lines[line]
+			if ed.Cursor.Pos.Rune < utf8.RuneCountInString(lineText) {
+				ed.SetCursor(ed.Buffer.NextCluster(ed.Cursor.Pos))
+			}
+			ed.BeginGroup()
+			_, _ = ed.Insert(text)
+			ed.EndGroup()
+			if ed.Cursor.Pos.Rune > 0 {
+				ed.SetCursor(ed.Buffer.PrevCluster(ed.Cursor.Pos))
+			}
+		case entryFirstNonBlank:
+			setFirstNonBlank(ed, line)
+			ed.BeginGroup()
+			_, _ = ed.Insert(text)
+			ed.EndGroup()
+			if ed.Cursor.Pos.Rune > 0 {
+				ed.SetCursor(ed.Buffer.PrevCluster(ed.Cursor.Pos))
+			}
+		case entryAppendEOL:
+			ed.SetCursor(editor.Pos{Line: line, Rune: utf8.RuneCountInString(ed.Buffer.Lines[line])})
+			ed.BeginGroup()
+			_, _ = ed.Insert(text)
+			ed.EndGroup()
+			if ed.Cursor.Pos.Rune > 0 {
+				ed.SetCursor(ed.Buffer.PrevCluster(ed.Cursor.Pos))
+			}
+		case entryOpenBelow:
+			ed.SetCursor(editor.Pos{Line: line, Rune: utf8.RuneCountInString(ed.Buffer.Lines[line])})
+			ed.BeginGroup()
+			_, _ = ed.Insert("\n" + text)
+			ed.EndGroup()
+			if ed.Cursor.Pos.Rune > 0 {
+				ed.SetCursor(ed.Buffer.PrevCluster(ed.Cursor.Pos))
+			}
+		case entryOpenAbove:
+			ed.SetCursor(editor.Pos{Line: line})
+			ed.BeginGroup()
+			_, _ = ed.Insert(text + "\n")
+			ed.EndGroup()
+			if end := utf8.RuneCountInString(text); end > 0 {
+				ed.SetCursor(editor.Pos{Line: line, Rune: end})
+				ed.SetCursor(ed.Buffer.PrevCluster(ed.Cursor.Pos))
+			}
+		default:
+			ed.BeginGroup()
+			for i := 0; i < repeats; i++ {
+				_, _ = ed.Insert(record.text)
+			}
+			ed.EndGroup()
+			if ed.Cursor.Pos.Rune > 0 {
+				ed.SetCursor(ed.Buffer.PrevCluster(ed.Cursor.Pos))
 			}
 		}
-		ed.EndGroup()
 		v.clampNormal(ed)
 		return true
 	case changeOperator:
@@ -112,6 +166,21 @@ func (v *Vim) replay(ed *editor.Editor, record changeRecord) bool {
 
 func (v *Vim) replayOperator(ed *editor.Editor, record changeRecord) bool {
 	count := max(1, record.count)
+	if record.hasFind {
+		spec := record.find
+		spec.hasRaw = false
+		v.Operator = record.operator
+		v.opCount = 1
+		v.Count = count
+		v.applyOperatorFind(ed, spec, count)
+		if record.operator == OpChange {
+			if record.text != "" {
+				_, _ = ed.Insert(record.text)
+			}
+			v.finishInsert(ed)
+		}
+		return true
+	}
 	if record.linewise {
 		v.Operator = record.operator
 		v.opCount = 1
@@ -183,7 +252,9 @@ func (v *Vim) replayVisual(ed *editor.Editor, record changeRecord) bool {
 			target.Rune = prevClusterRune(ed.Buffer.Lines[line], target.Rune)
 		}
 	case editor.SelectionBlock:
-		target = ed.Buffer.PosFromCell(anchor.Line, ed.Buffer.CellColumn(anchor)+record.visualCells)
+		line := min(anchor.Line+max(0, record.visualLines-1), len(ed.Buffer.Lines)-1)
+		target = ed.Buffer.PosFromCell(line, ed.Buffer.CellColumn(anchor)+record.visualCells)
+		ed.SetCursor(target)
 	default:
 		for i := 0; i < record.visualCells; i++ {
 			next := ed.Buffer.NextCluster(target)

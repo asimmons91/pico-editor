@@ -20,16 +20,22 @@ func (v *Vim) applyOperatorMotion(ed *editor.Editor, motion rune) {
 		total *= opCount
 	}
 	start := ed.Cursor.Pos
-	move := motion
-	if operator == OpChange && (motion == 'w' || motion == 'W') {
-		if motion == 'w' {
-			move = 'e'
-		} else {
-			move = 'E'
+	if operator == OpChange && len(ed.Buffer.Lines[start.Line]) == 0 {
+		switch motion {
+		case 'w', 'W', 'e', 'E', '$', 'l', '0', '^':
+			record := changeRecord{action: changeOperator, operator: OpChange, motion: motion, count: total}
+			v.Operator = OpNone
+			v.enterInsertWithRecord(ed, &record)
+			return
 		}
 	}
-
-	outcome := v.moveForKey(ed, move, total, countGiven, true)
+	var outcome motionOutcome
+	if operator == OpChange && (motion == 'w' || motion == 'W') {
+		ed.MoveWordEndOperator(total, motion == 'W')
+		outcome = motionOutcome{start: start, target: ed.Cursor.Pos, inclusive: true}
+	} else {
+		outcome = v.moveForKey(ed, motion, total, countGiven, true)
+	}
 	if outcome.failed {
 		v.Operator = OpNone
 		v.ringBell()
@@ -61,6 +67,11 @@ func (v *Vim) applyOperatorMotion(ed *editor.Editor, motion rune) {
 	}
 	rangeStart, rangeEnd := operatorCharRange(ed, start, outcome.target, outcome.inclusive)
 	if rangeStart == rangeEnd {
+		if operator == OpChange && len(ed.Buffer.Lines[start.Line]) == 0 {
+			record := changeRecord{action: changeOperator, operator: OpChange, motion: motion, count: total}
+			v.enterInsertWithRecord(ed, &record)
+			return
+		}
 		v.ringBell()
 		return
 	}
@@ -90,6 +101,19 @@ func (v *Vim) applyOperatorFind(ed *editor.Editor, spec findSpec, count int) {
 		total *= opCount
 	}
 	v.applyOperatorRange(ed, operator, rangeStart, rangeEnd, 'f', total, start)
+	if v.replaying {
+		return
+	}
+	switch {
+	case operator == OpDelete && v.changeSet:
+		v.lastChange.motion = 0
+		v.lastChange.find = spec
+		v.lastChange.hasFind = true
+	case operator == OpChange && v.Mode == ModeInsert && v.insert.pendingDot != nil:
+		v.insert.pendingDot.motion = 0
+		v.insert.pendingDot.find = spec
+		v.insert.pendingDot.hasFind = true
+	}
 }
 
 // applyLineOperator handles dd/cc/yy/>>/<< and their counted forms.

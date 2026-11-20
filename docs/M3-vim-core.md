@@ -133,7 +133,7 @@ update and a new matrix test.
 | `Ctrl+D` `Ctrl+U` | Half page down / up |
 | `Ctrl+F` `Ctrl+B` | Full page down / up |
 | `+` `-` `Enter` | First non-blank of next / previous line |
-| `Backspace` `Space` | Previous / next line at the same cell, wrapping at edges |
+| `Backspace` `Space` | Left / right with Vim line wrap (previous line end / next line start) |
 | `n` `N` | Next / previous search match |
 | `*` `#` | Search forward / backward for the word under the cursor |
 

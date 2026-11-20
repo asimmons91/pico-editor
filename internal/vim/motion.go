@@ -196,9 +196,6 @@ func (v *Vim) moveForKey(ed *editor.Editor, key rune, count int, countGiven, for
 	case ctrlRune('b'):
 		ed.MoveUp(max(1, ed.Viewport.Height-2) * count)
 		outcome.linewise = true
-	case '|':
-		ed.MoveToCell(max(0, count-1))
-		outcome.inclusive = true
 	case 'n', 'N':
 		searchForward := key == 'n'
 		if !v.search.forward {
@@ -272,21 +269,28 @@ func (v *Vim) findMotion(ed *editor.Editor, spec findSpec, count int) bool {
 	if count < 1 {
 		count = 1
 	}
-	line := ed.Buffer.Lines[ed.Cursor.Pos.Line]
-	position := ed.Cursor.Pos.Rune
+	lineNumber := ed.Cursor.Pos.Line
+	line := ed.Buffer.Lines[lineNumber]
+	scan := ed.Cursor.Pos.Rune
+	if spec.hasRaw && spec.line == lineNumber {
+		scan = spec.raw
+	}
+	result := ed.Cursor.Pos.Rune
+	raw := scan
+	foundAny := false
 	for i := 0; i < count; i++ {
 		found := -1
 		if spec.forward {
-			position = nextClusterRune(line, position)
-			for runeIndex := position; runeIndex < utf8.RuneCountInString(line); runeIndex = nextClusterRune(line, runeIndex) {
+			scan = nextClusterRune(line, scan)
+			for runeIndex := scan; runeIndex < utf8.RuneCountInString(line); runeIndex = nextClusterRune(line, runeIndex) {
 				if clusterMatches(line, runeIndex, spec.char) {
 					found = runeIndex
 					break
 				}
 			}
 		} else {
-			position = prevClusterRune(line, position)
-			for runeIndex := position; runeIndex >= 0; runeIndex = prevClusterRune(line, runeIndex) {
+			scan = prevClusterRune(line, scan)
+			for runeIndex := scan; runeIndex >= 0; runeIndex = prevClusterRune(line, runeIndex) {
 				if clusterMatches(line, runeIndex, spec.char) {
 					found = runeIndex
 					break
@@ -297,21 +301,30 @@ func (v *Vim) findMotion(ed *editor.Editor, spec findSpec, count int) bool {
 			}
 		}
 		if found < 0 {
-			if i == 0 {
-				v.ringBell()
-			}
-			return false
+			break
 		}
+		foundAny = true
+		raw = found
+		result = found
 		if spec.till {
 			if spec.forward {
-				found = prevClusterRune(line, found)
+				result = prevClusterRune(line, found)
 			} else {
-				found = nextClusterRune(line, found)
+				result = nextClusterRune(line, found)
 			}
 		}
-		position = found
+		scan = found
 	}
-	ed.SetCursor(editor.Pos{Line: ed.Cursor.Pos.Line, Rune: position})
+	if !foundAny {
+		v.ringBell()
+		return false
+	}
+	spec.line = lineNumber
+	spec.raw = raw
+	spec.hasRaw = true
+	v.lastFind = spec
+	v.lastFindOK = true
+	ed.SetCursor(editor.Pos{Line: lineNumber, Rune: result})
 	v.extendVisual(ed)
 	return true
 }

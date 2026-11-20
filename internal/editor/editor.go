@@ -134,6 +134,15 @@ func (e *Editor) SetPos(p Pos) {
 	e.SetCursor(p)
 }
 
+// SetCursorPreserveDesired moves the cursor without changing DesiredCell. Vim's
+// normal-mode end-of-line clamp uses it so vertical motion keeps the target
+// display column across short lines.
+func (e *Editor) SetCursorPreserveDesired(p Pos) {
+	e.BreakGroup()
+	e.setCursor(p, false)
+	e.EnsureVisible()
+}
+
 // EnsureVisible scrolls the viewport so the cursor and its cluster are visible.
 func (e *Editor) EnsureVisible() {
 	pos := e.Buffer.NormalizePos(e.Cursor.Pos)

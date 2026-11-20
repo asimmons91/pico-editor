@@ -1,6 +1,7 @@
 package vim
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -67,6 +68,11 @@ func (v *Vim) executeEx(ed *editor.Editor, line string) {
 
 	switch command {
 	case "write":
+		if strings.TrimSpace(argument) != "" {
+			v.message(msgTrailingCharacters)
+			v.ringBell()
+			return
+		}
 		if ed.Buffer.Path == "" {
 			v.message(msgNoFileName)
 			v.ringBell()
@@ -74,6 +80,11 @@ func (v *Vim) executeEx(ed *editor.Editor, line string) {
 		}
 		v.queue(Action{Kind: ActionSave})
 	case "wq":
+		if strings.TrimSpace(argument) != "" {
+			v.message(msgTrailingCharacters)
+			v.ringBell()
+			return
+		}
 		if ed.Buffer.Path == "" {
 			v.message(msgNoFileName)
 			v.ringBell()
@@ -81,6 +92,11 @@ func (v *Vim) executeEx(ed *editor.Editor, line string) {
 		}
 		v.queue(Action{Kind: ActionSave, QuitAfter: true})
 	case "x":
+		if strings.TrimSpace(argument) != "" {
+			v.message(msgTrailingCharacters)
+			v.ringBell()
+			return
+		}
 		if ed.Buffer.Path == "" {
 			v.message(msgNoFileName)
 			v.ringBell()
@@ -129,7 +145,7 @@ func (v *Vim) executeEx(ed *editor.Editor, line string) {
 	case "help":
 		topic := strings.TrimSpace(argument)
 		switch topic {
-		case "", "keys", "input", "lsp", "config", "troubleshooting":
+		case "", "keys", "input", "lsp", "config":
 		default:
 			v.message("E149: Sorry, no help for " + topic)
 			v.ringBell()
@@ -314,26 +330,15 @@ func (v *Vim) substitute(ed *editor.Editor, lineRange exRange, args string) {
 	firstChangedLine := first
 	for line := first; line <= last; line++ {
 		old := ed.Buffer.Lines[line]
-		matches := expression.FindAllStringSubmatchIndex(old, -1)
-		if len(matches) == 0 {
+		newLine, count := substituteLine(old, expression, replacement, global, ed.Buffer.TabWidth)
+		if count == 0 {
 			newLines = append(newLines, old)
 			continue
 		}
-		if !global && len(matches) > 1 {
-			matches = matches[:1]
-		}
-		var out strings.Builder
-		position := 0
-		for _, match := range matches {
-			out.WriteString(old[position:match[0]])
-			out.WriteString(expandReplacement(old, match, replacement))
-			position = match[1]
-			total++
-		}
-		out.WriteString(old[position:])
-		newLines = append(newLines, out.String())
+		newLines = append(newLines, newLine)
+		total += count
 		changedLines++
-		if firstChangedLine == first && changedLines == 1 {
+		if changedLines == 1 {
 			firstChangedLine = line
 		}
 	}
@@ -387,6 +392,75 @@ func readDelimited(text string, delimiter rune) (string, string, bool) {
 		index += size
 	}
 	return "", "", false
+}
+
+type substituteMatch struct {
+	indices []int
+}
+
+// substituteLine applies one line of :s. Matches are expanded to P8SCII cluster
+// boundaries and overlapping expansions are merged so a VS16 sequence is never
+// split.
+func substituteLine(line string, expression *regexp.Regexp, replacement string, global bool, tabWidth int) (string, int) {
+	raw := expression.FindAllStringSubmatchIndex(line, -1)
+	if len(raw) == 0 {
+		return line, 0
+	}
+	matches := make([]substituteMatch, 0, len(raw))
+	for _, indices := range raw {
+		start, end := expandToClusters(line, indices[0], indices[1], tabWidth)
+		if start == end && indices[0] == indices[1] {
+			start, end = clusterBoundsAt(line, start, tabWidth)
+		}
+		match := append([]int(nil), indices...)
+		match[0], match[1] = start, end
+		if len(matches) > 0 && start < matches[len(matches)-1].indices[1] {
+			if end > matches[len(matches)-1].indices[1] {
+				matches[len(matches)-1].indices[1] = end
+			}
+			continue
+		}
+		matches = append(matches, substituteMatch{indices: match})
+	}
+	if !global && len(matches) > 1 {
+		matches = matches[:1]
+	}
+	var out strings.Builder
+	position := 0
+	for _, match := range matches {
+		out.WriteString(line[position:match.indices[0]])
+		out.WriteString(expandReplacement(line, match.indices, replacement))
+		position = match.indices[1]
+	}
+	out.WriteString(line[position:])
+	return out.String(), len(matches)
+}
+
+func expandToClusters(line string, start, end, tabWidth int) (int, int) {
+	byteStart := 0
+	for cluster := range editor.LineClusters(line, tabWidth) {
+		byteEnd := byteStart + len(cluster.Text)
+		if start > byteStart && start < byteEnd {
+			start = byteStart
+		}
+		if end > byteStart && end < byteEnd {
+			end = byteEnd
+		}
+		byteStart = byteEnd
+	}
+	return start, end
+}
+
+func clusterBoundsAt(line string, position, tabWidth int) (int, int) {
+	byteStart := 0
+	for cluster := range editor.LineClusters(line, tabWidth) {
+		byteEnd := byteStart + len(cluster.Text)
+		if position >= byteStart && position < byteEnd {
+			return byteStart, byteEnd
+		}
+		byteStart = byteEnd
+	}
+	return position, position
 }
 
 func expandReplacement(line string, match []int, replacement string) string {

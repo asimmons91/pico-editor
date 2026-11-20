@@ -85,3 +85,11 @@ keys: <c-v>jy3G<c-v>jp
 want.buffer: ab\ncd\naf\nch
 want.register: unnamed:block:a\nc
 want.mode: normal
+---
+matrix: dot-clipboard-paste
+name: dot repeats a clipboard paste
+buffer: one
+clipboard: X
+keys: "+p.
+want.buffer: oXXne
+want.mode: normal

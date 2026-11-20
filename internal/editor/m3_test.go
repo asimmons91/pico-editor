@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -187,5 +188,53 @@ func TestCommitSaveFailureKeepsSavePoint(t *testing.T) {
 	}
 	if !buffer.Dirty() {
 		t.Error("buffer became clean after a failed write")
+	}
+}
+
+func TestSaveClearsDirtyForCRLFAndBOM(t *testing.T) {
+	cases := []struct {
+		name string
+		data []byte
+	}{
+		{"crlf", []byte("one\r\ntwo\r\n")},
+		{"bom", []byte{0xef, 0xbb, 0xbf, 'o', 'n', 'e', '\n'}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "file.lua")
+			if err := os.WriteFile(path, tc.data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			buffer, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := buffer.Apply(Edit{
+				Start: Pos{Line: 0, Rune: 0},
+				End:   Pos{Line: 0, Rune: 0},
+				Text:  "X",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := buffer.Save(); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+			if buffer.Dirty() {
+				t.Fatal("buffer remained dirty after saving")
+			}
+			saved, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(saved) != len(tc.data)+1 {
+				t.Fatalf("saved bytes = %q, want one inserted byte", saved)
+			}
+			if tc.name == "crlf" && !strings.Contains(string(saved), "\r\n") {
+				t.Fatalf("saved CRLF file lost CRLF: %q", saved)
+			}
+			if tc.name == "bom" && len(saved) < 3 || tc.name == "bom" && saved[0] != 0xef {
+				t.Fatalf("saved BOM file lost BOM: %q", saved)
+			}
+		})
 	}
 }

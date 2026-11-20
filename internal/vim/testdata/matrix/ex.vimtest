@@ -212,3 +212,11 @@ path: none
 keys: :w<enter>
 want.buffer: abc
 want.mode: normal
+---
+matrix: 2.8-error-write-path
+name: write rejects a path until path-aware saves land
+buffer: abc
+keys: :w /tmp/other.lua<enter>
+want.buffer: abc
+want.notify: E488
+want.mode: normal

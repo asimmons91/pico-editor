@@ -23,11 +23,22 @@ want.cursor: 0,8
 want.mode: normal
 ---
 matrix: 2.7-star-hash
-name: star and hash search the word under the cursor
+name: star searches forward for the word under the cursor
 buffer: foo bar foo
-keys: *#
+keys: *
+want.buffer: foo bar foo
+want.cursor: 0,8
+want.highlights: 2
+want.mode: normal
+---
+matrix: 2.7-hash
+name: hash searches backward for the word under the cursor
+buffer: foo bar foo
+cursor: 0,8
+keys: #
 want.buffer: foo bar foo
 want.cursor: 0,0
+want.highlights: 2
 want.mode: normal
 ---
 matrix: 2.7-noh

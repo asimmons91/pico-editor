@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -11,7 +12,10 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/input"
+	"github.com/asimmons91/pico-editor/internal/render"
+	"github.com/asimmons91/pico-editor/internal/vim"
 )
 
 type recordingClipboard struct {
@@ -463,5 +467,327 @@ func TestWriteQuitWaitsForAsyncSave(t *testing.T) {
 	}
 	if string(data) != "Xabc\n" {
 		t.Fatalf("saved file = %q, want Xabc", data)
+	}
+}
+
+func TestMultiBufferQuitAndCanQuitAll(t *testing.T) {
+	game, _ := newEditorGame(t, "one\n", &recordingClipboard{})
+	second := filepath.Join(filepath.Dir(game.session.CurrentEditor().Buffer.Path), "second.lua")
+	if err := os.WriteFile(second, []byte("two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendKeys(t, game, ":e second.lua<enter>x"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if game.session.CanQuitAll() {
+		t.Fatal("CanQuitAll returned true with a dirty buffer")
+	}
+	if quit, _ := game.session.RequestQuit(false); quit || !strings.Contains(game.session.Status, "E37") {
+		t.Fatalf("dirty RequestQuit = quit %t status %q", quit, game.session.Status)
+	}
+	if quit, _ := game.session.RequestQuit(true); quit || len(game.session.Buffers) != 1 {
+		t.Fatalf("force RequestQuit = quit %t buffers %d", quit, len(game.session.Buffers))
+	}
+	if !game.session.CanQuitAll() {
+		t.Fatal("CanQuitAll returned false after discarding the dirty buffer")
+	}
+	if quit, _ := game.session.RequestQuit(false); !quit || !game.session.Quitting() {
+		t.Fatal("last clean RequestQuit did not quit")
+	}
+}
+
+func TestCtrlQRefusesDirtySessionThenForceQuits(t *testing.T) {
+	game, _ := newEditorGame(t, "abc\n", &recordingClipboard{})
+	if err := sendKeys(t, game, "x"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	game.source.(*fakeSource).events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyQ, Mods: input.ModCtrl}}
+	if err := game.Update(); err != nil {
+		t.Fatalf("Update ctrl+q: %v", err)
+	}
+	if !strings.Contains(game.session.Status, "E37") {
+		t.Fatalf("status = %q, want E37", game.session.Status)
+	}
+	if err := sendKeys(t, game, ":q!<enter>"); err != ebiten.Termination {
+		t.Fatalf("force quit = %v, want Termination", err)
+	}
+}
+
+func TestAsyncSaveFailureAndEditDuringSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "save.lua")
+	if err := os.WriteFile(path, []byte("abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewSession(path, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ed := session.CurrentEditor()
+	if _, err := ed.Insert("X"); err != nil {
+		t.Fatal(err)
+	}
+	job, err := session.PrepareSave(vim.Action{Kind: vim.ActionSave, QuitAfter: true})
+	if err != nil {
+		t.Fatalf("PrepareSave: %v", err)
+	}
+	quit, _ := session.CompleteSave(job, errors.New("disk full"))
+	if quit {
+		t.Fatal("failed save quit the session")
+	}
+	if !ed.Buffer.Dirty() {
+		t.Fatal("buffer became clean after a failed save")
+	}
+	if !session.StatusError || session.Status == "" {
+		t.Fatalf("status = %q error=%t, want the save error", session.Status, session.StatusError)
+	}
+
+	job, err = session.PrepareSave(vim.Action{Kind: vim.ActionSave, QuitAfter: true})
+	if err != nil {
+		t.Fatalf("PrepareSave: %v", err)
+	}
+	if err := job.Snapshot.Write(); err != nil {
+		t.Fatalf("snapshot write: %v", err)
+	}
+	if _, err := ed.Insert("Y"); err != nil {
+		t.Fatal(err)
+	}
+	quit, _ = session.CompleteSave(job, nil)
+	if quit {
+		t.Fatal("save-quit exited while the buffer had newer edits")
+	}
+	if !ed.Buffer.Dirty() {
+		t.Fatal("buffer lost its newer edit during save commit")
+	}
+	if !strings.Contains(session.Status, "still has changes") {
+		t.Fatalf("status = %q, want the still-dirty notice", session.Status)
+	}
+}
+
+func TestCleanXQuitsWithoutWriting(t *testing.T) {
+	game, path := newEditorGame(t, "abc\n", &recordingClipboard{})
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sendKeys(t, game, ":x<enter>"); err != ebiten.Termination {
+		t.Fatalf(":x = %v, want Termination", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("clean :x changed the file from %q to %q", before, after)
+	}
+}
+
+func TestClipboardFailureIsSurfaced(t *testing.T) {
+	clipboard := &recordingClipboard{err: errors.New("no clipboard")}
+	game, _ := newEditorGame(t, "x\n", clipboard)
+	if err := sendKeys(t, game, "\"+p"); err != nil {
+		t.Fatalf("Update paste: %v", err)
+	}
+	eventually(t, func() bool {
+		_ = game.Update()
+		return strings.Contains(game.session.Status, "clipboard unavailable")
+	})
+	if got := strings.Join(game.session.CurrentEditor().Buffer.Lines, "\n"); got != "x" {
+		t.Fatalf("buffer = %q, want unchanged", got)
+	}
+
+	game, _ = newEditorGame(t, "x\n", clipboard)
+	if err := sendKeys(t, game, "\"+yy"); err != nil {
+		t.Fatalf("Update yank: %v", err)
+	}
+	eventually(t, func() bool {
+		_ = game.Update()
+		return strings.Contains(game.session.Status, "clipboard:")
+	})
+}
+
+func TestSelectionAndSearchBackgroundsArePainted(t *testing.T) {
+	game, _ := newEditorGame(t, "   \n   \n", &recordingClipboard{})
+	base := render.NewSurface(CanvasWidth, CanvasHeight)
+	game.session.Draw(base, true)
+	if countPalette(base, selectionBackground) != 0 {
+		t.Fatal("baseline surface already contains selection pixels")
+	}
+	if err := sendKeys(t, game, "V"); err != nil {
+		t.Fatalf("Update V: %v", err)
+	}
+	selected := render.NewSurface(CanvasWidth, CanvasHeight)
+	game.session.Draw(selected, true)
+	if countPalette(selected, selectionBackground) == 0 {
+		t.Fatal("visual line selection painted no background")
+	}
+
+	game, _ = newEditorGame(t, "one two\n", &recordingClipboard{})
+	base = render.NewSurface(CanvasWidth, CanvasHeight)
+	game.session.Draw(base, true)
+	if countPalette(base, searchBackground) != 0 {
+		t.Fatal("baseline surface already contains search pixels")
+	}
+	if err := sendKeys(t, game, "/two<enter>"); err != nil {
+		t.Fatalf("Update search: %v", err)
+	}
+	searched := render.NewSurface(CanvasWidth, CanvasHeight)
+	game.session.Draw(searched, true)
+	if countPalette(searched, searchBackground) == 0 {
+		t.Fatal("search matches painted no background")
+	}
+}
+
+func countPalette(surface *render.Surface, index uint8) int {
+	count := 0
+	for _, pixel := range surface.Pix {
+		if pixel == index {
+			count++
+		}
+	}
+	return count
+}
+
+func TestWindowCloseRefusesDirtyBuffers(t *testing.T) {
+	game, _ := newEditorGame(t, "one\n", &recordingClipboard{})
+	second := filepath.Join(filepath.Dir(game.session.CurrentEditor().Buffer.Path), "second.lua")
+	if err := os.WriteFile(second, []byte("two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendKeys(t, game, ":e second.lua<enter>x"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	quit, changed := game.handleWindowClose(true)
+	if quit || !changed || !strings.Contains(game.session.Status, "E37") {
+		t.Fatalf("dirty close = quit %t changed %t status %q", quit, changed, game.session.Status)
+	}
+	quit, changed = game.handleWindowClose(true)
+	if quit || changed {
+		t.Fatalf("repeated dirty close = quit %t changed %t", quit, changed)
+	}
+	if err := sendKeys(t, game, ":q!<enter>:q!<enter>"); err != ebiten.Termination {
+		t.Fatalf("force quits = %v, want Termination", err)
+	}
+}
+
+func TestClusterSelectionAndSearchPredicates(t *testing.T) {
+	ed := editor.NewEditor(editor.New(""))
+	ed.Buffer.Lines = []string{"abcd", "efgh"}
+	ed.Buffer.MarkSaved()
+	ed.Selection = editor.Selection{Anchor: editor.Pos{Line: 0, Rune: 1}, Cursor: editor.Pos{Line: 0, Rune: 2}, Kind: editor.SelectionChar}
+	if !clusterSelected(ed, 0, 1) || clusterSelected(ed, 0, 0) {
+		t.Fatal("character selection predicate is wrong")
+	}
+	ed.Selection = editor.Selection{Anchor: editor.Pos{Line: 0, Rune: 3}, Cursor: editor.Pos{Line: 1, Rune: 0}, Kind: editor.SelectionLine}
+	if !clusterSelected(ed, 1, 2) {
+		t.Fatal("line selection predicate is wrong")
+	}
+	ed.Selection = editor.Selection{Anchor: editor.Pos{Line: 0, Rune: 1}, Cursor: editor.Pos{Line: 0, Rune: 2}, Kind: editor.SelectionBlock}
+	if !clusterSelected(ed, 0, 1) || clusterSelected(ed, 0, 3) {
+		t.Fatal("block selection predicate is wrong")
+	}
+	matches := []editor.Match{{Start: editor.Pos{Line: 0, Rune: 1}, End: editor.Pos{Line: 0, Rune: 3}}}
+	if !clusterSearched(matches, 0, 1) || clusterSearched(matches, 0, 3) {
+		t.Fatal("search predicate is wrong")
+	}
+}
+
+func TestSaveQuitClosesSavedBufferNotCurrent(t *testing.T) {
+	dir := t.TempDir()
+	pathA := filepath.Join(dir, "a.lua")
+	pathB := filepath.Join(dir, "b.lua")
+	if err := os.WriteFile(pathA, []byte("a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pathB, []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewSession(pathA, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.OpenPath(pathB, false) != true {
+		t.Fatal("failed to open second buffer")
+	}
+	if _, err := session.Buffers[1].Editor.Insert("Y"); err != nil {
+		t.Fatal(err)
+	}
+	job, err := session.PrepareSave(vim.Action{Kind: vim.ActionSave, QuitAfter: true})
+	if err != nil {
+		t.Fatalf("PrepareSave: %v", err)
+	}
+	if err := job.Snapshot.Write(); err != nil {
+		t.Fatalf("snapshot write: %v", err)
+	}
+	if !session.SwitchBuffer(1, 0) {
+		t.Fatal("failed to switch back to the first buffer")
+	}
+	if _, err := session.Buffers[0].Editor.Insert("X"); err != nil {
+		t.Fatal(err)
+	}
+	quit, _ := session.CompleteSave(job, nil)
+	if quit {
+		t.Fatal("save-quit exited while another buffer was current")
+	}
+	if len(session.Buffers) != 1 || session.CurrentEditor().Buffer.Path != pathA {
+		t.Fatalf("buffers = %d current = %q, want only a.lua", len(session.Buffers), session.CurrentEditor().Buffer.Path)
+	}
+	if !session.CurrentEditor().Buffer.Dirty() {
+		t.Fatal("the unrelated current buffer lost its dirty state")
+	}
+}
+
+func TestPendingQuitWaitsForSave(t *testing.T) {
+	game, _ := newEditorGame(t, "abc\n", &recordingClipboard{})
+	game.saveBusy = true
+	game.pendingQuit = true
+	if err := game.Update(); err != nil {
+		t.Fatalf("Update while saving = %v, want nil", err)
+	}
+	game.saveBusy = false
+	if err := game.Update(); err != ebiten.Termination {
+		t.Fatalf("Update after save = %v, want Termination", err)
+	}
+}
+
+func TestDebugCharsetWindowCloseStillWorks(t *testing.T) {
+	game := New(Config{Logger: slog.New(slog.DiscardHandler), DebugCharset: true})
+	if quit, _ := game.handleWindowClose(true); !quit {
+		t.Fatal("debug charset close request did not quit")
+	}
+}
+
+func TestClipboardCRLFIsNormalizedOnPaste(t *testing.T) {
+	clipboard := &recordingClipboard{text: "a\r\nb\r\n"}
+	game, _ := newEditorGame(t, "x\n", clipboard)
+	if err := sendKeys(t, game, "\"+p"); err != nil {
+		t.Fatalf("Update paste: %v", err)
+	}
+	eventually(t, func() bool {
+		_ = game.Update()
+		return strings.Join(game.session.CurrentEditor().Buffer.Lines, "\n") == "x\na\nb"
+	})
+	for _, line := range game.session.CurrentEditor().Buffer.Lines {
+		if strings.ContainsRune(line, '\r') {
+			t.Fatalf("pasted line contains CR: %q", line)
+		}
+	}
+}
+
+func TestForceEditReloadsAlreadyOpenPath(t *testing.T) {
+	game, path := newEditorGame(t, "abc\n", &recordingClipboard{})
+	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+		t.Fatalf("Update edit: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("disk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendKeys(t, game, ":e! test.lua<enter>"); err != nil {
+		t.Fatalf("Update e!: %v", err)
+	}
+	if got := game.session.CurrentEditor().Buffer.Text(); got != "disk\n" {
+		t.Fatalf("buffer = %q, want disk", got)
+	}
+	if game.session.CurrentEditor().Buffer.Dirty() {
+		t.Fatal("forced reload left the buffer dirty")
 	}
 }

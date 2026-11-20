@@ -134,6 +134,7 @@ cursor: 0,0
 keys: *#
 want.buffer: foo bar foo
 want.cursor: 0,0
+want.highlights: 2
 ---
 matrix: 2.2-gg-count
 name: gg accepts a line count
@@ -186,4 +187,40 @@ cursor: 0,0
 keys: <enter>
 want.buffer: a\n\s\sb
 want.cursor: 1,2
+want.mode: normal
+---
+matrix: 2.2-vertical-desired
+name: vertical motion preserves the desired column
+buffer: abcdef\nx\nabcdef
+cursor: 0,4
+keys: jj
+want.buffer: abcdef\nx\nabcdef
+want.cursor: 2,4
+want.mode: normal
+---
+matrix: 2.2-find-t-count
+name: t honors a count
+buffer: a-b-c-d
+cursor: 0,0
+keys: 2t-
+want.buffer: a-b-c-d
+want.cursor: 0,2
+want.mode: normal
+---
+matrix: 2.2-find-t-repeat
+name: semicolon repeats a till motion
+buffer: a-b-c-d
+cursor: 0,0
+keys: t-;
+want.buffer: a-b-c-d
+want.cursor: 0,2
+want.mode: normal
+---
+matrix: 2.2-find-T-count
+name: T honors a count
+buffer: a-b-c-d-
+cursor: 0,7
+keys: 2T-
+want.buffer: a-b-c-d-
+want.cursor: 0,4
 want.mode: normal

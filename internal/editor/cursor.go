@@ -55,13 +55,13 @@ func (e *Editor) Move(motion Motion, count int) {
 	case MotionWordBackward:
 		e.moveWordBackward(count, false)
 	case MotionWordEnd:
-		e.moveWordEnd(count, false)
+		e.moveWordEnd(count, false, true)
 	case MotionBigWordForward:
 		e.moveWordForward(count, true)
 	case MotionBigWordBackward:
 		e.moveWordBackward(count, true)
 	case MotionBigWordEnd:
-		e.moveWordEnd(count, true)
+		e.moveWordEnd(count, true, true)
 	case MotionLineStart:
 		e.setCursor(Pos{Line: e.Cursor.Pos.Line}, true)
 	case MotionFirstNonBlank:
@@ -110,6 +110,15 @@ func (e *Editor) MoveWordEnd(count int) { e.Move(MotionWordEnd, count) }
 
 // MoveBigWordEnd moves to the last cluster of the next or current big word.
 func (e *Editor) MoveBigWordEnd(count int) { e.Move(MotionBigWordEnd, count) }
+
+// MoveWordEndOperator moves to the end of the current word without advancing
+// when the cursor is already there. Vim's cw/cW use it so changing the last
+// character of a word does not consume the next word.
+func (e *Editor) MoveWordEndOperator(count int, big bool) {
+	e.BreakGroup()
+	e.moveWordEnd(count, big, false)
+	e.EnsureVisible()
+}
 
 // MoveLineStart moves to column zero.
 func (e *Editor) MoveLineStart() { e.Move(MotionLineStart, 1) }
@@ -290,13 +299,13 @@ func (e *Editor) moveWordForward(count int, big bool) {
 	e.setCursor(position, true)
 }
 
-func (e *Editor) moveWordEnd(count int, big bool) {
+func (e *Editor) moveWordEnd(count int, big bool, advanceAtEnd bool) {
 	position := e.Cursor.Pos
 	for i := 0; i < count; i++ {
 		if e.atBufferEnd(position) {
 			break
 		}
-		if e.atWordEnd(position, big) {
+		if advanceAtEnd && e.atWordEnd(position, big) {
 			next := e.Buffer.NextCluster(position)
 			if e.atBufferEnd(next) {
 				break

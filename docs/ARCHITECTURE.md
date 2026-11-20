@@ -365,11 +365,12 @@ Development rules:
   platform-neutral `internal/input.Tracker`. The font data was extracted once
   from PICO-8 0.2.7 and verified pixel-for-pixel against a PICO-8 screenshot;
   see `docs/spikes/M1-input.md`.
-- M2 adds `internal/editor` (line buffer, P8SCII cluster positions, cursor,
+- M2 added `internal/editor` (line buffer, P8SCII cluster positions, cursor,
   selection, edits, undo, viewport, search) and `internal/fsutil`
-  (`AtomicWrite` with owner/mode preservation and directory fsync). The
-  temporary debug screen is selected with `pico-editor <file>`; no argument
-  keeps the charset screen, and `.p8` files are rejected until M4.
+  (`AtomicWrite` with owner/mode preservation and directory fsync). Its
+  temporary debug screen was replaced by M3: no argument now opens an empty
+  normal-mode buffer, `--debug-charset` keeps the charset screen, and `.p8`
+  files are rejected until M4.
 - M2 stores the save point as a SHA-256 of the canonical text, so undo/redo
   across the save point updates `Dirty()` without writing. It rejects files
   mixing CRLF and LF, rejects ambiguous CR-at-EOL saves, checks mtime, size,

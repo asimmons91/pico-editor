@@ -40,7 +40,13 @@ func parseKeys(t *testing.T, keys string) []input.Event {
 		if keys[index] == '<' {
 			end := strings.IndexByte(keys[index:], '>')
 			if end > 0 {
-				name := strings.ToLower(keys[index+1 : index+end])
+				rawName := keys[index+1 : index+end]
+				if strings.HasPrefix(strings.ToLower(rawName), "text:") {
+					events = append(events, input.Event{Kind: input.KindText, Runes: []rune(rawName[5:])})
+					index += end + 1
+					continue
+				}
+				name := strings.ToLower(rawName)
 				if event, ok := namedKey(name); ok {
 					events = append(events, event)
 					index += end + 1

@@ -56,10 +56,17 @@ func (s Selection) BlockRange(buffer *Buffer) (first, last, left, right int) {
 	first, last = s.LineRange()
 	anchorCell := buffer.CellColumn(s.Anchor)
 	cursorCell := buffer.CellColumn(s.Cursor)
-	if anchorCell <= cursorCell {
-		return first, last, anchorCell, cursorCell
+	anchorCells := buffer.ClusterAt(s.Anchor).Cells
+	cursorCells := buffer.ClusterAt(s.Cursor).Cells
+	if anchorCells < 1 {
+		anchorCells = 1
 	}
-	return first, last, cursorCell, anchorCell
+	if cursorCells < 1 {
+		cursorCells = 1
+	}
+	left = min(anchorCell, cursorCell)
+	right = max(anchorCell+anchorCells-1, cursorCell+cursorCells-1)
+	return first, last, left, right
 }
 
 // BlockLineRange returns the cluster-aligned half-open range covered by the

@@ -72,6 +72,11 @@ func prepareEditor(ed *editor.Editor) {
 	ed.EnsureVisible()
 }
 
+// EndBatch resets frame-local input suppression after one Poll batch.
+func (s *Session) EndBatch() {
+	s.Vim.EndBatch()
+}
+
 // CurrentEditor returns the active editor, or nil if there is no buffer.
 func (s *Session) CurrentEditor() *editor.Editor {
 	if s.Current < 0 || s.Current >= len(s.Buffers) {
@@ -129,15 +134,39 @@ func (s *Session) ClearStatus() {
 // force discards unsaved changes.
 func (s *Session) RequestQuit(force bool) (quit, changed bool) {
 	ed := s.CurrentEditor()
-	if ed != nil && ed.Buffer.Dirty() && !force {
-		s.SetStatus("E37: No write since last change (add ! to override)", true)
-		return false, true
-	}
-	if len(s.Buffers) <= 1 {
+	if ed == nil {
 		s.quit = true
 		return true, true
 	}
-	s.Buffers = append(s.Buffers[:s.Current], s.Buffers[s.Current+1:]...)
+	return s.CloseBuffer(ed.Buffer, force)
+}
+
+// CloseBuffer closes the buffer identified by pointer. Async save completion
+// uses this so a save-quit can never discard a buffer the user switched to
+// while the write was in flight.
+func (s *Session) CloseBuffer(buffer *editor.Buffer, force bool) (quit, changed bool) {
+	index := -1
+	for i, candidate := range s.Buffers {
+		if candidate.Editor.Buffer == buffer {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return false, false
+	}
+	if buffer.Dirty() && !force {
+		s.SetStatus("E37: No write since last change (add ! to override)", true)
+		return false, true
+	}
+	if len(s.Buffers) == 1 {
+		s.quit = true
+		return true, true
+	}
+	s.Buffers = append(s.Buffers[:index], s.Buffers[index+1:]...)
+	if index < s.Current {
+		s.Current--
+	}
 	if s.Current >= len(s.Buffers) {
 		s.Current = len(s.Buffers) - 1
 	}
@@ -200,6 +229,13 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 	for index, buffer := range s.Buffers {
 		bufferPath, err := filepath.Abs(buffer.Editor.Buffer.Path)
 		if err == nil && bufferPath == absolute {
+			if force {
+				if err := buffer.Editor.Reload(); err != nil {
+					s.SetStatus(shortError(err), true)
+					return false
+				}
+				prepareEditor(buffer.Editor)
+			}
 			s.Current = index
 			prepareEditor(buffer.Editor)
 			return true
@@ -345,7 +381,7 @@ func (s *Session) CompleteSave(job *SaveJob, writeErr error) (quit, changed bool
 		s.SetStatus("write complete; buffer still has changes", true)
 		return false, true
 	}
-	return s.RequestQuit(true)
+	return s.CloseBuffer(job.Buffer, true)
 }
 
 // Draw composes the current buffer and chrome.
@@ -413,12 +449,6 @@ func helpTopic(topic string) (string, []string) {
 			"TOML settings and keymaps arrive in M7.",
 			"Global: $XDG_CONFIG_HOME/pico-editor/config.toml",
 			"Workspace: <root>/.pico-editor.toml",
-		}
-	case "troubleshooting":
-		return "Help: troubleshooting", []string{
-			"Logs: $XDG_STATE_HOME/pico-editor/pico-editor.log",
-			"Use :q! to discard changes, :w to write.",
-			"Mouse, splits, macros, and plugins are out of scope for V1.",
 		}
 	default:
 		return "Help: keys", []string{

@@ -33,9 +33,9 @@ func (v *Vim) applyTextObject(ed *editor.Editor, key rune, inner bool) {
 		object = wordObject(ed, false, inner, count)
 	case 'W':
 		object = wordObject(ed, true, inner, count)
-	case '(', ')', 'b':
+	case '(', ')':
 		object = bracketObject(ed, '(', ')', inner)
-	case '{', '}', 'B':
+	case '{', '}':
 		object = bracketObject(ed, '{', '}', inner)
 	case '[', ']':
 		object = bracketObject(ed, '[', ']', inner)

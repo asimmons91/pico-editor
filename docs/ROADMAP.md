@@ -222,7 +222,8 @@ Exit criteria:
 - The V1 command matrix passes against fixture-based behavior tests.
 - Normal-mode Shift+letter commands work and are not consumed by P8SCII input.
 - Visual block editing and `:s` pass their fixtures.
-- Editing a real cart tab feels natural for a Vim user.
+- Editing a real `.lua` file feels natural for a Vim user; the cart-tab pass
+  runs after M4.
 - Macros, marks, plugins, splits, and `:set` remain explicitly out of scope.
 
 ### M4 — Cart model and file tree

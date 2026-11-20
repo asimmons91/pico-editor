@@ -105,11 +105,26 @@ type findSpec struct {
 	char    rune
 	forward bool
 	till    bool
+	line    int
+	raw     int
+	hasRaw  bool
 }
+
+type insertEntry uint8
+
+const (
+	entryInsert insertEntry = iota
+	entryAppend
+	entryFirstNonBlank
+	entryAppendEOL
+	entryOpenBelow
+	entryOpenAbove
+)
 
 type insertState struct {
 	active       bool
 	count        int
+	entry        insertEntry
 	start        editor.Pos
 	startHistory int
 	block        *blockInsert
@@ -185,6 +200,7 @@ type Vim struct {
 	jumps      jumpList
 
 	lastClipboardRegister byte
+	clipboardBusy         bool
 	pendingPaste          *pasteRequest
 	lastVisualRange       [2]int
 	hasVisualRange        bool
@@ -198,10 +214,14 @@ type Vim struct {
 }
 
 type pasteRequest struct {
-	before   bool
-	count    int
-	register byte
-	visual   bool
+	before       bool
+	count        int
+	register     byte
+	visual       bool
+	editor       *editor.Editor
+	pos          editor.Pos
+	selection    editor.Selection
+	hasSelection bool
 }
 
 // New returns an empty normal-mode session.
@@ -231,9 +251,6 @@ func (v *Vim) Handle(ev input.Event, ed *editor.Editor) Result {
 		ev.Runes = ev.Runes[v.suppressText:]
 		v.suppressText = 0
 	}
-	if ev.Kind == input.KindKeyDown && v.suppressText > 0 {
-		v.suppressText = 0
-	}
 
 	switch v.Mode {
 	case ModeInsert:
@@ -248,6 +265,12 @@ func (v *Vim) Handle(ev input.Event, ed *editor.Editor) Result {
 		v.clampNormal(ed)
 	}
 	return v.finish()
+}
+
+// EndBatch clears any unconsumed text suppression at a frame boundary. The
+// app calls it after draining one Poll result.
+func (v *Vim) EndBatch() {
+	v.suppressText = 0
 }
 
 func (v *Vim) finish() Result {
@@ -332,7 +355,7 @@ func (v *Vim) handleNormal(ev input.Event, ed *editor.Editor) {
 		v.handleSpecialKey(key, mods, ed)
 		return
 	}
-	v.suppressText = 1
+	v.suppressText++
 	if r >= '0' && r <= '9' {
 		if r == '0' && v.Count == 0 {
 			v.executeNormalRune(r, ed)
@@ -415,7 +438,7 @@ func (v *Vim) executeNormalRune(r rune, ed *editor.Editor) {
 		v.openSearch(ed, false)
 	case 'h', 'j', 'k', 'l', 'w', 'W', 'b', 'B', 'e', 'E', '0', '^', '$',
 		'f', 'F', 't', 'T', ';', ',', '%', '{', '}', 'H', 'M', 'L',
-		'+', '-', 'G', 'n', 'N', '*', '#', '|':
+		'+', '-', 'G', 'n', 'N', '*', '#':
 		v.executeMotionKey(r, ed)
 	default:
 		v.ringBell()
@@ -487,7 +510,7 @@ func (v *Vim) handlePending(ev input.Event, ed *editor.Editor) {
 		v.ringBell()
 		return
 	}
-	v.suppressText = 1
+	v.suppressText++
 	v.resolvePendingRune(r, ed)
 }
 
@@ -504,6 +527,7 @@ func (v *Vim) resolvePendingRune(r rune, ed *editor.Editor) {
 		case 'v':
 			v.reselectVisual(ed)
 		default:
+			v.cancel(ed)
 			v.ringBell()
 		}
 	case pendZ:
@@ -511,6 +535,7 @@ func (v *Vim) resolvePendingRune(r rune, ed *editor.Editor) {
 	case pendFind:
 		spec := pending.find
 		spec.char = r
+		spec.hasRaw = false
 		v.lastFind = spec
 		v.lastFindOK = true
 		if v.Operator != OpNone {
@@ -598,7 +623,7 @@ func (v *Vim) handleOperatorPending(ev input.Event, ed *editor.Editor) {
 		v.ringBell()
 		return
 	}
-	v.suppressText = 1
+	v.suppressText++
 	if r >= '0' && r <= '9' {
 		if r == '0' && v.Count == 0 {
 			v.applyOperatorMotion(ed, '0')
@@ -709,7 +734,7 @@ func (v *Vim) clampNormal(ed *editor.Editor) {
 		pos = ed.Buffer.PrevCluster(editor.Pos{Line: pos.Line, Rune: length})
 	}
 	if pos != ed.Cursor.Pos {
-		ed.SetCursor(pos)
+		ed.SetCursorPreserveDesired(pos)
 	}
 	if v.Mode.Visual() {
 		ed.Selection.Cursor = ed.Cursor.Pos
@@ -745,8 +770,8 @@ func (v *Vim) saveVisual(ed *editor.Editor) {
 		return
 	}
 	v.lastVisual = visualState{
-		anchor: ed.Selection.Anchor,
-		cursor: ed.Selection.Cursor,
+		anchor: ed.Buffer.NormalizePos(ed.Selection.Anchor),
+		cursor: ed.Buffer.NormalizePos(ed.Selection.Cursor),
 		kind:   ed.Selection.Kind,
 	}
 	first, last := ed.Selection.LineRange()
@@ -767,13 +792,15 @@ func (v *Vim) reselectVisual(ed *editor.Editor) {
 	default:
 		v.Mode = ModeVisualChar
 	}
+	anchor := ed.Buffer.NormalizePos(v.lastVisual.anchor)
+	cursor := ed.Buffer.NormalizePos(v.lastVisual.cursor)
 	ed.Selection = editor.Selection{
-		Anchor: v.lastVisual.anchor,
-		Cursor: v.lastVisual.cursor,
+		Anchor: anchor,
+		Cursor: cursor,
 		Kind:   v.lastVisual.kind,
 	}
-	ed.SetCursor(v.lastVisual.cursor)
-	ed.Selection.Cursor = v.lastVisual.cursor
+	ed.SetCursor(cursor)
+	ed.Selection.Cursor = cursor
 }
 
 func (v *Vim) undo(ed *editor.Editor) {
