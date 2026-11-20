@@ -539,6 +539,21 @@ func TestM6ClipboardBlockAndLinewiseCopy(t *testing.T) {
 	}
 }
 
+func TestM6ClipboardStripsBOM(t *testing.T) {
+	clipboard := &recordingClipboard{text: "\ufeffpasted\n"}
+	game, _ := newEditorGame(t, "x\n", clipboard)
+	if err := sendKeys(t, game, "i<c-S-v>"); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool {
+		updateGame(t, game)
+		return strings.Contains(game.session.CurrentEditor().Buffer.Text(), "pasted")
+	})
+	if strings.Contains(game.session.CurrentEditor().Buffer.Text(), "\ufeff") {
+		t.Fatalf("paste kept the BOM: %q", game.session.CurrentEditor().Buffer.Text())
+	}
+}
+
 func TestM6ClipboardUnknownRuneWarning(t *testing.T) {
 	clipboard := &recordingClipboard{text: "a😀b\n"}
 	game, _ := newEditorGame(t, "x\n", clipboard)

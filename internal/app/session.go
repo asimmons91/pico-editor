@@ -290,6 +290,7 @@ func (s *Session) CompleteClipboardRead(text string, err error) (changed bool, a
 	if ed == nil {
 		return false, nil
 	}
+	text = strings.TrimPrefix(text, "\ufeff")
 	result := s.Vim.CompleteClipboardRead(text, err, ed)
 	s.applyVimResult(result)
 	if err == nil {
