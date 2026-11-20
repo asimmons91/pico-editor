@@ -77,10 +77,18 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 	ebiten.SetWindowSizeLimits(app.CanvasWidth, app.CanvasHeight, -1, -1)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 
-	if err := ebiten.RunGame(app.New(app.Config{
+	game := app.New(app.Config{
 		Logger:       logger,
 		DebugCharset: options.debugCharset,
-	})); err != nil {
+		File:         options.file,
+	})
+	if err := game.StartupError(); err != nil {
+		logger.Error("startup", "error", err)
+		fmt.Fprintf(stderr, "pico-editor: %v\n", err)
+		return 1
+	}
+
+	if err := ebiten.RunGame(game); err != nil {
 		logger.Error("run", "error", err)
 		fmt.Fprintf(stderr, "pico-editor: %v\n", err)
 		return 1
@@ -93,6 +101,7 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 type options struct {
 	showVersion  bool
 	debugCharset bool
+	file         string
 	level        slog.Level
 	logFile      string
 }
@@ -116,10 +125,18 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	if err := flags.Parse(args); err != nil {
 		return options{}, err
 	}
-	if flags.NArg() > 0 {
-		fmt.Fprintf(stderr, "pico-editor: unexpected arguments: %s\n", strings.Join(flags.Args(), " "))
+	if flags.NArg() > 1 {
+		fmt.Fprintf(stderr, "pico-editor: expected at most one file, got %s\n", strings.Join(flags.Args(), " "))
 		flags.Usage()
-		return options{}, errors.New("unexpected arguments")
+		return options{}, errors.New("too many file arguments")
+	}
+	if flags.NArg() == 1 {
+		opts.file = flags.Arg(0)
+	}
+	if opts.file != "" && opts.debugCharset {
+		fmt.Fprintln(stderr, "pico-editor: cannot combine --debug-charset with a file argument")
+		flags.Usage()
+		return options{}, errors.New("conflicting debug screens")
 	}
 
 	level, err := parseLevel(levelText)
@@ -133,7 +150,7 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 }
 
 func printUsage(w io.Writer, flags *flag.FlagSet) {
-	fmt.Fprintln(w, "usage: pico-editor [flags]")
+	fmt.Fprintln(w, "usage: pico-editor [flags] [file]")
 	fmt.Fprintln(w)
 	flags.PrintDefaults()
 }

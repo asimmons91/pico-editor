@@ -43,7 +43,7 @@ cmd/pico-editor
 internal/ui       -> internal/{render,font,editor,cart,config}
 internal/vim      -> internal/{input,editor}
 internal/input    -> pico-lsp pkg/p8scii
-internal/editor   -> pico-lsp pkg/p8scii
+internal/editor   -> pico-lsp pkg/p8scii, internal/fsutil
 internal/render   -> internal/font, pico-lsp pkg/p8scii
 internal/cart     -> pico-lsp pkg/cart
 internal/workspace-> pico-lsp pkg/cart
@@ -364,6 +364,18 @@ Development rules:
   platform-neutral `internal/input.Tracker`. The font data was extracted once
   from PICO-8 0.2.7 and verified pixel-for-pixel against a PICO-8 screenshot;
   see `docs/spikes/M1-input.md`.
+- M2 adds `internal/editor` (line buffer, P8SCII cluster positions, cursor,
+  selection, edits, undo, viewport, search) and `internal/fsutil`
+  (`AtomicWrite` with owner/mode preservation and directory fsync). The
+  temporary debug screen is selected with `pico-editor <file>`; no argument
+  keeps the charset screen, and `.p8` files are rejected until M4.
+- M2 stores the save point as a SHA-256 of the canonical text, so undo/redo
+  across the save point updates `Dirty()` without writing. It rejects files
+  mixing CRLF and LF, checks mtime/size/content hash before saving, and refuses
+  symlink targets outside the file's parent directory; M4 adds conflict UI,
+  backups, and explicit outside-root confirmation.
+- M3 will replace the debug screen's direct key map with `internal/vim`; the
+  editor package stays free of modal or Vim-specific state.
 - Clipboard access uses `golang.design/x/clipboard` `v0.11.0` behind
   `input.Clipboard`, initialized lazily. Reads run on a background goroutine and
   are applied through a channel on the Update goroutine. On GNOME Wayland the

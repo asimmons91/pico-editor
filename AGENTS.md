@@ -2,7 +2,15 @@
 
 ## Read first
 
-- M0 (foundation) and M1 (font, rendering, and input foundation) are implemented: `cmd/pico-editor`, `internal/app`, `internal/font`, `internal/fontgen`, `internal/render`, `internal/input`, `internal/version`, mise tasks, and CI exist. `docs/ROADMAP.md` links one detailed spec per milestone (`docs/M0-foundation.md` through `docs/M8-linux-release.md`); start with the roadmap, then read `docs/ARCHITECTURE.md` and `docs/VIM.md`. M1 results and the remaining interactive spot checks live in `docs/spikes/M1-input.md`.
+- M0 (foundation), M1 (font, rendering, and input foundation), and M2 (editor
+  core) are implemented: `cmd/pico-editor`, `internal/app`, `internal/editor`,
+  `internal/fsutil`, `internal/font`, `internal/fontgen`, `internal/render`,
+  `internal/input`, `internal/version`, mise tasks, and CI exist.
+  `docs/ROADMAP.md` links one detailed spec per milestone (`docs/M0-foundation.md`
+  through `docs/M8-linux-release.md`); start with the roadmap, then read
+  `docs/ARCHITECTURE.md` and `docs/VIM.md`. M1 results and the remaining
+  interactive spot checks live in `docs/spikes/M1-input.md`; M2 results and
+  resolved decisions live in `docs/M2-editor-core.md`.
 - `docs/ROADMAP.md` is the source of truth for V1 scope, locked decisions, milestones, and deferred work. Read it before adding features; update it when a locked decision changes.
 - Do not implement post-V1 items without explicit approval: full Vim macros/marks/plugins/splits, references/rename/formatting/code actions, `.p8.png`, run-cart, macOS/Windows packaging.
 

@@ -1,6 +1,6 @@
 # M2 — Editor core
 
-**Status:** Draft
+**Status:** Implemented
 **Depends on:** M0, M1
 **Blocks:** M3, M4
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
@@ -13,8 +13,9 @@ viewport, search, and safe `.lua` file IO. It knows nothing about Vim, carts, or
 LSP. Every later feature edits through this layer.
 
 **Demo:** Open a 64KB `.lua` file, edit it with the primitive API and a debug
-keyboard map for a full session, undo and redo every change, search with `/`,
-and save without corrupting line endings or the trailing newline.
+keyboard map for a full session, undo and redo every change, exercise the
+`Search` API, and save without corrupting line endings or the trailing newline.
+(The `/` prompt itself is M3; M2 provides the search engine and match ranges.)
 
 ## Scope
 
@@ -81,7 +82,8 @@ func (b *Buffer) MarkSaved()
 - Preserve a missing trailing newline exactly.
 - Preserve the original file mode. Do not change ownership.
 - `Version` increases on every accepted edit; `SavedVersion` records the last
-  successful save. `Dirty()` is `Version != SavedVersion`.
+  successful save. `Dirty()` compares a cached hash of the current text with the
+  saved text hash, so undoing back to the save point clears it.
 - No rope. Carts and includes are small; line slices plus a rebuilt line index
   are fast enough. Rebuild indexes after each edit.
 
@@ -113,8 +115,9 @@ Requirements:
 - `ByteOffset`/`PosFromByte` round-trip for every cluster boundary.
 - Tabs are literal `\t` characters. Display width is the next multiple of
   `TabWidth` (default 2); a tab at cell 0 occupies 2 cells, at cell 1 it
-  occupies 1 cell. Editing Tab inserts `TabWidth` spaces in M2; literal tabs in
-  existing files are preserved.
+  occupies 1 cell. The Tab edit primitive inserts spaces to the next tab stop,
+  matching the VIM.md insert-mode matrix; literal tabs in existing files are
+  preserved.
 - Unknown runes are one cluster of width 4.
 
 ### 3. Cursor and selection
@@ -178,7 +181,8 @@ Required operations, all built on `Apply`:
 
 Rules:
 
-- Every edit is rejected if `Start`/`End` are not cluster boundaries.
+- Every edit is rejected if `Start`/`End` are not cluster boundaries, or if the
+  inserted text is not valid UTF-8.
 - An edit never produces invalid UTF-8.
 - `Change` contains enough information for undo without re-reading the file.
 - After a successful edit, increment `Version` and normalize the cursor.
@@ -244,9 +248,10 @@ type Search struct {
 type Match struct {
     Start Pos
     End   Pos
+    Wrapped bool // the search continued from the other buffer end
 }
 
-func (s *Search) Find(text string, from Pos) (Match, bool)
+func (s Search) Find(text string, from Pos) (Match, bool, error)
 ```
 
 - Literal search by default; regex mode uses Go's `regexp` package.
@@ -320,7 +325,7 @@ type Editor struct {
     Cursor    Cursor
     Selection Selection
     Viewport  Viewport
-    Undo      UndoStack
+    History   UndoStack
     Search    Search
 }
 
@@ -334,11 +339,38 @@ func (e *Editor) Redo()
 `Editor` is the only mutable editing state. M3 adds a Vim state machine above
 it; M4 adds a cart adapter below it; M5 maps LSP positions through `Position`.
 
+## Resolved implementation decisions
+
+These were settled while implementing M2.
+
+- The temporary debug screen is reached with `pico-editor <file>`. With no
+  argument the M1 charset screen remains; `--debug-charset` still forces it.
+  `--debug-charset` and a file argument are mutually exclusive.
+- `.p8` carts are rejected with `ErrUnsupportedFile` until M4 can preserve
+  non-code sections. The debug screen never opens raw cart text.
+- Files mixing CRLF and LF are rejected with `ErrMixedNewlines`; a lone CR is a
+  P8SCII character and round-trips unchanged.
+- Save checks the target's mtime, size, and SHA-256 against the values recorded
+  at open/last save and returns `ErrExternalChange` on a mismatch. M4 adds the
+  conflict dialog and backups.
+- The M2 workspace root is the directory containing the buffer path. A symlink
+  whose resolved target leaves that directory returns `ErrOutsideRoot`; M4 adds
+  explicit confirmation.
+- The Tab primitive inserts spaces to the next tab stop, matching VIM.md,
+  rather than a fixed two spaces.
+- `Dirty()` uses a cached text hash rather than `Version != SavedVersion`, so
+  undo and redo across the save point work without a new save.
+- `Editor` exposes the undo stack as `History` because Go cannot declare both a
+  `Undo` field and an `Undo()` method. `Buffer` carries `TabWidth` so cell
+  conversion has one tab-stop source.
+
 ## Error handling
 
 - Open/save errors are typed (`ErrNotUTF8`, `ErrTooLarge`, `ErrReadOnly`,
-  `ErrExternalChange`) and carry the path.
-- Editing errors (invalid position, invalid range) leave the buffer unchanged.
+  `ErrExternalChange`, `ErrMixedNewlines`, `ErrUnsupportedFile`,
+  `ErrOutsideRoot`) and carry the path.
+- Editing errors (invalid position, invalid range, invalid UTF-8 text) leave
+  the buffer unchanged.
 - Search errors preserve the previous pattern.
 - Any panic in an edit operation is a test failure; add a fuzz target for
   sequences of edits, undo, and redo.
@@ -361,24 +393,30 @@ it; M4 adds a cart adapter below it; M5 maps LSP positions through `Position`.
 
 - Random edit sequences followed by undo-all: the buffer equals the initial
   text.
-- Random save/load: bytes are identical for valid UTF-8 inputs.
+- Random save/load: bytes are identical for valid UTF-8 inputs with consistent
+  line endings; mixed-ending files are rejected.
 
 ### Performance
 
 - Open and split a 64KB, 8,000-line file in under 100ms.
 - Apply a single-character edit in under 2ms on the target machine.
 - `go test -bench` records the baseline; M7 enforces the full UI budget.
+- Baseline on the M2 target machine (Ryzen 7 7840U): `BenchmarkOpen64K`
+  ≈0.5 ms/op and `BenchmarkApplySingleCharacter` ≈115 µs/op on an
+  8,000-line buffer.
+- The CI `xvfb` smoke job opens both the charset screen and a `.lua` buffer
+  under Xvfb and requires the `first-frame` log record in each case.
 
 ## Exit criteria
 
-- [ ] A `.lua` file can be edited for a full session without corruption or
+- [x] A `.lua` file can be edited for a full session without corruption or
       panics.
-- [ ] Cursor movement across wide glyphs and VS16 sequences is correct.
-- [ ] Undo/redo and save round-trips are covered by tests.
-- [ ] Undo back to the save point clears the dirty flag.
-- [ ] Typing and scrolling stay smooth on a 64KB file.
-- [ ] Atomic save leaves the original intact on injected failure.
-- [ ] `mise run check` passes.
+- [x] Cursor movement across wide glyphs and VS16 sequences is correct.
+- [x] Undo/redo and save round-trips are covered by tests.
+- [x] Undo back to the save point clears the dirty flag.
+- [x] Typing and scrolling stay smooth on a 64KB file.
+- [x] Atomic save leaves the original intact on injected failure.
+- [x] `mise run check` passes.
 
 ## Risks and mitigations
 

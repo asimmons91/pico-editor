@@ -1,7 +1,7 @@
 # pico-editor V1 Roadmap
 
-Status: M1 — Font, rendering, and input foundation implemented; interactive
-spot checks pending (see `docs/spikes/M1-input.md`); M2 next
+Status: M2 — Editor core implemented; M3 (Vim curated core) next. Interactive
+M1 spot checks remain tracked in `docs/spikes/M1-input.md`.
 Date: 2026-11-20
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise
@@ -427,6 +427,10 @@ normative.
 | pico-lsp public API | Thin `pkg/*` facades; `pkg/p8scii` before M1, `pkg/cart` before M4, `pkg/lsp` before M5 | M0/M4/M5 |
 | `.lua` include attachment | Workspace scan plus `pkg/cart` resolver | M4 |
 | File watching | Refresh-on-focus in M7; full watcher post-V1 | M7 |
+| `.lua` mixed line endings | Reject with `ErrMixedNewlines`; LF and CRLF files round-trip byte-for-byte | M2 |
+| External changes | M2 checks mtime, size, and content hash on save; M4 adds the conflict dialog and backups | M2/M4 |
+| M2 debug screen | `pico-editor <file>`; `.p8` rejected until M4; no argument keeps the charset screen | M2 |
+| Tab insertion | Spaces to the next tab stop, matching VIM.md | M2 |
 | Run-cart command | Post-V1 | — |
 | References, rename, formatting, code actions | Post-V1 | — |
 | `.p8.png` read-only support | Post-V1 | — |
