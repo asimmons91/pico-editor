@@ -319,17 +319,14 @@ be used at a milestone exit.
 | Go | `1.27.4` | M0 |
 | Ebitengine | `v2.10.6` | M0 |
 | golangci-lint | `2.15.0` (mise) | M0 |
-| pico-lsp `pkg/p8scii` (pico-lsp M17) | `v1.6.0` | before M1 |
-| pico-lsp `pkg/cart` (pico-lsp M18) | `v1.6.0` | before M4 |
-| pico-lsp `pkg/lsp` (pico-lsp M19) | `v1.6.0` (M17–M19 shipped together) | before M5 |
-| pico-lsp `pkg/glyphs` complete catalog | `v1.7.0` | before M6 |
+| pico-lsp module (M17–M19 plus catalog expansion) | `v1.7.0` (`pkg/p8scii`, `pkg/cart`, and `pkg/lsp` since `v1.6.0`; complete `pkg/glyphs` catalog in `v1.7.0`) | M1/M4/M5/M6 |
 | `go.lsp.dev/protocol` | `v1.0.1` | M5 |
 | `go.lsp.dev/jsonrpc2` | `v1.0.1` | M5 |
 | `go.lsp.dev/uri` | `v1.0.1` (transitive) | M5 |
 | TOML parser | selected and pinned in M7 | M7 |
 | `golang.design/x/clipboard` | `v0.11.0` (pure Go on Linux) | M1 |
 
-`pkg/cart` in pico-lsp `v1.6.0` brings `go.lsp.dev/jsonrpc2`, `protocol`, and
+`pkg/cart` in pico-lsp `v1.7.0` brings `go.lsp.dev/jsonrpc2`, `protocol`, and
 `uri` in transitively. They appear as indirect `go.mod` entries before M5; the
 editor does not import those packages directly until the LSP client lands.
 

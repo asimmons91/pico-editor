@@ -43,7 +43,8 @@ work. A 64KB cart stays responsive.
 
 1. Final semantic color table and render tests.
 2. Status bar layout with truncation priorities.
-3. Command registry and palette UI.
+3. Command registry and palette UI (the registry and palette landed with M6;
+   M7 adds settings-driven keymaps, messages, and the remaining commands).
 4. TOML settings and keymap loading, validation, precedence, and reload.
 5. Notification system with history.
 6. Refresh-on-focus behavior for buffers, tree, and config.

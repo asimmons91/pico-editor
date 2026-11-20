@@ -112,8 +112,9 @@ Rules:
   `docs/INPUT.md`.
 - Multi-key sequences, small kana, and any dakuten/handakuten behavior are
   whatever PICO-8 does; the capture task is authoritative. If PICO-8 requires
-  sequences, the input layer supports a pending-sequence buffer with a 1s
-  timeout and a visible pending indicator.
+  sequences, the input layer keeps a pending-sequence buffer. Capture showed
+  no timeout; the buffer is cleared by a non-letter key or by leaving insert
+  mode.
 - Kana characters insert canonical Unicode and occupy two cells.
 - Kana mode does not change Shift+letter behavior: Shift still inserts the
   symbol glyphs from §1 unless puny mode is active.
