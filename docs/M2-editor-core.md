@@ -403,6 +403,9 @@ These were settled while implementing M2.
 - The temporary M2 debug screen saves synchronously on the Update goroutine.
   M3/M4 must route `:w` and the save pipeline through the architecture's
   message/result path rather than copying this scaffolding.
+- Clipboard reads stay asynchronous, as in M1. The debug screen applies a paste
+  when the result arrives; M3/M4 own command sequencing and pending-state UX
+  for paste ordering.
 
 ## Error handling
 
