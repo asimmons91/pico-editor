@@ -32,6 +32,25 @@ func (v *Vim) enterInsertLineEnd(ed *editor.Editor) {
 	v.beginInsert(ed, count, nil, entryAppendEOL)
 }
 
+// EnterInsertAtCursor starts insert mode at the current cursor without moving
+// it or opening a new line. The glyph picker uses it after inserting text in
+// normal mode.
+func (v *Vim) EnterInsertAtCursor(ed *editor.Editor) {
+	ed.BeginGroup()
+	v.Mode = ModeInsert
+	v.insert = insertState{
+		active:       true,
+		count:        1,
+		entry:        entryInsert,
+		start:        ed.Cursor.Pos,
+		startHistory: len(ed.History.Undo),
+	}
+	v.Count = 0
+	v.opCount = 0
+	v.Operator = OpNone
+	v.pending = pendingState{}
+}
+
 func (v *Vim) enterInsertWithRecord(ed *editor.Editor, record *changeRecord) {
 	v.beginInsert(ed, 1, record, entryInsert)
 }
@@ -149,12 +168,6 @@ func (v *Vim) handleInsert(ev input.Event, ed *editor.Editor) {
 	case input.KeyU:
 		if ctrl {
 			v.deleteToLineStart(ed)
-		}
-	case input.KeyJ, input.KeyK, input.KeyP:
-		if ctrl {
-			// P8SCII input modes are owned by M6. The key is deliberately not
-			// inserted as text.
-			v.info("P8SCII input modes are available in M6")
 		}
 	}
 }

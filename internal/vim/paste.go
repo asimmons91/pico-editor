@@ -22,6 +22,7 @@ func (v *Vim) paste(ed *editor.Editor, before bool) {
 			count:    count,
 			register: selector,
 			editor:   ed,
+			version:  ed.Buffer.Version,
 			pos:      ed.Cursor.Pos,
 		}
 		return
@@ -38,6 +39,95 @@ func (v *Vim) paste(ed *editor.Editor, before bool) {
 		count:    count,
 		backward: before,
 	})
+}
+
+// ClipboardPaste requests a system-clipboard paste for Ctrl+Shift+V in insert
+// or visual mode. Normal mode keeps using "+p / "*p.
+func (v *Vim) ClipboardPaste(ed *editor.Editor) Result {
+	v.actions = nil
+	v.notify = ""
+	v.notifyError = false
+	v.bell = false
+	if v.clipboardBusy {
+		v.info("clipboard paste pending")
+		return v.finish()
+	}
+	if v.Mode != ModeInsert && !v.Mode.Visual() {
+		v.info("clipboard paste requires insert or visual mode")
+		return v.finish()
+	}
+	request := &pasteRequest{
+		before:        true,
+		insert:        v.Mode == ModeInsert,
+		count:         1,
+		register:      '+',
+		editor:        ed,
+		version:       ed.Buffer.Version,
+		strictVersion: true,
+		pos:           ed.Cursor.Pos,
+	}
+	if v.Mode.Visual() {
+		request.visual = true
+		request.hasSelection = ed.Selection.Kind != editor.SelectionNone
+		request.selection = ed.Selection
+	}
+	v.clipboardBusy = true
+	v.lastClipboardRegister = '+'
+	v.pendingPaste = request
+	v.queue(Action{Kind: ActionClipboardRead, Register: '+'})
+	return v.finish()
+}
+
+// VisualClipboardYank writes the visual selection to the "+ register.
+func (v *Vim) VisualClipboardYank(ed *editor.Editor) Result {
+	v.actions = nil
+	v.notify = ""
+	v.notifyError = false
+	v.bell = false
+	if !v.Mode.Visual() {
+		v.info("visual mode required")
+		return v.finish()
+	}
+	v.Register = '+'
+	v.executeVisualOperator('y', ed)
+	return v.finish()
+}
+
+// PendingPasteTarget returns the editor a deferred clipboard paste belongs to.
+func (v *Vim) PendingPasteTarget() *editor.Editor {
+	if v.pendingPaste == nil {
+		return nil
+	}
+	return v.pendingPaste.editor
+}
+
+// CancelPendingPaste drops a deferred clipboard paste without applying it.
+func (v *Vim) CancelPendingPaste() {
+	v.clipboardBusy = false
+	v.pendingPaste = nil
+}
+
+func (v *Vim) insertClipboardValue(ed *editor.Editor, value registerValue, pos editor.Pos) {
+	if value.Text == "" {
+		return
+	}
+	if _, err := ed.Apply(editor.Edit{Start: pos, End: pos, Text: value.Text}); err != nil {
+		v.ringBell()
+		return
+	}
+	ed.SetCursor(posAfterText(pos, value.Text))
+	v.recordChange(changeRecord{action: changePaste, register: '+', count: 1})
+}
+
+func posAfterText(start editor.Pos, text string) editor.Pos {
+	lines := strings.Split(text, "\n")
+	if len(lines) == 1 {
+		return editor.Pos{Line: start.Line, Rune: start.Rune + utf8.RuneCountInString(text)}
+	}
+	return editor.Pos{
+		Line: start.Line + len(lines) - 1,
+		Rune: utf8.RuneCountInString(lines[len(lines)-1]),
+	}
 }
 
 func (v *Vim) pasteValue(ed *editor.Editor, value registerValue, request *pasteRequest) {

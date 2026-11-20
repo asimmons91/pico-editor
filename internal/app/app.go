@@ -105,6 +105,8 @@ type Game struct {
 	lsp              *lsp.Service
 	lspCtx           context.Context
 	lspCancel        context.CancelFunc
+	commands         []Command
+	palette          *Palette
 }
 
 // New returns a game configured by cfg.
@@ -176,6 +178,7 @@ func New(cfg Config) *Game {
 			}
 		}
 	}
+	game.commands = game.buildCommands()
 	game.redraw()
 	return game
 }
@@ -311,6 +314,18 @@ func (g *Game) update() error {
 }
 
 func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
+	if g.palette != nil {
+		if g.session != nil && g.session.DialogOpen() {
+			// An async save conflict can open a dialog after the palette was
+			// shown; let the dialog take the next event.
+			g.palette = nil
+		} else if event.Kind == input.KindFocus {
+			// Do not swallow focus refresh while the palette is open.
+			g.palette = nil
+		} else {
+			return g.handlePalette(event)
+		}
+	}
 	switch event.Kind {
 	case input.KindFocus:
 		if g.session == nil {
@@ -397,11 +412,23 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 		return true, false
 	}
 	if g.session != nil {
+		if g.session.GlyphPicker != nil {
+			return g.handleSessionEvent(event)
+		}
 		if g.session.DialogOpen() {
 			return g.handleSessionEvent(event)
 		}
+		if key == input.KeyF1 && event.Mods == 0 && !event.Repeat && g.session.Vim.Mode != vim.ModeCommandLine {
+			return false, g.session.OpenHelp("")
+		}
 		if event.Mods&input.ModCtrl != 0 && !event.Repeat {
 			switch {
+			case key == input.KeyP && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0 && g.session.Vim.Mode != vim.ModeCommandLine:
+				g.openPalette()
+				return false, true
+			case key == input.KeyM && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
+				g.session.SetStatus("message history arrives in M7", false)
+				return false, true
 			case key == input.KeyQ && event.Mods&(input.ModShift|input.ModAlt|input.ModMeta) == 0:
 				return g.requestQuitAll()
 			case key == input.KeyS && event.Mods&(input.ModAlt|input.ModMeta) == 0:
@@ -419,6 +446,16 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 				return false, g.session.SwitchTab(delta)
 			case key == input.KeyB && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
 				return false, g.session.ToggleTree()
+			case key == input.KeyV && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
+				changed, actions := g.session.ClipboardPaste()
+				quit, actionChanged := g.applyActions(actions)
+				return quit, changed || actionChanged
+			case key == input.KeyC && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
+				changed, actions := g.session.VisualClipboardYank()
+				quit, actionChanged := g.applyActions(actions)
+				return quit, changed || actionChanged
+			case key == input.KeyG && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
+				return false, g.session.OpenGlyphPicker()
 			}
 		}
 		return g.handleSessionEvent(event)
@@ -523,6 +560,10 @@ func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
 			g.restartLSP()
 		case vim.ActionJump:
 			g.session.JumpToPath(action.Path, action.Pos)
+		case vim.ActionGlyphPick:
+			g.session.OpenGlyphPicker()
+		case vim.ActionInputMode:
+			g.session.SetInputMode(action.Topic)
 		}
 	}
 	return false, changed
@@ -909,6 +950,9 @@ func (g *Game) redraw() {
 	} else {
 		g.charset.CursorVisible = g.blink.Visible()
 		g.charset.Draw(&g.renderer.Surface)
+	}
+	if g.palette != nil {
+		g.drawPalette(&g.renderer.Surface)
 	}
 	g.renderer.MarkDirty()
 }

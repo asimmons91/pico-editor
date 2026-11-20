@@ -177,6 +177,11 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 	}
 
 	mode := s.Vim.Mode.String()
+	if s.P8 != nil {
+		if label := s.P8.ModeLabel(); label != "" {
+			mode += " " + label
+		}
+	}
 	x := surface.DrawText(0, y, mode+"  ", 10, render.DefaultBackground)
 
 	buffer := s.CurrentBuffer()

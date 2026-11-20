@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/asimmons91/pico-lsp/pkg/glyphs"
 	"github.com/asimmons91/pico-lsp/pkg/p8scii"
 
 	"github.com/asimmons91/pico-editor/internal/cart"
@@ -414,6 +415,40 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func TestServiceCustomGlyphCatalog(t *testing.T) {
+	dir := t.TempDir()
+	byteValue := 0x80
+	service := New(Options{
+		WorkspaceRoot: dir,
+		Settings: Settings{
+			TypeChecking: "basic",
+			Glyphs: []glyphs.Definition{{
+				Name:        "logo",
+				Byte:        &byteValue,
+				Description: "custom font slot",
+			}},
+		},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = service.Start(ctx) }()
+	waitStatus(t, service, StatusReady)
+	service.RequestGlyphs()
+	event := waitEvent(t, service, EventGlyphs)
+	found := false
+	for _, glyph := range event.Glyphs {
+		if glyph.Name == "logo" {
+			found = true
+			if glyph.Text != "█" || !glyph.Custom {
+				t.Fatalf("custom glyph = %+v, want █ and Custom=true", glyph)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("custom glyph missing from catalog: %+v", event.Glyphs)
+	}
 }
 
 func containsLabel(items []CompletionItem, label string) bool {

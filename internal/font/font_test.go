@@ -138,6 +138,26 @@ func TestClustersInvalidUTF8(t *testing.T) {
 	}
 }
 
+func TestPunyUppercaseUsesLowercaseShapes(t *testing.T) {
+	upper, ok := Lookup("A")
+	if !ok {
+		t.Fatal("missing uppercase A")
+	}
+	lower, ok := Lookup("a")
+	if !ok {
+		t.Fatal("missing lowercase a")
+	}
+	if upper.Rows == lower.Rows {
+		t.Fatal("uppercase A and lowercase a use the same atlas shape; puny slot is missing")
+	}
+	if upper.Width != NarrowWidth || lower.Width != NarrowWidth {
+		t.Fatalf("A/a widths = %d/%d, want %d", upper.Width, lower.Width, NarrowWidth)
+	}
+	if got := CellWidth("Aあ"); got != 3 {
+		t.Fatalf("CellWidth(Aあ) = %d, want 1 narrow + 2 wide cells", got)
+	}
+}
+
 func TestControlClustersAreNotPrintable(t *testing.T) {
 	for cluster := range Clusters("\x00\t\n") {
 		if !cluster.Known || cluster.Meta.Printable || cluster.Width != 0 {

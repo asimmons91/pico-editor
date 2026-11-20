@@ -7,6 +7,7 @@ import (
 
 	"github.com/asimmons91/pico-editor/internal/cart"
 	"github.com/asimmons91/pico-editor/internal/editor"
+	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/vim"
 	"github.com/asimmons91/pico-editor/internal/workspace"
 )
@@ -30,6 +31,7 @@ func NewSessionAt(root, path string, logger *slog.Logger) (*Session, error) {
 	}
 	session := &Session{
 		Vim:       vim.New(),
+		P8:        input.NewP8Input(logger),
 		Workspace: workspaceTree,
 		logger:    logger,
 	}
@@ -98,6 +100,8 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 		return
 	}
 	s.clearLSPTransients()
+	s.GlyphPicker = nil
+	s.glyphPickerPending = false
 	ed := buffer.Editor
 	ed.Viewport.Width = GridColumns
 	ed.Viewport.ScrollOff = 2
@@ -263,6 +267,9 @@ func (s *Session) syncCurrentCart() {
 // endInsertMode commits any active insert session before a buffer or cart-tab
 // switch. Counted inserts and dot replay must stay within the original tab.
 func (s *Session) endInsertMode() {
+	if s.P8 != nil {
+		s.P8.Reset()
+	}
 	if ed := s.CurrentEditor(); ed != nil {
 		s.Vim.EndInsertMode(ed)
 		s.syncCurrentCart()

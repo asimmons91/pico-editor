@@ -43,7 +43,8 @@ work. A 64KB cart stays responsive.
 
 1. Final semantic color table and render tests.
 2. Status bar layout with truncation priorities.
-3. Command registry and palette UI.
+3. Command registry and palette UI (the registry and palette landed with M6;
+   M7 adds settings-driven keymaps, messages, and the remaining commands).
 4. TOML settings and keymap loading, validation, precedence, and reload.
 5. Notification system with history.
 6. Refresh-on-focus behavior for buffers, tree, and config.
@@ -106,10 +107,10 @@ Rendering:
 One row, 64 cells, at the bottom. Segments, left to right:
 
 ```text
-<N|I|V|VL|VB|:><LIT|HIRA|KATA>  <file>[:<tab>]<*>  <line>:<col>  E<n> W<n>  T<n> C<n> Z<n>  [LSP]
+<N|I|V|VL|VB|:><PUNY|HIRA|KATA>  <file>[:<tab>]<*>  <line>:<col>  E<n> W<n>  T<n> C<n> Z<n>  [LSP]
 ```
 
-- Mode: `N`, `I`, `V`, `VL`, `VB`, `:`; append `LIT`, `HIRA`, or `KATA` when
+- Mode: `N`, `I`, `V`, `VL`, `VB`, `:`; append `PUNY`, `HIRA`, or `KATA` when
   active.
 - File: base name, optional cart tab index, `*` when dirty.
 - Position: 1-based line and 1-based cell column.
@@ -141,7 +142,7 @@ Required commands (IDs are stable; keymaps and docs use them):
 `file.save`, `file.close`, `file.reload`, `buffer.next`, `buffer.prev`,
 `buffer.list`, `cart.tab.next`, `cart.tab.prev`, `tree.toggle`, `tree.refresh`,
 `palette.show`, `help.open`, `help.input`, `diag.list`, `messages.show`,
-`lsp.restart`, `glyph.pick`, `input.literal`, `config.reload`, `app.quit`.
+`lsp.restart`, `glyph.pick`, `input.puny`, `config.reload`, `app.quit`.
 
 Palette:
 
@@ -170,7 +171,6 @@ version = 1
 
 [editor]
 scale = 4                 # 0 = auto (clamps 2..8); 1..8 when fixed
-font = "default"          # default | puny
 tab_width = 2
 scrolloff = 2
 blink_ms = 500
@@ -196,7 +196,8 @@ interval_ms = 2000
 
 - Unknown top-level tables and keys are ignored with a warning.
 - Fixed scales 1..8 are valid; `scale = 0` selects automatic sizing, which clamps to 2..8. Other values (for example `scale = 99`) fall back and warn.
-- `editor.font = "puny"` switches the M6 atlas and metrics.
+- P8SCII puny input is `Ctrl+P`, not a font setting; the atlas already contains
+  the puny glyphs at uppercase ASCII. No `editor.font` key exists.
 - `lsp.enabled = false` starts the editor without pico-lsp; all LSP UI is
   hidden and the editor remains fully usable.
 - `config.reload` and `:reload` reload both layers. Refresh-on-focus reloads
@@ -225,8 +226,8 @@ interval_ms = 2000
   | `f1` | all | `help.open` |
   | `ctrl+shift+m` | normal | `messages.show` |
 
-- `Ctrl+P` is reserved for P8SCII literal mode in insert and must not be bound
-  to a command there.
+- `Ctrl+P` is reserved for P8SCII puny mode in insert and must not be bound to
+  a command there.
 - Duplicate bindings in the same mode are a configuration error: the first
   default is removed, the user's binding wins, and a warning lists both.
 - Keys in the frozen Vim matrix and reserved input/LSP bindings (`ctrl+b`,

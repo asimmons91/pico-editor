@@ -1,6 +1,6 @@
 # pico-editor V1 Roadmap
 
-Status: M5 — in-process pico-lsp implemented; M6 (P8SCII input UX) next.
+Status: M6 — P8SCII input UX implemented; M7 (polish and hardening) next.
 Interactive M1 spot checks remain tracked in `docs/spikes/M1-input.md`, the M3
 manual checklist lives in `docs/spikes/M3-vim.md`, the M4 manual checklist is in
 `docs/spikes/M4-cart.md`, and the M5 integration notes are in
@@ -15,6 +15,8 @@ Go: `1.27.4`, managed by mise
   coordinate systems, render pipeline, LSP transport, and dependency pins.
 - [VIM.md](VIM.md) — frozen V1 Vim command matrix. M3 must not add commands
   without updating the roadmap.
+- [INPUT.md](INPUT.md) — P8SCII input tables, mode behavior, picker, clipboard,
+  and the PICO-8 0.2.7 capture notes.
 
 ## Vision
 
@@ -55,7 +57,7 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 - Curated Vim mode: normal, insert, visual char/line/block, motions, operators,
   text objects, registers, search, undo/redo, `:s`, and basic ex commands.
 - Authentic P8SCII input: Shift+letter glyphs, Ctrl+J/K kana modes, Ctrl+P puny
-  mode, glyph picker, and `p8_left` completion.
+  mode, a complete glyph picker, and `p8_left` completion.
 - Settings file, keymap configuration, command palette, and a minimal error UI.
 - Linux AppImage and tar.gz releases with install/run documentation.
 
@@ -288,13 +290,17 @@ Goal: make PICO-8's special-character input feel native.
 Deliverables:
 
 - Shift+letter glyph insertion in insert mode, always authentic to PICO-8.
-- Captured PICO-8 0.2.7 Shift+letter, kana, and literal-mode tables.
+- Captured PICO-8 0.2.7 Shift+letter, kana, and puny-mode tables.
 - Ctrl+J Hiragana and Ctrl+K Katakana input modes.
-- Ctrl+P literal/puny mode and the documented uppercase escape path.
-- Glyph picker UI backed by pico-lsp.
-- `p8_left`-style completion through pico-lsp.
+- Ctrl+P puny mode and the documented uppercase escape path.
+- Glyph picker UI backed by the complete pico-lsp catalog (every printable
+  byte, including ASCII and kana).
+- `p8_left`-style completion through pico-lsp, including `p8-` aliases and kana.
 - Clipboard and paste mapping for canonical P8SCII Unicode.
-- Puny-font rendering variant and `docs/INPUT.md`.
+- Puny glyph rendering through the existing uppercase-ASCII atlas slots and
+  `docs/INPUT.md`.
+- Command palette/registry (the M7 command layer lands with M6 so every M6
+  feature is discoverable).
 
 Exit criteria:
 
@@ -302,7 +308,7 @@ Exit criteria:
 - Normal-mode Vim Shift commands are unaffected.
 - Uppercase identifier input has a documented, tested escape path.
 - Ctrl+J/K/P modes match the captured PICO-8 behavior.
-- Input mode help is accessible from the command palette or `:help`.
+- Input mode help is accessible from the command palette and `:help input`.
 
 ### M7 — Polish and hardening
 
@@ -364,7 +370,8 @@ pkg/cart    before M4
 pkg/lsp     before M5
 ```
 
-M17–M19 shipped together in pico-lsp `v1.6.0`, so all four public packages
+M17–M19 shipped together in pico-lsp `v1.6.0`; `v1.7.0` adds the complete
+printable glyph catalog used by M6. All four public packages
 (`pkg/p8scii`, `pkg/cart`, `pkg/lsp`, `pkg/glyphs`) share one pin.
 
 M3 (Vim) and M4/M5 can overlap if there are separate workstreams. M6 needs the
@@ -399,7 +406,7 @@ the largest source of variance, so re-estimate after the M1 and early M3 spikes.
 | Risk | Mitigation |
 | --- | --- |
 | Vim scope expands without bound | Lock `docs/VIM.md`, timebox M3, defer macros/marks/plugins explicitly. |
-| P8SCII Shift+letter conflicts with uppercase input | Keep normal-mode Vim untouched; implement and document PICO-8's puny/literal path; test uppercase identifiers. |
+| P8SCII Shift+letter conflicts with uppercase input | Keep normal-mode Vim untouched; implement and document PICO-8's Ctrl+P puny path; test uppercase identifiers. |
 | pico-lsp public API refactor destabilizes the server | Add public package tests upstream, keep the LSP boundary narrow, and pin a released version. |
 | LSP UI work is larger than expected | Ship diagnostics + semantic tokens first, then completion/hover/definition; defer references/rename/format. |
 | Cart save corrupts non-code sections | Golden round-trip tests, byte-preserving suffix writes, atomic saves, and backups on external modification. |
@@ -452,6 +459,7 @@ normative.
 | M3 help | Minimal scrollable overlay for `keys`, `input`, `lsp`, and `config`; M7 expands topics | M3 |
 | Tab insertion | Spaces to the next tab stop, matching VIM.md | M2 |
 | M5 pico-lsp pin | `v1.6.0` includes `pkg/lsp` and `pkg/glyphs`; M17–M19 shipped together | M5 |
+| M6 pico-lsp pin | `v1.7.0` expands `pkg/glyphs` to every printable P8SCII byte for the picker | M6 |
 | M5 semantic colors | M7 final palette table implemented in M5 | M5 |
 | M5 LSP failure | Persistent status message plus `:lsp restart`; no modal | M5 |
 | M5 status bar | Compact LSP suffix in the existing row; M7 redesigns it | M5 |
@@ -464,8 +472,11 @@ normative.
 
 These are scheduled in the specs and do not block M0:
 
-- Capture PICO-8 0.2.7 Shift+letter, kana, and Ctrl+P behavior (M6).
-- Capture puny-font metrics against PICO-8 (M6).
+- PICO-8 0.2.7 Shift+letter, kana, and Ctrl+P behavior is captured in
+  `testdata/pico8/input/`; the derived tables are in `internal/input`. The
+  capture showed that Ctrl+P is an input mode and the existing uppercase-ASCII
+  atlas slots already contain the puny glyphs, so no separate puny atlas is
+  planned.
 - Interactive X11/Wayland clipboard, IME, and non-US layout spot checks
   (M1; automated results and the remaining checklist are in
   `docs/spikes/M1-input.md`).

@@ -27,6 +27,8 @@ const (
 	ActionDefinition
 	ActionLSPRestart
 	ActionJump
+	ActionGlyphPick
+	ActionInputMode
 )
 
 func (k ActionKind) String() string {
@@ -59,6 +61,10 @@ func (k ActionKind) String() string {
 		return "lsp-restart"
 	case ActionJump:
 		return "jump"
+	case ActionGlyphPick:
+		return "glyph-pick"
+	case ActionInputMode:
+		return "input-mode"
 	default:
 		return "none"
 	}
@@ -231,14 +237,17 @@ type Vim struct {
 }
 
 type pasteRequest struct {
-	before       bool
-	count        int
-	register     byte
-	visual       bool
-	editor       *editor.Editor
-	pos          editor.Pos
-	selection    editor.Selection
-	hasSelection bool
+	before        bool
+	insert        bool
+	count         int
+	register      byte
+	visual        bool
+	editor        *editor.Editor
+	version       int
+	strictVersion bool
+	pos           editor.Pos
+	selection     editor.Selection
+	hasSelection  bool
 }
 
 // New returns an empty normal-mode session.
@@ -761,7 +770,21 @@ func (v *Vim) EndInsertMode(ed *editor.Editor) {
 // ResetPending drops an armed operator, count, or visual selection without
 // changing Vim mode. Dialogs call it when they take input.
 func (v *Vim) ResetPending(ed *editor.Editor) {
-	v.cancel(ed)
+	v.ResetOperator()
+	if v.Mode.Visual() {
+		v.saveVisual(ed)
+		v.leaveVisual(ed)
+	}
+}
+
+// ResetOperator drops an armed operator, count, register, or pending motion
+// while preserving visual mode and selection.
+func (v *Vim) ResetOperator() {
+	v.Count = 0
+	v.opCount = 0
+	v.Operator = OpNone
+	v.pending = pendingState{}
+	v.Register = 0
 }
 
 func (v *Vim) clampNormal(ed *editor.Editor) {
@@ -795,6 +818,27 @@ func (v *Vim) enterVisual(ed *editor.Editor, mode Mode) {
 	v.Count = 0
 	v.Operator = OpNone
 	v.pending = pendingState{}
+}
+
+// ReplaceSelection replaces the active visual selection with characterwise
+// text and returns to normal mode. The glyph picker uses it for visual mode.
+func (v *Vim) ReplaceSelection(ed *editor.Editor, text string) Result {
+	v.actions = nil
+	v.notify = ""
+	v.notifyError = false
+	v.bell = false
+	if !v.Mode.Visual() || ed.Selection.Kind == editor.SelectionNone {
+		v.info("visual selection required")
+		return v.finish()
+	}
+	// ReplaceSelection is a glyph edit, not a register paste. Do not make dot
+	// repeat replay the unnamed register over the old visual range.
+	lastChange := v.lastChange
+	hadChange := v.changeSet
+	v.pasteOverSelection(ed, registerValue{Text: text, Kind: registerChar})
+	v.lastChange = lastChange
+	v.changeSet = hadChange
+	return v.finish()
 }
 
 func (v *Vim) leaveVisual(ed *editor.Editor) {

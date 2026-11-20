@@ -1,0 +1,93 @@
+{
+  "pico8": "0.2.7",
+  "capture": "xdotool + Xvfb, 4x scale, Linux",
+  "entries": [
+    {
+      "screenshot": "shift-letters.png",
+      "keys": "Shift+A..Shift+Z, one per line",
+      "expected": [
+        "█",
+        "▒",
+        "🐱",
+        "⬇️",
+        "░",
+        "✽",
+        "●",
+        "♥",
+        "☉",
+        "웃",
+        "⌂",
+        "⬅️",
+        "😐",
+        "♪",
+        "🅾️",
+        "◆",
+        "…",
+        "➡️",
+        "★",
+        "⧗",
+        "⬆️",
+        "ˇ",
+        "∧",
+        "❎",
+        "▤",
+        "▥"
+      ]
+    },
+    {
+      "screenshot": "hiragana-ka.png",
+      "keys": [
+        "ctrl+j",
+        "k",
+        "a"
+      ],
+      "expected": [
+        "か",
+        "HIRAGANA MODE (CTRL-J)"
+      ]
+    },
+    {
+      "screenshot": "katakana-mode-status.png",
+      "keys": [
+        "ctrl+k"
+      ],
+      "expected": [
+        "KATAKANA MODE (CTRL-K)"
+      ]
+    },
+    {
+      "screenshot": "puny-mode-status.png",
+      "keys": [
+        "ctrl+p"
+      ],
+      "expected": [
+        "PUNY FONT MODE (CTRL-P)"
+      ]
+    },
+    {
+      "screenshot": "hiragana-romaji.png",
+      "keys_file": "hiragana-keys.txt",
+      "capture_file": "hiragana-capture.txt"
+    },
+    {
+      "screenshot": "katakana-romaji.png",
+      "keys_file": "katakana-keys.txt",
+      "capture_file": "katakana-capture.txt"
+    },
+    {
+      "screenshot": "gemination.png",
+      "keys_file": "gemination-keys.txt",
+      "capture_file": "gemination-capture.txt"
+    },
+    {
+      "screenshot": "shift-digits.png",
+      "keys_file": "shift-digits-keys.txt",
+      "capture_file": "shift-digits-capture.txt"
+    },
+    {
+      "screenshot": "hiragana-romaji.png",
+      "keys_file": "all-sequences-keys.txt",
+      "capture_file": "all-sequences-capture.txt"
+    }
+  ]
+}

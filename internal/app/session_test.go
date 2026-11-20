@@ -119,11 +119,11 @@ func TestNormalModeShiftCommandIsNotInserted(t *testing.T) {
 
 func TestInsertAndAsyncSave(t *testing.T) {
 	game, path := newEditorGame(t, "abc\n", &recordingClipboard{})
-	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>"); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	if got := game.session.CurrentEditor().Buffer.Text(); got != "Xabc\n" {
-		t.Fatalf("buffer = %q, want Xabc", got)
+	if got := game.session.CurrentEditor().Buffer.Text(); got != "xabc\n" {
+		t.Fatalf("buffer = %q, want xabc", got)
 	}
 	if err := sendKeys(t, game, ":w<enter>"); err != nil {
 		t.Fatalf("Update write: %v", err)
@@ -138,8 +138,8 @@ func TestInsertAndAsyncSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved file: %v", err)
 	}
-	if string(data) != "Xabc\n" {
-		t.Fatalf("saved file = %q, want Xabc", data)
+	if string(data) != "xabc\n" {
+		t.Fatalf("saved file = %q, want xabc", data)
 	}
 }
 
@@ -346,8 +346,24 @@ func appNamedKey(name string) (input.Event, bool) {
 		key, mods = input.KeySpace, input.ModCtrl
 	case "c-n":
 		key, mods = input.KeyN, input.ModCtrl
-	case "c-S-n":
+	case "c-j":
+		key, mods = input.KeyJ, input.ModCtrl
+	case "c-k":
+		key, mods = input.KeyK, input.ModCtrl
+	case "c-p":
+		key, mods = input.KeyP, input.ModCtrl
+	case "c-s-n":
 		key, mods = input.KeyN, input.ModCtrl|input.ModShift
+	case "c-s-g":
+		key, mods = input.KeyG, input.ModCtrl|input.ModShift
+	case "c-s-v":
+		key, mods = input.KeyV, input.ModCtrl|input.ModShift
+	case "c-s-c":
+		key, mods = input.KeyC, input.ModCtrl|input.ModShift
+	case "c-s-p":
+		key, mods = input.KeyP, input.ModCtrl|input.ModShift
+	case "f1":
+		key = input.KeyF1
 	case "c-]":
 		key, mods = input.KeyRightBracket, input.ModCtrl
 	default:
@@ -452,7 +468,7 @@ func appDecodeRune(text string) (rune, int) {
 
 func TestWriteQuitWaitsForAsyncSave(t *testing.T) {
 	game, path := newEditorGame(t, "abc\n", &recordingClipboard{})
-	if err := sendKeys(t, game, "iX<esc>:wq<enter>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>:wq<enter>"); err != nil {
 		t.Fatalf("Update write-quit: %v", err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -473,8 +489,8 @@ func TestWriteQuitWaitsForAsyncSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved file: %v", err)
 	}
-	if string(data) != "Xabc\n" {
-		t.Fatalf("saved file = %q, want Xabc", data)
+	if string(data) != "xabc\n" {
+		t.Fatalf("saved file = %q, want xabc", data)
 	}
 }
 
@@ -785,7 +801,7 @@ func TestClipboardCRLFIsNormalizedOnPaste(t *testing.T) {
 
 func TestForceEditReloadsAlreadyOpenPath(t *testing.T) {
 	game, path := newEditorGame(t, "abc\n", &recordingClipboard{})
-	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>"); err != nil {
 		t.Fatalf("Update edit: %v", err)
 	}
 	if err := os.WriteFile(path, []byte("disk\n"), 0o644); err != nil {

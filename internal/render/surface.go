@@ -92,6 +92,29 @@ func (s *Surface) InvertRect(x, y, w, h int) {
 
 // DrawGlyph fills the glyph cell with bg, then draws its ink in fg. It returns
 // the glyph's pixel width.
+// DrawGlyphScaled draws a glyph with each source pixel expanded to scale×scale.
+// It returns the advanced pixel width.
+func (s *Surface) DrawGlyphScaled(x, y int, g font.Glyph, scale int, fg, bg uint8) int {
+	if scale < 1 {
+		scale = 1
+	}
+	width := int(g.Width)
+	for row := 0; row < font.CellHeight; row++ {
+		for col := 0; col < width; col++ {
+			color := bg
+			if g.Rows[row]&(1<<uint(col)) != 0 {
+				color = fg
+			}
+			for dy := 0; dy < scale; dy++ {
+				for dx := 0; dx < scale; dx++ {
+					s.Set(x+col*scale+dx, y+row*scale+dy, color)
+				}
+			}
+		}
+	}
+	return width * scale
+}
+
 func (s *Surface) DrawGlyph(x, y int, g font.Glyph, fg, bg uint8) int {
 	width := int(g.Width)
 	if width <= 0 {

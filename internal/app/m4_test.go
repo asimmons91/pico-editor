@@ -68,14 +68,14 @@ func TestCartOpenTabsAndSave(t *testing.T) {
 	if got := buffer.Editor.Viewport.Height; got != cartCodeRows {
 		t.Fatalf("cart viewport height = %d, want %d", got, cartCodeRows)
 	}
-	if err := sendKeys(t, game, "GiX<esc>"); err != nil {
+	if err := sendKeys(t, game, "Gix<esc>"); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	if got := buffer.Editor.Cursor.Pos.Line; got != 1 {
 		t.Fatalf("G landed on line %d, want the last tab-0 line", got)
 	}
-	if got := buffer.Editor.Buffer.Lines[1]; got != "Xb=2" {
-		t.Fatalf("line = %q, want Xb=2", got)
+	if got := buffer.Editor.Buffer.Lines[1]; got != "xb=2" {
+		t.Fatalf("line = %q, want xb=2", got)
 	}
 	if err := sendKeys(t, game, ":w<enter>"); err != nil {
 		t.Fatalf("Update save: %v", err)
@@ -86,7 +86,7 @@ func TestCartOpenTabsAndSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	if !strings.Contains(text, "Xb=2") {
+	if !strings.Contains(text, "xb=2") {
 		t.Fatalf("saved cart missing edit: %q", text)
 	}
 	if !strings.HasSuffix(text, "__gfx__\n0000\n__label__\nlabel\n") {
@@ -315,7 +315,7 @@ func TestIncludedLuaShowsOwningCart(t *testing.T) {
 
 func TestQuitDialogCancelAndDiscard(t *testing.T) {
 	game, _ := newCartGame(t, fullCart)
-	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>"); err != nil {
 		t.Fatal(err)
 	}
 	game.source.(*fakeSource).events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyQ, Mods: input.ModCtrl}}
@@ -343,7 +343,7 @@ func TestQuitDialogCancelAndDiscard(t *testing.T) {
 func TestSaveConflictOverwriteCreatesBackup(t *testing.T) {
 	game, path := newCartGame(t, fullCart)
 	buffer := game.session.CurrentBuffer()
-	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>"); err != nil {
 		t.Fatal(err)
 	}
 	external := "external bytes\n"
@@ -368,7 +368,7 @@ func TestSaveConflictOverwriteCreatesBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "Xa=1") {
+	if !strings.Contains(string(data), "xa=1") {
 		t.Fatalf("saved cart = %q", data)
 	}
 	backup, err := os.ReadFile(path + ".bak")
@@ -471,7 +471,7 @@ func TestLongDirtyFileTabKeepsMarker(t *testing.T) {
 	if err := os.WriteFile(long, []byte("x=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := sendKeys(t, game, ":e "+filepath.Base(long)+"<enter>iX<esc>"); err != nil {
+	if err := sendKeys(t, game, ":e "+filepath.Base(long)+"<enter>ix<esc>"); err != nil {
 		t.Fatal(err)
 	}
 	labels := game.session.fileTabLabels()
@@ -560,7 +560,7 @@ func TestForceEditAnotherPathDiscardsCurrentChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	game.source = &fakeSource{}
-	if err := sendKeys(t, game, "iX<esc>:e! b.lua<enter>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>:e! b.lua<enter>"); err != nil {
 		t.Fatal(err)
 	}
 	if len(game.session.Buffers) != 1 {
@@ -588,7 +588,7 @@ func TestReadOnlySaveShowsErrorDialog(t *testing.T) {
 		t.Fatal(err)
 	}
 	game.source = &fakeSource{}
-	if err := sendKeys(t, game, "iX<esc>:w<enter>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>:w<enter>"); err != nil {
 		t.Fatal(err)
 	}
 	if game.session.Dialog == nil || game.session.Dialog.Kind != DialogError {
@@ -601,7 +601,7 @@ func TestReadOnlySaveShowsErrorDialog(t *testing.T) {
 
 func TestConflictReloadThenWriteQuit(t *testing.T) {
 	game, path := newCartGame(t, fullCart)
-	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>"); err != nil {
 		t.Fatal(err)
 	}
 	external := strings.Replace(fullCart, "a=1", "a=5", 1)
@@ -628,7 +628,7 @@ func TestConflictReloadThenWriteQuit(t *testing.T) {
 
 func TestDialogAcceleratorDoesNotInsertText(t *testing.T) {
 	game, path := newCartGame(t, fullCart)
-	if err := sendKeys(t, game, "iX"); err != nil {
+	if err := sendKeys(t, game, "ix"); err != nil {
 		t.Fatal(err)
 	}
 	external := strings.Replace(fullCart, "a=1", "a=5", 1)
@@ -647,7 +647,7 @@ func TestDialogAcceleratorDoesNotInsertText(t *testing.T) {
 	}
 	waitClean(t, game, game.session.CurrentBuffer())
 	buffer := game.session.CurrentBuffer()
-	if got := buffer.Editor.Buffer.Lines[0]; got != "Xa=1" {
+	if got := buffer.Editor.Buffer.Lines[0]; got != "xa=1" {
 		t.Fatalf("line = %q, want the accelerator text suppressed", got)
 	}
 }
@@ -696,7 +696,7 @@ func TestEmptyTabVisualOperatorsDoNotCopySeparator(t *testing.T) {
 func TestSwitchingTabsDuringCountedInsertEndsInsert(t *testing.T) {
 	game, _ := newCartGame(t, fullCart)
 	buffer := game.session.CurrentBuffer()
-	if err := sendKeys(t, game, "2iZ"); err != nil {
+	if err := sendKeys(t, game, "2iz"); err != nil {
 		t.Fatal(err)
 	}
 	game.source.(*fakeSource).events = eventKeyTab
@@ -710,7 +710,7 @@ func TestSwitchingTabsDuringCountedInsertEndsInsert(t *testing.T) {
 	if strings.Count(text, "-->8") != 1 {
 		t.Fatalf("separator duplicated: %q", text)
 	}
-	if !strings.Contains(text, "ZZa=1") {
+	if !strings.Contains(text, "zza=1") {
 		t.Fatalf("counted insert was not completed in the original tab: %q", text)
 	}
 }
@@ -807,7 +807,7 @@ func TestSaveAllRequeuesEditsDuringSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	game.source = &fakeSource{}
-	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>"); err != nil {
 		t.Fatal(err)
 	}
 	buffer := game.session.CurrentBuffer()
@@ -833,7 +833,7 @@ func TestSaveAllRequeuesEditsDuringSave(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "YXa=1\n" {
+	if string(data) != "Yxa=1\n" {
 		t.Fatalf("saved = %q, want the edit made during save-all", data)
 	}
 }
@@ -942,7 +942,7 @@ func TestQuitSaveAllSavesEveryDirtyBuffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	game.source = &fakeSource{}
-	if err := sendKeys(t, game, ":e b.lua<enter>:bp<enter>iX<esc>:bn<enter>iY<esc>"); err != nil {
+	if err := sendKeys(t, game, ":e b.lua<enter>:bp<enter>ix<esc>:bn<enter>iy<esc>"); err != nil {
 		t.Fatal(err)
 	}
 	game.source.(*fakeSource).events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyQ, Mods: input.ModCtrl}}
@@ -962,7 +962,7 @@ func TestQuitSaveAllSavesEveryDirtyBuffer(t *testing.T) {
 			t.Fatalf("Update: %v", err)
 		}
 	}
-	for path, want := range map[string]string{first: "Xa=1\n", second: "Yb=1\n"} {
+	for path, want := range map[string]string{first: "xa=1\n", second: "yb=1\n"} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -989,7 +989,7 @@ func TestSymlinkOutsideWorkspaceNeedsConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	game.source = &fakeSource{}
-	if err := sendKeys(t, game, "iX<esc>:w<enter>"); err != nil {
+	if err := sendKeys(t, game, "ix<esc>:w<enter>"); err != nil {
 		t.Fatal(err)
 	}
 	if game.session.Dialog == nil || game.session.Dialog.Kind != DialogOutsideRoot {
@@ -1006,7 +1006,7 @@ func TestSymlinkOutsideWorkspaceNeedsConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "Xx=1") {
+	if !strings.Contains(string(data), "xx=1") {
 		t.Fatalf("target = %q, want the edit", data)
 	}
 	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
