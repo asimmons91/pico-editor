@@ -140,6 +140,7 @@ func (s *Session) OpenGlyphPicker() bool {
 		s.SetStatus("loading glyph catalog", false)
 		return true
 	}
+	s.clearLSPTransients()
 	s.GlyphPicker = NewGlyphPicker(s.LSPGlyphs)
 	return true
 }

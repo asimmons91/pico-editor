@@ -23,6 +23,9 @@ type Palette struct {
 }
 
 func (g *Game) openPalette() {
+	if g.session != nil {
+		g.session.clearLSPTransients()
+	}
 	if g.palette == nil {
 		g.palette = &Palette{}
 	}
