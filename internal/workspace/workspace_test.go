@@ -171,6 +171,34 @@ func TestFileSymlinkIncluded(t *testing.T) {
 	}
 }
 
+func TestOversizedCartIsNotRead(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "big.p8")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(path, maxCartScanSize+1); err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Carts[path] != nil {
+		t.Fatal("oversized cart was indexed")
+	}
+	found := false
+	for _, warning := range workspace.Warnings {
+		if strings.Contains(warning, "larger than") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %q, want an oversized-cart warning", workspace.Warnings)
+	}
+}
+
 func TestInvalidRoot(t *testing.T) {
 	if _, err := Open(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("Open(missing) succeeded")

@@ -46,8 +46,14 @@ func (d *Document) PrepareSave(options SaveOptions) (SaveSnapshot, error) {
 	}
 	mode := d.Code.Mode
 	if options.AllowExternalChange {
-		if _, statErr := os.Stat(d.Path); errors.Is(statErr, fs.ErrNotExist) {
+		info, statErr := os.Stat(d.Path)
+		switch {
+		case statErr == nil:
+			mode = info.Mode() & modeBits
+		case errors.Is(statErr, fs.ErrNotExist):
 			mode = 0o644
+		default:
+			return SaveSnapshot{}, fmt.Errorf("stat %s: %w", d.Path, statErr)
 		}
 	}
 	if mode.Perm()&0o222 == 0 {

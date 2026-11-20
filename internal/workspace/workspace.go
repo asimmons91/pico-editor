@@ -19,6 +19,10 @@ var errSkipDir = errors.New("skip directory")
 // MaxEntries is the V1 scan cap. Hitting it stops the scan with Truncated set.
 const MaxEntries = 20000
 
+// maxCartScanSize mirrors the cart adapter's open limit so workspace scans do
+// not read arbitrarily large files just to discover they are unsupported.
+const maxCartScanSize = 2 * 1024 * 1024
+
 // Entry is one file or directory in the workspace tree. Children are sorted
 // directories first, then case-insensitive name.
 type Entry struct {
@@ -249,9 +253,26 @@ func (w *Workspace) scanCarts() {
 }
 
 func (w *Workspace) loadCart(path string) *CartRef {
+	info, err := os.Stat(path)
+	if err != nil {
+		w.warn("skip cart", path, err)
+		return nil
+	}
+	if !info.Mode().IsRegular() {
+		w.warn("skip cart", path, errors.New("not a regular file"))
+		return nil
+	}
+	if info.Size() > maxCartScanSize {
+		w.warn("skip cart", path, fmt.Errorf("cart is larger than %d bytes", maxCartScanSize))
+		return nil
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		w.warn("skip cart", path, err)
+		return nil
+	}
+	if len(data) > maxCartScanSize {
+		w.warn("skip cart", path, fmt.Errorf("cart is larger than %d bytes", maxCartScanSize))
 		return nil
 	}
 	doc, err := p8cart.Parse(path, data)

@@ -433,8 +433,9 @@ Development rules:
   back as a cart section header is rejected at save time.
 - `internal/workspace` scans the project root with the M4 ignore list and entry
   cap, follows file symlinks but not directory symlinks, and builds cart/include
-  associations through the public `pkg/cart` resolver. `ResolveInclude` returns
-  the nearest owning cart; `.lua` buffers show the owner in the status row.
+  associations through the public `pkg/cart` resolver. Oversized carts are
+  skipped before reading. `ResolveInclude` returns the nearest owning cart;
+  `.lua` buffers show the owner in the status row.
 - M4 layout is row 0 file tabs, row 1 cart code tabs for `.p8`, rows 2–40 for
   cart code (rows 1–40 for `.lua`), and row 41 for status. The file tree overlay
   covers columns 0–19 and rows 0–40 without resizing the code area. Ctrl+Tab and

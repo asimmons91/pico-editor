@@ -338,8 +338,14 @@ func (b *Buffer) PrepareSaveWithOptions(options SaveOptions) (SaveSnapshot, erro
 	}
 	mode := b.Mode
 	if options.AllowExternalChange {
-		if _, statErr := os.Stat(b.Path); errors.Is(statErr, fs.ErrNotExist) {
+		info, statErr := os.Stat(b.Path)
+		switch {
+		case statErr == nil:
+			mode = info.Mode() & modeBits
+		case errors.Is(statErr, fs.ErrNotExist):
 			mode = 0o644
+		default:
+			return SaveSnapshot{}, pathError("save", b.Path, statErr)
 		}
 	}
 	if mode.Perm()&0o222 == 0 {

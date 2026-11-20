@@ -284,7 +284,8 @@ func (w *Workspace) ResolveInclude(path string) (*CartRef, bool)
   - skip hidden entries (leading `.`), `.git`, `node_modules`, `vendor`,
     `bin`, and `dist` by default; M7 makes this configurable,
   - follow file symlinks; do not recurse directory symlinks; detect loops,
-  - cap at 20,000 entries; show a notification and stop scanning.
+  - cap at 20,000 entries; show a notification and stop scanning,
+  - skip `.p8` files larger than the 2 MiB cart limit before reading them.
 - Sort directories first, then case-insensitive name.
 - File tree UI:
   - `Ctrl+Shift+B` toggles and focuses the tree; `Esc` returns to the editor,
@@ -381,7 +382,7 @@ guarantees byte-preserving saves.
 | Tab confinement | `internal/editor` owns an active half-open line window. Cursor motions, operators, boundary joins/deletes, paste, search, `gg`/`G`, and ex ranges stay inside the active code tab. Empty tabs use a virtual cursor and materialize one blank line on the first edit. |
 | Startup layout | A file argument opens with the tree hidden and editor focus. A directory or no argument opens an empty buffer with the tree visible and focused. |
 | Dialog input | Dialogs use arrows/Tab plus Enter, single-key accelerators drawn from the option labels (O/R/C, S/D/C), and Esc for Cancel or OK. |
-| Conflict backups | Every conflicting overwrite, cart or `.lua`, writes `<name>.bak` or `<name>.bak.1`–`.bak.9` before the atomic replace. Failed backups abort the write. |
+| Conflict backups | Every conflicting overwrite, cart or `.lua`, writes `<name>.bak` or `<name>.bak.1`–`.bak.9` before the atomic replace. Failed backups abort the write. Conflict overwrites refresh the target mode from disk before the write. |
 | Focus refresh | On focus the workspace rescans, clean changed buffers reload (carts preserve the active tab and view), dirty buffers prompt, and deleted files prompt. |
 | New tab separators | M4 rejects typing a new `-->8` separator in insert mode; code tabs derive from markers already in the cart. Adding tabs by editing markers is deferred. |
 | Section headers in code | Save fails with a typed error if code text would introduce a cart section header and truncate `__lua__`. |

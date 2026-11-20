@@ -269,6 +269,23 @@ func TestTrailingEmptyTabOpenLineSavesOneBlank(t *testing.T) {
 	}
 }
 
+func TestTrailingEmptyTabWithoutFinalNewline(t *testing.T) {
+	const cart = "pico-8 cartridge // pico-8.com\nversion 42\n__lua__\na=1\n-->8"
+	game, path := newCartGame(t, cart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, ":tabn<enter>o<esc>:w<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	waitClean(t, game, buffer)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(data), "a=1\n-->8\n\n") {
+		t.Fatalf("o without a final newline = %q, want one blank line", data)
+	}
+}
+
 func TestIncludedLuaShowsOwningCart(t *testing.T) {
 	root := t.TempDir()
 	cartPath := filepath.Join(root, "game.p8")
@@ -651,6 +668,20 @@ func TestTabViewStateFollowsInsertedSeparator(t *testing.T) {
 	}
 }
 
+func TestTypingTabSeparatorPrefixIsRejected(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, "ggcc>8 x<esc>I--<esc>"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(game.session.Status, "cannot create") {
+		t.Fatalf("status = %q, want separator rejection", game.session.Status)
+	}
+	if got := strings.Count(buffer.Editor.Buffer.Text(), "-->8"); got != 1 {
+		t.Fatalf("separator count = %d, want the original only", got)
+	}
+}
+
 func TestSaveAllRequeuesEditsDuringSave(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "a.lua")
@@ -690,6 +721,52 @@ func TestSaveAllRequeuesEditsDuringSave(t *testing.T) {
 	}
 	if string(data) != "YXa=1\n" {
 		t.Fatalf("saved = %q, want the edit made during save-all", data)
+	}
+}
+
+func TestDeferredQuitKeepsLateEdits(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.lua")
+	if err := os.WriteFile(path, []byte("a=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	game := New(Config{Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return testClock }, File: path})
+	if err := game.StartupError(); err != nil {
+		t.Fatal(err)
+	}
+	game.source = &fakeSource{}
+	game.source.(*fakeSource).events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyS, Mods: input.ModCtrl}}
+	if err := game.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if !game.saveBusy {
+		t.Fatal("Ctrl+S did not start an asynchronous save")
+	}
+	if quit, changed := game.requestQuitAll(); quit || !changed || !game.pendingQuit {
+		t.Fatalf("deferred quit = quit %t changed %t pending %t", quit, changed, game.pendingQuit)
+	}
+	buffer := game.session.CurrentBuffer()
+	if _, err := buffer.Editor.Insert("X"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		err := game.Update()
+		if err == ebiten.Termination {
+			t.Fatal("deferred quit discarded an edit made during the save")
+		}
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if !game.saveBusy && !game.pendingQuit {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("save did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !buffer.Editor.Buffer.Dirty() || !strings.Contains(buffer.Editor.Buffer.Text(), "Xa=1") {
+		t.Fatalf("late edit was lost: %q", buffer.Editor.Buffer.Text())
 	}
 }
 

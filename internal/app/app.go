@@ -85,6 +85,7 @@ type Game struct {
 	pendingQuit      bool
 	saveAll          bool
 	saveAllQuit      bool
+	forceQuit        bool
 	saveAllQueue     []*SessionBuffer
 	dialogContext    *dialogContext
 	mouseDown        bool
@@ -293,6 +294,7 @@ func (g *Game) handleWindowClose(closing bool) (quit, changed bool) {
 	if g.session.CanQuitAll() {
 		if g.saveBusy {
 			g.pendingQuit = true
+			g.forceQuit = false
 			return false, true
 		}
 		return true, false
@@ -414,6 +416,7 @@ func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
 		case vim.ActionQuit:
 			if g.saveBusy {
 				g.pendingQuit = true
+				g.forceQuit = false
 				return false, true
 			}
 			sessionQuit, _ := g.session.RequestQuit(action.Force)
@@ -550,6 +553,7 @@ func (g *Game) handleDialogResult() bool {
 			} else if pending.action.QuitAfter {
 				if quit, _ := g.session.CloseBuffer(reloaded.Editor.Buffer, true); quit {
 					g.pendingQuit = true
+					g.forceQuit = false
 				}
 			}
 		default:
@@ -581,6 +585,7 @@ func (g *Game) handleDialogResult() bool {
 		case 1:
 			g.cancelSaveAll()
 			g.pendingQuit = true
+			g.forceQuit = true
 		default:
 			g.cancelSaveAll()
 		}
@@ -607,14 +612,19 @@ func (g *Game) shouldTerminate() bool {
 	if !g.pendingQuit || g.saveBusy {
 		return false
 	}
-	if g.saveAllQuit && g.session != nil && !g.session.CanQuitAll() {
-		// A buffer was dirtied after the previous queue drained. Save again
-		// instead of exiting with unsaved changes.
-		g.saveAllQuit = false
-		g.saveAll = true
+	if g.session != nil && !g.forceQuit && !g.session.CanQuitAll() {
+		if g.saveAllQuit {
+			// A buffer was dirtied after the previous queue drained. Save again
+			// instead of exiting with unsaved changes.
+			g.saveAllQuit = false
+			g.saveAll = true
+			g.pendingQuit = false
+			g.saveAllQueue = g.session.unsavedBuffers()
+			g.nextSaveAll()
+			return false
+		}
+		// A deferred quit raced with a new edit; stay open rather than lose it.
 		g.pendingQuit = false
-		g.saveAllQueue = g.session.unsavedBuffers()
-		g.nextSaveAll()
 		return false
 	}
 	return true
@@ -627,6 +637,7 @@ func (g *Game) requestQuitAll() (quit, changed bool) {
 	if g.session.CanQuitAll() {
 		if g.saveBusy {
 			g.pendingQuit = true
+			g.forceQuit = false
 			return false, true
 		}
 		return true, true
@@ -648,10 +659,12 @@ func (g *Game) showQuitDialog() {
 func (g *Game) startSaveAll() {
 	if g.session == nil {
 		g.pendingQuit = true
+		g.forceQuit = false
 		return
 	}
 	g.saveAll = true
 	g.saveAllQuit = false
+	g.forceQuit = false
 	g.saveAllQueue = g.session.unsavedBuffers()
 	g.nextSaveAll()
 }
@@ -688,12 +701,14 @@ func (g *Game) nextSaveAll() {
 	g.saveAll = false
 	g.saveAllQuit = true
 	g.pendingQuit = true
+	g.forceQuit = false
 }
 
 func (g *Game) cancelSaveAll() {
 	g.saveAll = false
 	g.saveAllQuit = false
 	g.saveAllQueue = nil
+	g.forceQuit = false
 }
 
 func (g *Game) pollSave() (quit, changed bool) {

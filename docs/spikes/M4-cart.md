@@ -14,25 +14,27 @@ Automated coverage in this repo:
 - `internal/cart`: open/save byte round-trips for all-sections, BOM, CRLF,
   empty body, leading/consecutive markers, lone CR, no trailing newline, and
   unterminated headers; edit-only-body byte comparisons; conflict/deleted/read-
-  only handling; tab resynchronization; section-header rejection; synthetic
-  trailing tabs; parse errors include the path.
+  only handling; current-mode conflict overwrites; tab resynchronization;
+  section-header rejection; synthetic trailing tabs; parse errors include the
+  path.
 - `internal/fsutil`: numbered backup copies, collisions, missing sources,
   symlink preservation, and backup directory-sync failures that must not look
   like committed target writes.
 - `internal/workspace`: nested scans, sorting, hidden/ignored entries, file and
-  directory symlinks, child/sibling include ownership, nearest-cart selection,
-  refresh.
+  directory symlinks, child/sibling include ownership, oversized-cart skips,
+  nearest-cart selection, refresh.
 - `internal/editor`: active line-window clamping, boundary joins/deletes,
   trailing-buffer-line deletion, empty tab materialization, undo/redo,
   read-only-file recreation.
 - `internal/vim`: existing matrix plus tab-bounded `G`, `gg`, `J`, `%`, scroll,
   text objects, search, and ex ranges.
 - `internal/app`: cart opening, tab switching/view restoration, empty-tab
-  editing, section/marker input guards, dialog accelerator suppression,
-  conflict overwrite with backup, conflict reload followed by `:wq`,
-  read-only error, quit Save all including edits made during the save run,
-  outside-root symlink confirmation, tree startup/filtering/scrolling,
-  external focus reloads, and tab clicks.
+  editing and no-final-newline tabs, section/marker input guards, dialog
+  accelerator suppression, conflict overwrite with backup and current modes,
+  conflict reload followed by `:wq`, read-only error, deferred quits with late
+  edits, quit Save all including edits made during the save run, outside-root
+  symlink confirmation, tree startup/filtering/scrolling, external focus
+  reloads, and tab clicks.
 
 Interactive checklist:
 

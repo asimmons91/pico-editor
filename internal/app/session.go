@@ -165,8 +165,16 @@ func (s *Session) blocksTabSeparator(ev input.Event) bool {
 	if strings.Contains(inserted, "\n-->8") {
 		return true
 	}
-	prefix := string(runes[:pos.Rune]) + inserted
-	return strings.HasPrefix(prefix, "-->8") && !strings.HasPrefix(line, "-->8") && pos.Rune < len("-->8")
+	result := inserted
+	if len(runes) > 0 {
+		result = string(runes[:pos.Rune]) + inserted + string(runes[pos.Rune:])
+	}
+	for _, candidate := range strings.Split(result, "\n") {
+		if strings.HasPrefix(candidate, "-->8") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Session) applyVimResult(result vim.Result) (quit bool) {

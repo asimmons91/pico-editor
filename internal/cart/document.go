@@ -219,11 +219,25 @@ func validateCodeText(code string) error {
 }
 
 // codeText returns the buffer text to splice. A synthetic trailing blank line
-// represents an empty code tab at EOF without adding a byte to the cart.
+// represents an empty code tab at EOF without adding a byte to the cart; the
+// last line is omitted while it is the synthetic artifact. A real blank final
+// line is serialized with its own terminating newline.
 func (d *Document) codeText() string {
-	text := d.Code.Text()
-	if d.syntheticTail && len(d.Code.Lines) > 0 && d.Code.Lines[len(d.Code.Lines)-1] == "" {
-		text = strings.TrimSuffix(text, "\n")
+	lines := d.Code.Lines
+	if d.syntheticTail && len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	if len(lines) == 1 && lines[0] == "" {
+		return ""
+	}
+	text := strings.Join(lines, "\n")
+	if lines[len(lines)-1] == "" {
+		text += "\n"
+	} else if d.Code.TrailingNewline {
+		text += "\n"
 	}
 	return text
 }

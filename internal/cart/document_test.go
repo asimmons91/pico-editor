@@ -306,6 +306,33 @@ func TestCartSymlinkOutsideRootNeedsPermission(t *testing.T) {
 	}
 }
 
+func TestConflictOverwriteUsesCurrentMode(t *testing.T) {
+	path := copyFixture(t, "all_sections.p8")
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.Code.Apply(editor.Edit{Start: editor.Pos{}, End: editor.Pos{}, Text: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.PrepareSave(SaveOptions{AllowExternalChange: true}); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("read-only overwrite err = %v, want ErrReadOnly", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := doc.PrepareSave(SaveOptions{AllowExternalChange: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Mode.Perm() != 0o600 {
+		t.Fatalf("snapshot mode = %o, want current 0600", snapshot.Mode.Perm())
+	}
+}
+
 func TestReadOnlyCartRefusesSave(t *testing.T) {
 	path := copyFixture(t, "all_sections.p8")
 	if err := os.Chmod(path, 0o444); err != nil {
