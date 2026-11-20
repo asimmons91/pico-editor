@@ -2,6 +2,7 @@ package app
 
 import (
 	"image"
+	"math"
 
 	"github.com/asimmons91/pico-editor/internal/font"
 )
@@ -71,4 +72,41 @@ func CanvasRect(windowWidth, windowHeight, scale int) image.Rectangle {
 	x := (windowWidth - width) / 2
 	y := (windowHeight - height) / 2
 	return image.Rect(x, y, x+width, y+height)
+}
+
+// mapCursor converts Ebitengine's default-transform cursor coordinates into
+// logical canvas pixels. The final-screen bounds are recorded by
+// drawFinalScreen; before the first frame there is no canvas rectangle to map
+// against, so the raw coordinates are used.
+func (g *Game) mapCursor(cursorX, cursorY float64) (int, int) {
+	if g.screenWidth <= 0 || g.screenHeight <= 0 {
+		return int(cursorX), int(cursorY)
+	}
+	return canvasPosition(cursorX, cursorY, g.screenWidth, g.screenHeight)
+}
+
+// canvasPosition inverts Ebitengine's default letterbox transform and applies
+// the editor's integer CanvasRect. Both steps use physical final-screen pixels.
+func canvasPosition(cursorX, cursorY float64, windowWidth, windowHeight int) (int, int) {
+	if windowWidth <= 0 || windowHeight <= 0 {
+		return int(cursorX), int(cursorY)
+	}
+	defaultScale := math.Min(
+		float64(windowWidth)/float64(CanvasWidth),
+		float64(windowHeight)/float64(CanvasHeight),
+	)
+	if defaultScale <= 0 {
+		return int(cursorX), int(cursorY)
+	}
+	defaultOffsetX := (float64(windowWidth) - float64(CanvasWidth)*defaultScale) / 2
+	defaultOffsetY := (float64(windowHeight) - float64(CanvasHeight)*defaultScale) / 2
+	physicalX := cursorX*defaultScale + defaultOffsetX
+	physicalY := cursorY*defaultScale + defaultOffsetY
+
+	scale := ScaleFor(windowWidth, windowHeight)
+	rect := CanvasRect(windowWidth, windowHeight, scale)
+	const epsilon = 1e-6
+	canvasX := int(math.Floor((physicalX-float64(rect.Min.X))/float64(scale) + epsilon))
+	canvasY := int(math.Floor((physicalY-float64(rect.Min.Y))/float64(scale) + epsilon))
+	return canvasX, canvasY
 }

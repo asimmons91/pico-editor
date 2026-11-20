@@ -169,7 +169,7 @@ treated as 1.
 version = 1
 
 [editor]
-scale = 4                 # 0 = auto, 2..8 when fixed
+scale = 4                 # 0 = auto (clamps 2..8); 1..8 when fixed
 font = "default"          # default | puny
 tab_width = 2
 scrolloff = 2
@@ -195,7 +195,7 @@ interval_ms = 2000
 ```
 
 - Unknown top-level tables and keys are ignored with a warning.
-- Invalid ranges (for example `scale = 1` or `scale = 99`) fall back and warn.
+- Fixed scales 1..8 are valid; `scale = 0` selects automatic sizing, which clamps to 2..8. Other values (for example `scale = 99`) fall back and warn.
 - `editor.font = "puny"` switches the M6 atlas and metrics.
 - `lsp.enabled = false` starts the editor without pico-lsp; all LSP UI is
   hidden and the editor remains fully usable.

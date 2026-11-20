@@ -169,3 +169,72 @@ func TestScaleForDeviceFactors(t *testing.T) {
 		})
 	}
 }
+
+func TestCanvasPositionRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		width, height int
+	}{
+		{name: "integer", width: 1024, height: 1024},
+		{name: "letterbox", width: 1920, height: 1080},
+		{name: "wide", width: 1280, height: 720},
+		{name: "odd", width: 1025, height: 1025},
+		{name: "odd letterbox", width: 1921, height: 1081},
+		{name: "hidpi physical", width: 1280, height: 1280},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			scale := ScaleFor(test.width, test.height)
+			rect := CanvasRect(test.width, test.height, scale)
+			defaultScale := min(
+				float64(test.width)/CanvasWidth,
+				float64(test.height)/CanvasHeight,
+			)
+			defaultX := (float64(test.width) - CanvasWidth*defaultScale) / 2
+			defaultY := (float64(test.height) - CanvasHeight*defaultScale) / 2
+			for _, point := range []image.Point{
+				{X: 0, Y: 0},
+				{X: CanvasWidth - 1, Y: CanvasHeight - 1},
+				{X: CanvasWidth / 2, Y: CanvasHeight / 2},
+			} {
+				physicalX := float64(rect.Min.X + point.X*scale)
+				physicalY := float64(rect.Min.Y + point.Y*scale)
+				cursorX := (physicalX - defaultX) / defaultScale
+				cursorY := (physicalY - defaultY) / defaultScale
+				gotX, gotY := canvasPosition(cursorX, cursorY, test.width, test.height)
+				if gotX != point.X || gotY != point.Y {
+					t.Errorf("canvasPosition(%v) = (%d, %d), want (%d, %d)",
+						point, gotX, gotY, point.X, point.Y)
+				}
+			}
+		})
+	}
+}
+
+func TestMapCursorUsesScreenBounds(t *testing.T) {
+	t.Parallel()
+
+	game := &Game{screenWidth: 1920, screenHeight: 1080}
+	scale := ScaleFor(1920, 1080)
+	rect := CanvasRect(1920, 1080, scale)
+	defaultScale := min(1920.0/CanvasWidth, 1080.0/CanvasHeight)
+	defaultX := (1920.0 - CanvasWidth*defaultScale) / 2
+	defaultY := (1080.0 - CanvasHeight*defaultScale) / 2
+	cursorX := (float64(rect.Min.X+128*scale) - defaultX) / defaultScale
+	cursorY := (float64(rect.Min.Y+128*scale) - defaultY) / defaultScale
+	if x, y := game.mapCursor(cursorX, cursorY); x != 128 || y != 128 {
+		t.Errorf("mapCursor() = (%d, %d), want (128, 128)", x, y)
+	}
+}
+
+func TestMapCursorBeforeFirstFrame(t *testing.T) {
+	t.Parallel()
+
+	game := &Game{}
+	if x, y := game.mapCursor(10.5, 20.5); x != 10 || y != 20 {
+		t.Errorf("mapCursor() = (%d, %d), want (10, 20)", x, y)
+	}
+}

@@ -84,3 +84,17 @@ func TestEbitenKeyMappingSpotChecks(t *testing.T) {
 		}
 	}
 }
+
+func TestEbitenSourceCursorMapper(t *testing.T) {
+	source := NewEbitenSource(func(x, y float64) (int, int) {
+		return int(x) + 1, int(y) + 2
+	})
+	if x, y := source.cursorPosition(10, 20); x != 11 || y != 22 {
+		t.Errorf("cursorPosition() = (%d, %d), want (11, 22)", x, y)
+	}
+
+	raw := NewEbitenSource(nil)
+	if x, y := raw.cursorPosition(10.9, 20.9); x != 10 || y != 20 {
+		t.Errorf("raw cursorPosition() = (%d, %d), want (10, 20)", x, y)
+	}
+}

@@ -44,15 +44,15 @@ A headless run therefore starts normally and returns a typed
 `input.ErrUnavailable` only when the user tries to paste. Reads run on a
 background goroutine and are delivered to the Update goroutine through a
 buffered channel, so a hung X11 owner or Wayland data-control offer cannot
-freeze drawing or key handling. A pending read is abandoned after five seconds
-and stale results are ignored. Runtime `clipboard.ErrUnavailable` and
+freeze drawing or key handling. Runtime `clipboard.ErrUnavailable` and
 `ErrUnsupported` results are also mapped to `input.ErrUnavailable`.
 
 Known limitation: the clipboard package's native Wayland read path has no
 deadline, so a source that never closes its transfer pipe can leave the worker
-goroutine blocked. The editor clears the pending state after five seconds and
-remains usable, but that worker (and its pipe) leaks until exit. M3/M6 should
-add cancellable clipboard reads or a native backend with deadlines.
+goroutine blocked. That worker and its pipe leak until exit, and because the
+package holds a global lock across the read, later paste attempts remain
+pending. The editor stays responsive, but paste requires a restart in this
+rare case. M3/M6 should replace or wrap the backend with cancellable reads.
 
 Real round-trips were run with the editor's `SystemClipboard` (write a token,
 read it back, restore the previous text):
@@ -127,11 +127,12 @@ the paste call site; a lone CR is preserved because it is a P8SCII byte.
 - Pressing `1`-`4` in the charset screen sets the window to
   `256*scale` device-independent pixels. The final-screen pass still chooses an
   integer physical scale, so the grid stays sharp.
-- Ebitengine's cursor position is read through its default letterbox transform;
-  `input.CanvasPosition` inverts that transform and applies the editor's
-  integer canvas rectangle before the position becomes a mouse event. Table
-  tests cover integer, letterboxed, wide-window, and HiDPI cases. M4 should
-  still add a click-level integration test before tree/tab hit testing.
+- Ebitengine's cursor position is read with `CursorPositionF`; the app inverts
+  Ebitengine's default letterbox transform and applies its exact integer
+  `CanvasRect`, using the last final-screen bounds. Table tests round-trip
+  points through integer, letterboxed, wide, odd-sized, and fractional/HiDPI
+  rectangles. M4 should still add a click-level integration test before
+  tree/tab hit testing.
 - The CI `xvfb` smoke job builds with `CGO_ENABLED=0`, opens the editor under
   Xvfb, and requires the `first-frame` log record emitted after the
   final-screen pass. It therefore fails if window/GL initialization hangs or

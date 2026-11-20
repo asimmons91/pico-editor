@@ -448,8 +448,9 @@ image.
 - [x] Every printable P8SCII glyph renders pixel-perfect at 2×, 3×, and 4×.
 - [x] Wide glyphs occupy two cells and cursor motion matches.
 - [x] The 16-color palette matches the canonical values.
-- [x] Shift, Ctrl, Alt, Meta, text input, and key repeat behave correctly on
-      Linux in unit tests; live layout/IME spot checks are in the spike report.
+- [ ] Shift, Ctrl, Alt, Meta, text input, and key repeat behave correctly on
+      Linux; unit tests pass, but the live layout/IME spot checks in the spike
+      report are still open.
 - [ ] Window resizing never blurs or misaligns the grid; automated scale math
       passes, but the interactive X11/Wayland resize check in the spike report
       is still open.
@@ -477,12 +478,14 @@ image.
 - Clipboard access uses `golang.design/x/clipboard` `v0.11.0`, lazily
   initialized. Reads run on a background goroutine and are applied through a
   channel on the Update goroutine, so a hung clipboard owner cannot block
-  drawing or input. A pending read is abandoned after five seconds and a stale
-  result is ignored, so paste is not permanently disabled. Runtime
-  `ErrUnavailable`/`ErrUnsupported` results are mapped to
-  `input.ErrUnavailable`; paste previews normalize only a bounded prefix. On
-  GNOME Wayland the package falls back to XWayland; without a data-control
-  manager or X11 display the UI degrades to internal registers.
+  drawing or input. Runtime `ErrUnavailable`/`ErrUnsupported` results are
+  mapped to `input.ErrUnavailable`; paste previews normalize only a bounded
+  prefix. On GNOME Wayland the package falls back to XWayland; without a
+  data-control manager or X11 display the UI degrades to internal registers.
+  A permanently hung native Wayland transfer cannot be cancelled by the pinned
+  package (its Wayland read has no deadline), so paste remains pending until
+  restart; the UI stays responsive. M3/M6 should replace or wrap the backend
+  with cancellable reads.
 - `internal/app` always opens the charset screen in M1. `--debug-charset` is
   already parsed and retained so M2 can keep it after the editor becomes the
   default. `1`–`4` change the window scale, `W` toggles the width overlay
@@ -493,8 +496,9 @@ image.
   while the selection is in the bottom two tile rows so it cannot cover the
   selected byte.
 - `Config.Now` is injectable for deterministic blink tests. Mouse positions
-  are mapped from Ebitengine's default letterbox transform into the integer
-  canvas rectangle before they become input events.
+  are mapped by the app from Ebitengine's default letterbox transform into the
+  exact integer canvas rectangle, using the last final-screen bounds and
+  `CursorPositionF`, before they become input events.
 - The CI workflow now includes the deferred `xvfb` smoke job, which builds with
   `CGO_ENABLED=0`, opens a real X11 window under Xvfb, and requires a
   `first-frame` log record after the final-screen pass.

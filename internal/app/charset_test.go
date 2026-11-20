@@ -469,22 +469,6 @@ func TestPastePollRedraws(t *testing.T) {
 	}
 }
 
-func TestPasteTimeout(t *testing.T) {
-	game := newTestGame(t)
-	game.clipboardBusy = true
-	game.clipboardStarted = testClock.Add(-pasteTimeout - time.Second)
-	game.clipboardGeneration = 1
-	if !game.pollPaste(testClock) {
-		t.Fatal("pollPaste did not report the timeout")
-	}
-	if game.clipboardBusy {
-		t.Fatal("clipboardBusy remained true after timeout")
-	}
-	if got := strings.Join(game.charset.Log, "\n"); !strings.Contains(got, "paste timed out") {
-		t.Errorf("log = %q, want a timeout", got)
-	}
-}
-
 func TestPasteTypedUnavailable(t *testing.T) {
 	game := newTestGame(t)
 	game.clipboard = &fakeClipboard{err: fmt.Errorf("%w: no display", input.ErrUnavailable)}
@@ -548,6 +532,30 @@ func TestPreviewPrefix(t *testing.T) {
 	if !utf8.ValidString(got) {
 		t.Error("prefix split a UTF-8 sequence")
 	}
+
+	// 101 is mid-rune for "é" (two bytes); the backoff must return 100 bytes.
+	midRune := previewPrefix(long, 101)
+	if len(midRune) != 100 {
+		t.Errorf("mid-rune prefix length = %d, want 100", len(midRune))
+	}
+	if !utf8.ValidString(midRune) {
+		t.Error("mid-rune prefix split a UTF-8 sequence")
+	}
+}
+
+func TestApplyPasteLargeTextIsBounded(t *testing.T) {
+	game := newTestGame(t)
+	game.clipboard = &fakeClipboard{text: strings.Repeat("a\r\n", 3000)}
+	source := game.source.(*fakeSource)
+	source.events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyV, Mods: input.ModCtrl}}
+	if err := game.Update(); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	finishPaste(t, game)
+	joined := strings.Join(game.charset.Log, "\n")
+	if len(joined) > 300 {
+		t.Errorf("paste log length = %d, want a bounded preview", len(joined))
+	}
 }
 
 func TestLogHideBoundary(t *testing.T) {
@@ -592,5 +600,41 @@ func TestOverlayCellLabelAndBottomBorder(t *testing.T) {
 	}
 	if got := surface.At(12, 15); got != 5 {
 		t.Errorf("bottom border = %d, want 5", got)
+	}
+}
+
+func TestOverlayLabelsWidthTiles(t *testing.T) {
+	charset := NewCharset()
+	charset.Background = 1
+	charset.Overlay = true
+	surface := render.NewSurface(CanvasWidth, CanvasHeight)
+	charset.Draw(surface)
+
+	cases := []struct {
+		byte  byte
+		pixel string
+		cell  string
+	}{
+		{0x41, "4", "1"},
+		{0x80, "8", "2"},
+	}
+	for _, tc := range cases {
+		x := int(tc.byte) % charsetTiles * charsetTile
+		y := int(tc.byte) / charsetTiles * charsetTile
+		assertOverlayLabel(t, surface, x+12, y+2, tc.pixel)
+		assertOverlayLabel(t, surface, x+12, y+9, tc.cell)
+	}
+}
+
+func assertOverlayLabel(t *testing.T, surface *render.Surface, x, y int, label string) {
+	t.Helper()
+	want := render.NewSurface(4, font.CellHeight)
+	want.DrawText(0, 0, label, 10, 1)
+	for row := 0; row < font.CellHeight; row++ {
+		for col := 0; col < 3; col++ {
+			if got, expected := surface.At(x+col, y+row), want.At(col, row); got != expected {
+				t.Errorf("label %q At(%d,%d) = %d, want %d", label, x+col, y+row, got, expected)
+			}
+		}
 	}
 }

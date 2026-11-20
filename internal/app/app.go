@@ -30,15 +30,9 @@ type Config struct {
 }
 
 type clipboardResult struct {
-	generation uint64
-	text       string
-	err        error
+	text string
+	err  error
 }
-
-// pasteTimeout bounds a pending clipboard read. The clipboard package's
-// native Wayland backend has no read deadline, so the editor abandons a
-// pending paste rather than disabling paste forever.
-const pasteTimeout = 5 * time.Second
 
 // maxPastePreviewBytes bounds the text normalized and quoted for the debug
 // log. The full clipboard text is never copied just to show a short preview.
@@ -46,21 +40,21 @@ const maxPastePreviewBytes = 4096
 
 // Game is the root Ebitengine game. It owns no package-level state.
 type Game struct {
-	logger              *slog.Logger
-	step                func() error
-	fatalErr            error
-	source              input.Source
-	clipboard           input.Clipboard
-	clipboardResults    chan clipboardResult
-	clipboardBusy       bool
-	clipboardStarted    time.Time
-	clipboardGeneration uint64
-	renderer            *Renderer
-	charset             *Charset
-	blink               *Blink
-	scale               int
-	now                 func() time.Time
-	firstFrame          bool
+	logger           *slog.Logger
+	step             func() error
+	fatalErr         error
+	source           input.Source
+	clipboard        input.Clipboard
+	clipboardResults chan clipboardResult
+	clipboardBusy    bool
+	renderer         *Renderer
+	charset          *Charset
+	blink            *Blink
+	scale            int
+	now              func() time.Time
+	firstFrame       bool
+	screenWidth      int
+	screenHeight     int
 }
 
 // New returns a game configured by cfg.
@@ -83,7 +77,6 @@ func New(cfg Config) *Game {
 	}
 	game := &Game{
 		logger:           logger,
-		source:           input.NewEbitenSource(CanvasWidth, CanvasHeight),
 		clipboard:        clipboard,
 		clipboardResults: make(chan clipboardResult, 1),
 		renderer:         NewRenderer(CanvasWidth, CanvasHeight, logger),
@@ -92,6 +85,7 @@ func New(cfg Config) *Game {
 		scale:            DefaultScale,
 		now:              now,
 	}
+	game.source = input.NewEbitenSource(game.mapCursor)
 	game.step = game.updateFrame
 	game.redraw()
 	return game
@@ -115,7 +109,7 @@ func (g *Game) Update() (err error) {
 func (g *Game) updateFrame() error {
 	now := g.now()
 	changed := g.blink.Update(now)
-	if g.pollPaste(now) {
+	if g.pollPaste() {
 		changed = true
 	}
 	events := g.source.Poll()
@@ -226,27 +220,18 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 }
 
 func (g *Game) startPaste() {
-	now := g.now()
 	if g.clipboardBusy {
-		if now.Sub(g.clipboardStarted) < pasteTimeout {
-			g.charset.AddLog("paste pending")
-			return
-		}
-		g.clipboardBusy = false
-		g.clipboardGeneration++
-		g.charset.AddLog("paste timed out")
+		g.charset.AddLog("paste pending")
+		return
 	}
 	if g.clipboardResults == nil {
 		g.clipboardResults = make(chan clipboardResult, 1)
 	}
 	g.clipboardBusy = true
-	g.clipboardStarted = now
-	g.clipboardGeneration++
-	generation := g.clipboardGeneration
 	clipboard := g.clipboard
 	results := g.clipboardResults
 	go func() {
-		result := clipboardResult{generation: generation}
+		result := clipboardResult{}
 		func() {
 			defer func() {
 				if recovered := recover(); recovered != nil {
@@ -259,29 +244,17 @@ func (g *Game) startPaste() {
 	}()
 }
 
-func (g *Game) pollPaste(now time.Time) bool {
+func (g *Game) pollPaste() bool {
 	if g.clipboardResults == nil {
 		return false
 	}
-	changed := false
-	if g.clipboardBusy && now.Sub(g.clipboardStarted) >= pasteTimeout {
+	select {
+	case result := <-g.clipboardResults:
 		g.clipboardBusy = false
-		g.clipboardGeneration++
-		g.charset.AddLog("paste timed out")
-		changed = true
-	}
-	for {
-		select {
-		case result := <-g.clipboardResults:
-			if result.generation != g.clipboardGeneration {
-				continue
-			}
-			g.clipboardBusy = false
-			g.applyPaste(result)
-			return true
-		default:
-			return changed
-		}
+		g.applyPaste(result)
+		return true
+	default:
+		return false
 	}
 }
 
@@ -371,6 +344,8 @@ func (g *Game) drawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Imag
 	screen.Fill(render.Palette[render.DefaultBackground])
 
 	bounds := screen.Bounds()
+	g.screenWidth = bounds.Dx()
+	g.screenHeight = bounds.Dy()
 	scale := ScaleFor(bounds.Dx(), bounds.Dy())
 	destination := CanvasRect(bounds.Dx(), bounds.Dy(), scale)
 

@@ -372,3 +372,7 @@ Development rules:
 - Ebitengine 2.10.6's experimental `exp/textinput` package is not used. V1
   accepts committed text only and does not promise preedit or candidate-window
   rendering.
+- `internal/app` owns `CanvasPosition`/`mapCursor`: it inverts Ebitengine's
+  default letterbox transform with the last final-screen bounds and applies
+  the same integer `CanvasRect` used for drawing. `internal/input` receives the
+  mapper as a function so it does not duplicate window geometry.

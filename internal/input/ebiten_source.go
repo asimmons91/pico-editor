@@ -9,21 +9,27 @@ import (
 
 // EbitenSource adapts Ebitengine's keyboard, text, focus, and mouse APIs into
 // the normalized Source interface.
+// CursorMapper converts Ebitengine's default-transform cursor coordinates into
+// logical game-canvas pixels. The app owns the canvas rectangle and supplies
+// this function.
+type CursorMapper func(cursorX, cursorY float64) (int, int)
+
 type EbitenSource struct {
-	tracker      *Tracker
-	chars        []rune
-	canvasWidth  int
-	canvasHeight int
+	tracker *Tracker
+	chars   []rune
+	mapper  CursorMapper
 }
 
-// NewEbitenSource returns an Ebitengine-backed input source. canvasWidth and
-// canvasHeight are the logical game-screen dimensions used by Layout.
-func NewEbitenSource(canvasWidth, canvasHeight int) *EbitenSource {
-	return &EbitenSource{
-		tracker:      NewTracker(),
-		canvasWidth:  canvasWidth,
-		canvasHeight: canvasHeight,
+// NewEbitenSource returns an Ebitengine-backed input source.
+func NewEbitenSource(mapper CursorMapper) *EbitenSource {
+	return &EbitenSource{tracker: NewTracker(), mapper: mapper}
+}
+
+func (s *EbitenSource) cursorPosition(cursorX, cursorY float64) (int, int) {
+	if s.mapper == nil {
+		return int(cursorX), int(cursorY)
 	}
+	return s.mapper(cursorX, cursorY)
 }
 
 // Poll drains one frame of physical input.
@@ -52,18 +58,8 @@ func (s *EbitenSource) Poll() []Event {
 		snap.Runes = s.chars
 	}
 
-	cursorX, cursorY := ebiten.CursorPosition()
-	windowWidth, windowHeight := ebiten.WindowSize()
-	deviceScale := 1.0
-	if monitor := ebiten.Monitor(); monitor != nil {
-		deviceScale = monitor.DeviceScaleFactor()
-	}
-	x, y := CanvasPosition(
-		cursorX, cursorY,
-		windowWidth, windowHeight,
-		deviceScale,
-		s.canvasWidth, s.canvasHeight,
-	)
+	cursorX, cursorY := ebiten.CursorPositionF()
+	x, y := s.cursorPosition(cursorX, cursorY)
 	snap.Mouse = MouseSnapshot{X: x, Y: y, Buttons: currentMouseButtons()}
 	return s.tracker.Poll(time.Now(), snap)
 }
