@@ -1,7 +1,8 @@
 # M6 — P8SCII input UX
 
-**Status:** Draft
-**Depends on:** M1 (input), M3 (insert mode), M5 (`pico8/glyphs`, completion)
+**Status:** Implemented
+**Depends on:** M1 (input), M3 (insert mode), M5 (`pico8/glyphs`, completion),
+pico-lsp `v1.7.0` (complete printable glyph catalog)
 **Blocks:** M7
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
 **Estimate:** 1–2 weeks
@@ -24,11 +25,12 @@ table.
 
 - Shift+letter glyph insertion in insert mode, always authentic.
 - Ctrl+J Hiragana and Ctrl+K Katakana modes.
-- Ctrl+P literal/uppercase mode and the documented escape path.
-- Glyph picker backed by `pico8/glyphs`.
+- Ctrl+P puny input mode and the documented uppercase escape path.
+- Glyph picker backed by the complete `pico8/glyphs` catalog.
 - `p8_left` completion through pico-lsp.
 - Clipboard copy/paste mapping for canonical P8SCII Unicode.
-- Puny-font rendering variant.
+- Puny glyph rendering through the existing uppercase-ASCII atlas slots.
+- Command palette/registry so every M6 feature is discoverable.
 - Input help and `docs/INPUT.md`.
 - Round-trip and coverage tests for all printable glyphs.
 
@@ -47,14 +49,15 @@ table.
 1. `internal/input/p8scii.go` with key-mode state and tables.
 2. Shift+letter mapping for bytes 128–153, captured and verified against
    PICO-8 0.2.7.
-3. Kana mode tables for bytes 154–229, captured and verified.
-4. Ctrl+P literal mode with a visible status indicator and help.
-5. Glyph picker UI over `pico8/glyphs`.
-6. `p8_left` completion insertion path.
+3. Kana mode tables for bytes 154–253, captured and verified.
+4. Ctrl+P puny mode with a visible status indicator and help.
+5. Glyph picker UI over the complete `pico8/glyphs` catalog.
+6. `p8_left` completion insertion path, including `p8-` aliases and kana.
 7. Clipboard mapping and paste normalization.
-8. Puny-font atlas and rendering option.
+8. Puny glyph rendering through the existing uppercase-ASCII atlas slots.
 9. `docs/INPUT.md` and `:help input`.
-10. Coverage tests for every printable byte and normal-mode regression tests.
+10. Command registry and palette.
+11. Coverage tests for every printable byte and normal-mode regression tests.
 
 ## Detailed requirements
 
@@ -80,9 +83,8 @@ P8SCII bytes `128–153` are 26 glyphs in charset order. The expected mapping is
 
 Rules:
 
-- The table is verified against PICO-8 0.2.7 screenshots during M6. If a
-  screenshot disagrees, the screenshot wins and the table is corrected before
-  exit.
+- The table is verified against PICO-8 0.2.7 screenshots during M6. The capture
+  in `testdata/pico8/input/` agrees with the table.
 - Insertion happens only in insert mode, only when Shift is the sole modifier,
   and only for physical `A`–`Z` keys. Ctrl/Alt/Meta combinations are not
   converted.
@@ -103,10 +105,11 @@ Rules:
 - `Ctrl+J` and `Ctrl+K` are mutually exclusive; entering one leaves the other.
 - `Esc` leaves insert mode and clears the kana mode.
 - The mode is insert-only and is shown in the status bar as `HIRA` or `KATA`.
-- The kana table covers P8SCII bytes `154–229` exactly. The mapping from
-  keystrokes to kana must be captured from PICO-8 0.2.7; do not invent a romaji
-  transliteration scheme. Record the capture method and the raw screenshots in
-  `testdata/pico8/input/` and summarize it in `docs/INPUT.md`.
+- The kana table covers P8SCII bytes `154–253` (50 Hiragana followed by 50
+  Katakana). The mapping from keystrokes to kana is captured from PICO-8 0.2.7;
+  do not invent a romaji transliteration scheme. Record the capture method and
+  the raw screenshots in `testdata/pico8/input/` and summarize it in
+  `docs/INPUT.md`.
 - Multi-key sequences, small kana, and any dakuten/handakuten behavior are
   whatever PICO-8 does; the capture task is authoritative. If PICO-8 requires
   sequences, the input layer supports a pending-sequence buffer with a 1s
@@ -115,24 +118,26 @@ Rules:
 - Kana mode does not change Shift+letter behavior: Shift still inserts the
   symbol glyphs from §1 unless literal mode is active.
 
-### 3. Ctrl+P literal/uppercase mode
+### 3. Ctrl+P puny/uppercase mode
 
 The always-authentic rule makes Shift+letter insert glyphs, so uppercase ASCII
 needs an explicit escape path.
 
-- `Ctrl+P` in insert mode toggles literal mode.
-- In literal mode:
-  - Shift+letter inserts the uppercase ASCII letter, not a glyph,
-  - `Ctrl+J`/`Ctrl+K` kana modes are disabled while literal mode is active,
-  - the status bar shows `LIT` (or the PICO-8-equivalent label if capture shows
-    one),
-  - `Esc` leaves insert mode and clears literal mode.
-- The exact PICO-8 0.2.7 behavior and label for Ctrl+P are captured during M6.
-  If PICO-8 calls the mode "puny" and also changes rendering, match the input
-  behavior exactly and treat the rendering change as the puny-font variant in
-  §7. Do not expose a second, editor-invented toggle.
-- Uppercase identifiers must be testable end to end: enter `MY_VAR` in literal
-  mode, save, reload, and verify the text and LSP analysis.
+PICO-8 0.2.7 capture shows that `Ctrl+P` is **Puny font mode**, not a generic
+literal mode. It changes input encoding, not rendering:
+
+- `Ctrl+P` in insert mode toggles puny mode.
+- Unshifted `a`–`z` insert uppercase ASCII `A`–`Z` (the puny glyph slots).
+- Shift+letter inserts the standard lowercase ASCII letter, not the §1 symbol
+  glyph.
+- `Ctrl+J`/`Ctrl+K` kana modes are disabled while puny mode is active; entering
+  one of them leaves puny mode.
+- the status bar shows `PUNY` (PICO-8's status text is
+  `PUNY FONT MODE (CTRL-P)`),
+- `Esc` leaves insert mode and clears puny mode.
+- Uppercase identifiers are testable end to end: enter `MY_VAR` by enabling
+  puny mode and typing `my_var`, save, reload, and verify the text and LSP
+  analysis.
 - Help text explains that PICO-8 identifiers case-fold, so uppercase is rarely
   needed.
 
@@ -197,17 +202,21 @@ needs an explicit escape path.
 
 ### 7. Puny-font rendering
 
-- Generate a second atlas from the same CC-0 font data using PICO-8's puny
-  metrics. The expected metrics are variable-width glyphs with 3×5 ink and 1px
-  spacing; verify against PICO-8 0.2.7 and record the exact advance table.
-- The puny variant applies to the characters PICO-8's puny font defines. Kana
-  and wide glyphs fall back to the default atlas.
-- Add a temporary debug toggle in M6; M7 exposes `editor.font = "default" |
-  "puny"` in `config.toml`.
-- Widths used for cursor motion, tab bar layout, and popup wrapping come from
-  the active font metrics. LSP positions remain UTF-16 and are unaffected.
-- Puny mode does not change input mapping; it is a rendering variant.
-- Golden tests cover every puny glyph and a mixed string with fallback glyphs.
+Capture showed that PICO-8's puny glyph shapes are already present in the
+checked-in CC-0 atlas at uppercase ASCII (`0x41`–`0x5a`). Lowercase ASCII uses
+the standard glyphs, and the code editor advances both at the same 4px/8px
+widths. There is no second atlas, no metric change, and no rendering toggle:
+
+- `Ctrl+P` is an input mode only; it does not change the active font.
+- The uppercase-ASCII atlas slots are the puny rendering path.
+- Kana and wide glyphs continue to use their existing atlas slots.
+- Widths for cursor motion, tab bar layout, and popup wrapping stay on the
+  existing 4px/8px metrics. LSP positions remain UTF-16.
+- Tests cover the uppercase/lowercase glyph distinction and mixed fallback
+  strings.
+
+M7's earlier `editor.font = "puny"` setting is removed; it would be an
+editor-invented rendering mode that PICO-8 does not have.
 
 ### 8. Help and documentation
 
@@ -242,18 +251,16 @@ one-time, documented manual process:
 
 ```text
 internal/input/
-  p8scii.go        input modes, Shift/kana/literal tables
+  p8scii.go        input modes, Shift/kana/puny tables
   p8scii_test.go
-internal/font/
-  puny.txt         puny glyph data
-  atlas_gen.go     both atlases
 internal/app/
   glyphpicker.go   picker UI and filtering
-  input_ui.go      mode indicator and notifications
-internal/lsp/
-  glyphs.go        catalog request/cache
+  commands.go      command registry
+  palette.go       command palette UI
+  m6_test.go       end-to-end input, picker, palette, clipboard tests
+internal/lsp/       existing catalog request/cache and completion path
 docs/INPUT.md
-testdata/pico8/input/  screenshots and manifest
+testdata/pico8/input/  screenshots, captured code, manifest
 ```
 
 ## Interfaces and state
@@ -265,32 +272,38 @@ const (
     P8ModeDefault P8Mode = iota
     P8ModeHiragana
     P8ModeKatakana
-    P8ModeLiteral
+    P8ModePuny
 )
 
 type P8Input struct {
     Mode    P8Mode
-    Pending []rune // kana sequence buffer, if PICO-8 requires one
+    Pending string // kana romaji sequence buffer
+    Log     *slog.Logger
 }
 
-func (p *P8Input) HandleKey(key input.Key, mods input.Mods) (text string, handled bool)
+func (p *P8Input) HandleKey(key input.Key, mods input.Mods) (handled bool)
+func (p *P8Input) TransformText(runes []rune, mods input.Mods) (out []rune, handled bool)
 func (p *P8Input) ModeLabel() string
+func (p *P8Input) Reset()
 ```
 
 `P8Input` is owned by the app, invoked from insert mode before Vim text
-handling. It has no access to the buffer or LSP.
+handling. It has no access to the buffer or LSP. `TransformText` rewrites the
+committed text event so Vim inserts the canonical P8SCII text through its normal
+undo/LSP path.
 
 ## Error handling
 
 - Unknown glyph catalog responses show a notification; never insert a
   placeholder silently.
 - Clipboard failure leaves the buffer unchanged and shows the reason.
-- Kana pending sequences time out after 1s and insert the pending rune as
-  typed; log at debug.
-- A missing puny glyph falls back to the default atlas rather than drawing a
-  box.
-- If the capture table has a gap, M6 cannot exit; add the glyph or document the
-  deliberate exclusion.
+- Kana pending sequences have no timeout in PICO-8 0.2.7; they are cleared by a
+  non-letter key or by leaving insert mode. Invalid multi-letter sequences are
+  discarded exactly as captured.
+- The uppercase-ASCII puny glyph slots always exist in the checked-in atlas;
+  unknown runes still use the font replacement cell.
+- The capture covers every printable byte; a gap fails the catalog coverage
+  test, not a runtime path.
 
 ## Testing
 
@@ -298,20 +311,23 @@ handling. It has no access to the buffer or LSP.
 
 - Every printable byte `16–255` is reachable through at least one path:
   - `128–153` through Shift+letter,
-  - `154–229` through kana modes,
+  - `154–253` through kana modes,
   - all through the picker.
 - For each glyph: insert, save, reload, compare canonical text and byte mapping.
 - `p8_left` completion inserts the same text as the picker.
+- The picker catalog integration test asserts exactly one entry for every
+  printable byte.
 
 ### Regression
 
 - Normal-mode `J`, `K`, `P`, `X`, `D`, `C`, `Y`, `gg`, `G`, and `$` are
   unaffected with P8SCII input enabled.
-- Literal mode: `MY_VAR` round-trips and is analyzed by LSP.
+- Puny mode: `MY_VAR` round-trips and is analyzed by LSP.
 - `Ctrl+P` inside an open completion popup does not navigate completion; it
-  toggles literal mode. Completion uses `Ctrl+N`/`Ctrl+Shift+N`.
+  toggles puny mode. Completion uses `Ctrl+N`/`Ctrl+Shift+N`.
 - Clipboard copy/paste across a cart, a `.lua`, and an external editor.
-- Puny/default font switching updates cursor widths and rerenders.
+- Uppercase and lowercase ASCII continue to use the puny and standard atlas
+  slots respectively with unchanged widths.
 
 ### Manual
 
@@ -321,16 +337,17 @@ handling. It has no access to the buffer or LSP.
 
 ## Exit criteria
 
-- [ ] Every printable P8SCII glyph can be entered and round-trips through
+- [x] Every printable P8SCII glyph can be entered and round-trips through
       save/load.
-- [ ] Normal-mode Vim Shift commands are unaffected.
-- [ ] Uppercase identifier input has a documented, tested escape path.
-- [ ] Ctrl+J/K/P modes match captured PICO-8 0.2.7 behavior.
-- [ ] Glyph picker and `p8_left` completion work end to end.
-- [ ] Clipboard paste maps canonical Unicode and warns on unknown runes.
-- [ ] Puny-font rendering is pixel-verified and does not change input mapping.
-- [ ] Input mode help is reachable from `:help input` and the palette.
-- [ ] `mise run check` passes.
+- [x] Normal-mode Vim Shift commands are unaffected.
+- [x] Uppercase identifier input has a documented, tested escape path.
+- [x] Ctrl+J/K/P modes match captured PICO-8 0.2.7 behavior.
+- [x] Glyph picker and `p8_left` completion work end to end.
+- [x] Clipboard paste maps canonical Unicode and warns on unknown runes.
+- [x] Puny glyphs use the existing uppercase-ASCII atlas slots and do not
+      change input mapping or widths.
+- [x] Input mode help is reachable from `:help input` and the palette.
+- [x] `mise run check` passes.
 
 ## Risks and mitigations
 
@@ -340,6 +357,25 @@ handling. It has no access to the buffer or LSP.
 | Kana behavior is guessed | Capture PICO-8 0.2.7 sequences; support a pending buffer if needed; no invented romaji. |
 | Ctrl+P conflicts with completion | Completion uses `Ctrl+N`/`Ctrl+Shift+N`; `Ctrl+P` is input mode only. |
 | Picker and completion diverge | Both consume `pico8/glyphs`; no editor-local catalog. |
-| Puny metrics break cursor motion | One metrics source for rendering and cells; golden tests and mixed-string tests. |
+| Puny mode is mistaken for a font toggle | Capture shows it is input-only; the existing uppercase-ASCII atlas slots are the puny glyphs. |
 | Clipboard mangles block text | Define linewise/charwise/blockwise formats; round-trip tests. |
 | IME users cannot compose | M1 documents committed-text-only support; kana modes do not depend on IME. |
+
+## Results
+
+- **PICO-8 capture:** `testdata/pico8/input/` contains the screenshots, typed
+  key lists, saved cart bodies, and a hash-stamped manifest.
+- **Shift+letter:** table verified against PICO-8 0.2.7; it matches the expected
+  bytes `128–153`.
+- **Kana:** 50 Hiragana (`0x9a–0xcb`) and 50 Katakana (`0xcc–0xfd`) are
+  produced from captured romaji sequences. Dakuten/handakuten are stored as the
+  combining P8SCII bytes `0x1e`/`0x1f`, matching PICO-8's save format.
+- **Ctrl+P:** captured as `PUNY FONT MODE (CTRL-P)`; implemented as an
+  input-only mode. Uppercase identifiers use puny mode and unshifted letters.
+- **Puny rendering:** no second atlas or metric source. Uppercase ASCII in the
+  existing atlas is the puny rendering path.
+- **Catalog:** pico-lsp `v1.7.0` expands `pkg/glyphs` / `pico8/glyphs` to every
+  printable byte so the picker coverage criterion is met without an
+  editor-local catalog.
+- **Command palette:** the M7 registry/palette shipped with M6 so `Help: input`,
+  `Glyph: pick`, and `Input: toggle puny` are discoverable.

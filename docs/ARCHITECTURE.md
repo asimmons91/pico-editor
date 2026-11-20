@@ -212,8 +212,8 @@ Ebitengine keys + AppendInputChars
   (`J`, `K`, `P`, `X`, `D`, `C`, `Y`, …) must never be consumed by P8SCII
   insertion.
 - Insert mode is the only place where the P8SCII layer may turn Shift+letter
-  into a glyph. There is no P8 input toggle. The documented puny/literal escape
-  path covers uppercase identifiers.
+  into a glyph. There is no P8 input toggle. PICO-8's `Ctrl+P` puny mode is the
+  documented uppercase escape path; it changes input encoding only.
 - Key repeat is implemented in `internal/input` (400 ms initial, 50 ms
   interval); focus loss clears pressed-key and repeat state.
 - Clipboard access is behind an adapter, initialized lazily. Ebitengine has no
@@ -321,7 +321,8 @@ be used at a milestone exit.
 | golangci-lint | `2.15.0` (mise) | M0 |
 | pico-lsp `pkg/p8scii` (pico-lsp M17) | `v1.6.0` | before M1 |
 | pico-lsp `pkg/cart` (pico-lsp M18) | `v1.6.0` | before M4 |
-| pico-lsp `pkg/lsp`, `pkg/glyphs` (pico-lsp M19) | `v1.6.0` (M17–M19 shipped together) | before M5 |
+| pico-lsp `pkg/lsp` (pico-lsp M19) | `v1.6.0` (M17–M19 shipped together) | before M5 |
+| pico-lsp `pkg/glyphs` complete catalog | `v1.7.0` | before M6 |
 | `go.lsp.dev/protocol` | `v1.0.1` | M5 |
 | `go.lsp.dev/jsonrpc2` | `v1.0.1` | M5 |
 | `go.lsp.dev/uri` | `v1.0.1` (transitive) | M5 |
@@ -343,8 +344,9 @@ Development rules:
   with the required public packages counts.
 - The pico-lsp public-package schedule (`pkg/p8scii`, `pkg/cart`, and
   `pkg/lsp`/`pkg/glyphs` all in `v1.6.0`; pico-lsp milestones M17–M19) is
-  a cross-repository commitment. pico-lsp's roadmap records the same schedule;
-  the editor must not import an unreleased API.
+  a cross-repository commitment. M6 uses the additive `v1.7.0` catalog
+  expansion that covers every printable glyph. pico-lsp's roadmap records the
+  same schedule; the editor must not import an unreleased API.
 
 ## 13. M0 implementation notes
 

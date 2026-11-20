@@ -73,7 +73,9 @@ V1 decision: keep the adapter and degrade to internal registers plus a
 notification when `ErrUnavailable` is returned. A compositor or future
 clipboard package that supports data-control can remove the XWayland
 requirement without changing the editor seam. CRLF normalization is applied by
-the paste call site; a lone CR is preserved because it is a P8SCII byte.
+the paste call site. M6 later normalizes a lone CR to LF at the clipboard
+boundary; editor-internal edits still preserve a lone CR because it is a valid
+P8SCII byte.
 
 ## IME
 

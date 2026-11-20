@@ -17,6 +17,10 @@ reads a PICO-8 installation. The atlas is verified pixel-for-pixel against
 PICO-8 0.2.7 screenshots (see `docs/spikes/M1-input.md`). It is not a generic
 pixel font and is not rendered with runtime TrueType anti-aliasing.
 
+The M6 input screenshots under `testdata/pico8/input/` are one-time capture
+artifacts used to verify key tables. They are not part of the editor's runtime
+data and are not redistributed as a font or cart asset.
+
 ## PICO-8 trademark
 
 PICO-8 is a trademark of Lexaloffle Games. pico-editor is an independent
@@ -33,7 +37,7 @@ and no Rune code, assets, or vendored dependencies are copied here.
 ## Third-party dependencies
 
 pico-editor depends on third-party Go modules, including Ebitengine, pico-lsp
-`v1.6.0`, and `golang.design/x/clipboard`. Those modules retain their own
+`v1.7.0`, and `golang.design/x/clipboard`. Those modules retain their own
 licenses; see `go.mod` for the exact versions in use.
 
 The LSP integration fixtures under `internal/lsp/testdata` are copied unchanged

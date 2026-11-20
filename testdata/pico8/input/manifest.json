@@ -1,0 +1,78 @@
+{
+  "pico8": "0.2.7",
+  "capture": "xdotool + Xvfb, 4x scale, Linux",
+  "entries": [
+    {
+      "screenshot": "shift-letters.png",
+      "keys": "Shift+A..Shift+Z, one per line",
+      "expected": [
+        "█",
+        "▒",
+        "🐱",
+        "⬇️",
+        "░",
+        "✽",
+        "●",
+        "♥",
+        "☉",
+        "웃",
+        "⌂",
+        "⬅️",
+        "😐",
+        "♪",
+        "🅾️",
+        "◆",
+        "…",
+        "➡️",
+        "★",
+        "⧗",
+        "⬆️",
+        "ˇ",
+        "∧",
+        "❎",
+        "▤",
+        "▥"
+      ]
+    },
+    {
+      "screenshot": "hiragana-ka.png",
+      "keys": [
+        "ctrl+j",
+        "k",
+        "a"
+      ],
+      "expected": [
+        "か",
+        "HIRAGANA MODE (CTRL-J)"
+      ]
+    },
+    {
+      "screenshot": "katakana-mode-status.png",
+      "keys": [
+        "ctrl+k"
+      ],
+      "expected": [
+        "KATAKANA MODE (CTRL-K)"
+      ]
+    },
+    {
+      "screenshot": "puny-mode-status.png",
+      "keys": [
+        "ctrl+p"
+      ],
+      "expected": [
+        "PUNY FONT MODE (CTRL-P)"
+      ]
+    },
+    {
+      "screenshot": "hiragana-romaji.png",
+      "keys_file": "hiragana-keys.txt",
+      "capture_file": "hiragana-capture.txt"
+    },
+    {
+      "screenshot": "katakana-romaji.png",
+      "keys_file": "katakana-keys.txt",
+      "capture_file": "katakana-capture.txt"
+    }
+  ]
+}

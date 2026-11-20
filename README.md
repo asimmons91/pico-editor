@@ -7,16 +7,18 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 > PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
 > with, sponsored by, or endorsed by Lexaloffle Games.
 
-**Status:** M5 implemented. Automated checks pass; interactive X11/Wayland
+**Status:** M6 implemented. Automated checks pass; interactive X11/Wayland
 spot checks from M1 are tracked in
 [docs/spikes/M1-input.md](docs/spikes/M1-input.md), the M3 manual checklist is
 in [docs/spikes/M3-vim.md](docs/spikes/M3-vim.md), the M4 cart/tree checklist is
 in [docs/spikes/M4-cart.md](docs/spikes/M4-cart.md), and the M5 LSP checklist is
-in [docs/spikes/M5-lsp.md](docs/spikes/M5-lsp.md). pico-lsp now runs in-process:
+in [docs/spikes/M5-lsp.md](docs/spikes/M5-lsp.md). pico-lsp runs in-process:
 editing a cart or include gets semantic highlighting, diagnostics, completion,
 hover, signature help, and go-to-definition, with token/character/compressed
-sizes in the status row. See [docs/ROADMAP.md](docs/ROADMAP.md) for M6 (P8SCII
-input UX).
+sizes in the status row. P8SCII input now includes Shift+letter glyphs,
+Ctrl+J/K kana, Ctrl+P puny mode, a complete glyph picker, and `p8_left`
+completion; see [docs/INPUT.md](docs/INPUT.md). Next is M7 (polish and
+hardening).
 
 With no argument the current directory opens as a workspace with the file tree
 focused. Pass a `.p8` cart, `.lua` include, or directory to start there:
@@ -83,11 +85,13 @@ inject the version, commit, and build date into
 - [Roadmap and V1 scope](docs/ROADMAP.md)
 - [Architecture and invariants](docs/ARCHITECTURE.md)
 - [Frozen Vim command matrix](docs/VIM.md)
+- [P8SCII input and capture notes](docs/INPUT.md)
 - [Notices and attributions](NOTICE)
 - [M1 input and rendering spike results](docs/spikes/M1-input.md)
 - [M3 Vim manual checklist](docs/spikes/M3-vim.md)
 - [M4 cart and file tree checklist](docs/spikes/M4-cart.md)
 - [M5 in-process LSP checklist](docs/spikes/M5-lsp.md)
+- [M6 input capture and checklist](docs/spikes/M6-input.md)
 - [License](LICENSE)
 
 ## Contributing
