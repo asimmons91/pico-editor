@@ -38,7 +38,7 @@ func (g *Game) refilterPalette() {
 	palette.Matches = palette.Matches[:0]
 	for index, command := range g.commands {
 		enabled := g.commandEnabled(command)
-		idMatch := query != "" && strings.Contains(strings.ToLower(command.ID), query)
+		idMatch := query != "" && query == strings.ToLower(command.ID)
 		if !enabled && !idMatch {
 			continue
 		}

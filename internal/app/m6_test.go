@@ -348,6 +348,21 @@ func TestM6CommandPaletteOpensGlyphPicker(t *testing.T) {
 	}
 }
 
+func TestM6PaletteHidesDisabledCommandsUntilID(t *testing.T) {
+	game, _ := newEditorGame(t, "x\n", &recordingClipboard{})
+	game.openPalette()
+	game.palette.Query = "glyph"
+	game.refilterPalette()
+	if len(game.palette.Matches) != 0 {
+		t.Fatalf("disabled glyph command matched a title query: %+v", game.palette.Matches)
+	}
+	game.palette.Query = "glyph.pick"
+	game.refilterPalette()
+	if len(game.palette.Matches) != 1 {
+		t.Fatalf("disabled glyph command did not match its ID: %+v", game.palette.Matches)
+	}
+}
+
 func TestM6CommandRegistry(t *testing.T) {
 	game, _ := newEditorGame(t, "x\n", &recordingClipboard{})
 	seen := make(map[string]bool, len(game.commands))
