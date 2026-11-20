@@ -131,8 +131,7 @@ literal mode. It changes input encoding, not rendering:
 - Unshifted `a`–`z` insert uppercase ASCII `A`–`Z` (the puny glyph slots).
 - Shift+letter inserts the standard lowercase ASCII letter, not the §1 symbol
   glyph.
-- `Ctrl+J`/`Ctrl+K` kana modes are disabled while puny mode is active; entering
-  one of them leaves puny mode.
+- `Ctrl+J`/`Ctrl+K` leave puny mode and enter the requested kana mode.
 - the status bar shows `PUNY` (PICO-8's status text is
   `PUNY FONT MODE (CTRL-P)`),
 - `Esc` leaves insert mode and clears puny mode.

@@ -137,7 +137,7 @@ input encoding, not rendering:
 - Shift+letter inserts the standard lowercase ASCII letter,
 - Shift+letter does **not** insert the §Shift+letter symbol glyphs while Puny
   mode is active,
-- kana modes are disabled while Puny mode is active.
+- `Ctrl+J`/`Ctrl+K` leave Puny mode and enter the requested kana mode.
 
 Because PICO-8 identifiers case-fold, uppercase is rarely needed. To enter an
 uppercase identifier such as `MY_VAR`, press `Ctrl+P` in insert mode and type
@@ -159,6 +159,8 @@ captured PICO-8 editor.
   selection and returns to normal.
 - The catalog comes from pico-lsp `pico8/glyphs`. If LSP is unavailable the
   picker does not open; a notification explains why.
+- Custom entries are forwarded to the server by the settings layer (M7); the
+  picker renders whatever the server returns and never invents names.
 
 ## `p8_left` completion
 
