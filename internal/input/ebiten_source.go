@@ -10,13 +10,20 @@ import (
 // EbitenSource adapts Ebitengine's keyboard, text, focus, and mouse APIs into
 // the normalized Source interface.
 type EbitenSource struct {
-	tracker *Tracker
-	chars   []rune
+	tracker      *Tracker
+	chars        []rune
+	canvasWidth  int
+	canvasHeight int
 }
 
-// NewEbitenSource returns an Ebitengine-backed input source.
-func NewEbitenSource() *EbitenSource {
-	return &EbitenSource{tracker: NewTracker()}
+// NewEbitenSource returns an Ebitengine-backed input source. canvasWidth and
+// canvasHeight are the logical game-screen dimensions used by Layout.
+func NewEbitenSource(canvasWidth, canvasHeight int) *EbitenSource {
+	return &EbitenSource{
+		tracker:      NewTracker(),
+		canvasWidth:  canvasWidth,
+		canvasHeight: canvasHeight,
+	}
 }
 
 // Poll drains one frame of physical input.
@@ -45,7 +52,18 @@ func (s *EbitenSource) Poll() []Event {
 		snap.Runes = s.chars
 	}
 
-	x, y := ebiten.CursorPosition()
+	cursorX, cursorY := ebiten.CursorPosition()
+	windowWidth, windowHeight := ebiten.WindowSize()
+	deviceScale := 1.0
+	if monitor := ebiten.Monitor(); monitor != nil {
+		deviceScale = monitor.DeviceScaleFactor()
+	}
+	x, y := CanvasPosition(
+		cursorX, cursorY,
+		windowWidth, windowHeight,
+		deviceScale,
+		s.canvasWidth, s.canvasHeight,
+	)
 	snap.Mouse = MouseSnapshot{X: x, Y: y, Buttons: currentMouseButtons()}
 	return s.tracker.Poll(time.Now(), snap)
 }

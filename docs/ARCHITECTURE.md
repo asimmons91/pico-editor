@@ -180,10 +180,11 @@ app state -> render.Surface (256x256, palette indices)
   filter, which would soften pixel art.
 - Window sizing is in device-independent pixels: default scale 4
   (`1024×1024`), scale 0 chooses the largest integer scale fitting 80% of the
-  current monitor clamped to 2–8. The minimum window is 256×256 so the canvas is
-  never cropped. HiDPI is handled by Ebitengine; the final-screen pass works in
-  physical pixels and coordinates are never multiplied by the device scale
-  factor manually.
+  current monitor clamped to 2–8. Manual and debug scale changes may select
+  1×; automatic sizing never goes below 2×. The minimum window is 256×256 so
+  the canvas is never cropped. HiDPI is handled by Ebitengine; the final-screen
+  pass works in physical pixels and coordinates are never multiplied by the
+  device scale factor manually.
 - `DrawFinalScreen` replaces Ebitengine's default final-screen transform.
   Ebitengine APIs that use that default transform (for example
   `ebiten.CursorPosition` and IME candidate placement) must be mapped through

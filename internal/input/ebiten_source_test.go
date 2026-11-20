@@ -54,3 +54,33 @@ func TestEbitenUnknownKey(t *testing.T) {
 		t.Error("ebitenKeyFor(KeyUnknown) = true, want false")
 	}
 }
+
+func TestEbitenKeyMappingSpotChecks(t *testing.T) {
+	cases := []struct {
+		in  ebiten.Key
+		out Key
+	}{
+		{ebiten.KeyA, KeyA},
+		{ebiten.KeySemicolon, KeySemicolon},
+		{ebiten.KeyApostrophe, KeyApostrophe},
+		{ebiten.KeyComma, KeyComma},
+		{ebiten.KeyPeriod, KeyPeriod},
+		{ebiten.KeySlash, KeySlash},
+		{ebiten.KeyBackquote, KeyBacktick},
+		{ebiten.KeyLeft, KeyLeft},
+		{ebiten.KeyRight, KeyRight},
+		{ebiten.KeyUp, KeyUp},
+		{ebiten.KeyDown, KeyDown},
+		{ebiten.KeyF10, KeyF10},
+	}
+	for _, tc := range cases {
+		got, ok := keyFromEbiten(tc.in)
+		if !ok || got != tc.out {
+			t.Errorf("keyFromEbiten(%v) = (%s, %t), want (%s, true)", tc.in, KeyName(got), ok, KeyName(tc.out))
+		}
+		reverse, ok := ebitenKeyFor(tc.out)
+		if !ok || reverse != tc.in {
+			t.Errorf("ebitenKeyFor(%s) = (%v, %t), want (%v, true)", KeyName(tc.out), reverse, ok, tc.in)
+		}
+	}
+}

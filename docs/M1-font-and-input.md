@@ -450,7 +450,9 @@ image.
 - [x] The 16-color palette matches the canonical values.
 - [x] Shift, Ctrl, Alt, Meta, text input, and key repeat behave correctly on
       Linux in unit tests; live layout/IME spot checks are in the spike report.
-- [x] Window resizing never blurs or misaligns the grid.
+- [ ] Window resizing never blurs or misaligns the grid; automated scale math
+      passes, but the interactive X11/Wayland resize check in the spike report
+      is still open.
 - [x] Clipboard works on X11 and Wayland or has a documented fallback.
 - [x] IME limitations are recorded and accepted for V1.
 - [x] Golden tests run without a GPU or display.
@@ -475,10 +477,12 @@ image.
 - Clipboard access uses `golang.design/x/clipboard` `v0.11.0`, lazily
   initialized. Reads run on a background goroutine and are applied through a
   channel on the Update goroutine, so a hung clipboard owner cannot block
-  drawing or input. Runtime `ErrUnavailable`/`ErrUnsupported` results are
-  mapped to `input.ErrUnavailable`. On GNOME Wayland the package falls back to
-  XWayland; without a data-control manager or X11 display the UI degrades to
-  internal registers.
+  drawing or input. A pending read is abandoned after five seconds and a stale
+  result is ignored, so paste is not permanently disabled. Runtime
+  `ErrUnavailable`/`ErrUnsupported` results are mapped to
+  `input.ErrUnavailable`; paste previews normalize only a bounded prefix. On
+  GNOME Wayland the package falls back to XWayland; without a data-control
+  manager or X11 display the UI degrades to internal registers.
 - `internal/app` always opens the charset screen in M1. `--debug-charset` is
   already parsed and retained so M2 can keep it after the editor becomes the
   default. `1`–`4` change the window scale, `W` toggles the width overlay
@@ -488,9 +492,12 @@ image.
   as paste, quit, overlay, background, or scale changes. The log panel hides
   while the selection is in the bottom two tile rows so it cannot cover the
   selected byte.
-- `Config.Now` is injectable for deterministic blink tests. The CI workflow
-  now includes the deferred `xvfb` smoke job, which builds with
-  `CGO_ENABLED=0` and opens a real X11 window under Xvfb.
+- `Config.Now` is injectable for deterministic blink tests. Mouse positions
+  are mapped from Ebitengine's default letterbox transform into the integer
+  canvas rectangle before they become input events.
+- The CI workflow now includes the deferred `xvfb` smoke job, which builds with
+  `CGO_ENABLED=0`, opens a real X11 window under Xvfb, and requires a
+  `first-frame` log record after the final-screen pass.
 - V1 deliberately does not use Ebitengine's experimental `exp/textinput` IME
   API. Committed text only is recorded as the accepted limitation.
 

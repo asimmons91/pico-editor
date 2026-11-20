@@ -92,7 +92,7 @@ window resizes with integer scaling and never blurs.
   milestone.
 - Default window scale is 4× (1024×1024 device-independent pixels). A scale of
   `0` means automatic: choose the largest integer scale that fits 80% of the
-  current monitor, clamped to 2–8.
+  current monitor, clamped to 2–8. Manual/debug scale selection may use 1×.
 - Window resizing is enabled. Every frame, compute
   `scale = max(1, min(width/256, height/256))`, center the 256×256 canvas, and
   use nearest-neighbor sampling. Letterbox with palette index 0. Never use

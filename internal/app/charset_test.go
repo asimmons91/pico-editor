@@ -2,13 +2,16 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/asimmons91/pico-editor/internal/font"
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/render"
 )
@@ -47,9 +50,14 @@ func (b *blockingClipboard) ReadText() (string, error) {
 }
 func (b *blockingClipboard) WriteText(string) error { return nil }
 
+var testClock = time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+
 func newTestGame(t *testing.T) *Game {
 	t.Helper()
-	game := New(Config{Logger: slog.New(slog.DiscardHandler)})
+	game := New(Config{
+		Logger: slog.New(slog.DiscardHandler),
+		Now:    func() time.Time { return testClock },
+	})
 	game.source = &fakeSource{}
 	return game
 }
@@ -356,7 +364,7 @@ func TestLogPanelDoesNotCoverBottomSelection(t *testing.T) {
 	charset.Selected = 0xF0
 	surface := render.NewSurface(CanvasWidth, CanvasHeight)
 	charset.Draw(surface)
-	if got := surface.At(0, 232); got != 1 {
+	if got := surface.At(1, 232); got != 1 {
 		t.Errorf("bottom background = %d, want 1 (log panel hidden)", got)
 	}
 	if got := surface.At(0, 240); got != 10 {
@@ -366,7 +374,7 @@ func TestLogPanelDoesNotCoverBottomSelection(t *testing.T) {
 	charset.Selected = 0x41
 	surface = render.NewSurface(CanvasWidth, CanvasHeight)
 	charset.Draw(surface)
-	if got := surface.At(0, 232); got != 0 {
+	if got := surface.At(1, 232); got != 0 {
 		t.Errorf("log panel background = %d, want 0", got)
 	}
 }
@@ -416,5 +424,173 @@ func TestTruncate(t *testing.T) {
 		if got := truncate(tc.text, tc.limit); got != tc.want {
 			t.Errorf("truncate(%q, %d) = %q, want %q", tc.text, tc.limit, got, tc.want)
 		}
+	}
+}
+
+func TestPastePendingWhileBusy(t *testing.T) {
+	game := newTestGame(t)
+	blocking := &blockingClipboard{started: make(chan struct{}), release: make(chan struct{})}
+	game.clipboard = blocking
+	source := game.source.(*fakeSource)
+	source.events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyV, Mods: input.ModCtrl}}
+	if err := game.Update(); err != nil {
+		t.Fatalf("first Update() error = %v", err)
+	}
+	select {
+	case <-blocking.started:
+	case <-time.After(time.Second):
+		t.Fatal("clipboard read did not start")
+	}
+
+	source.events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyV, Mods: input.ModCtrl}}
+	if err := game.Update(); err != nil {
+		t.Fatalf("second Update() error = %v", err)
+	}
+	if got := strings.Join(game.charset.Log, "\n"); !strings.Contains(got, "paste pending") {
+		t.Errorf("log = %q, want a pending paste", got)
+	}
+
+	close(blocking.release)
+	finishPaste(t, game)
+	if got := strings.Join(game.charset.Log, "\n"); !strings.Contains(got, "paste \"ok\"") {
+		t.Errorf("log = %q, want the completed paste", got)
+	}
+}
+
+func TestPastePollRedraws(t *testing.T) {
+	game := newTestGame(t)
+	game.renderer.dirty = false
+	game.clipboardResults <- clipboardResult{text: "x"}
+	if err := game.Update(); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if !game.renderer.dirty {
+		t.Error("polled paste did not redraw the surface")
+	}
+}
+
+func TestPasteTimeout(t *testing.T) {
+	game := newTestGame(t)
+	game.clipboardBusy = true
+	game.clipboardStarted = testClock.Add(-pasteTimeout - time.Second)
+	game.clipboardGeneration = 1
+	if !game.pollPaste(testClock) {
+		t.Fatal("pollPaste did not report the timeout")
+	}
+	if game.clipboardBusy {
+		t.Fatal("clipboardBusy remained true after timeout")
+	}
+	if got := strings.Join(game.charset.Log, "\n"); !strings.Contains(got, "paste timed out") {
+		t.Errorf("log = %q, want a timeout", got)
+	}
+}
+
+func TestPasteTypedUnavailable(t *testing.T) {
+	game := newTestGame(t)
+	game.clipboard = &fakeClipboard{err: fmt.Errorf("%w: no display", input.ErrUnavailable)}
+	source := game.source.(*fakeSource)
+	source.events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyV, Mods: input.ModCtrl}}
+	if err := game.Update(); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	finishPaste(t, game)
+	if got := strings.Join(game.charset.Log, "\n"); !strings.Contains(got, "clipboard unavailable") {
+		t.Errorf("log = %q, want the typed unavailable message", got)
+	}
+}
+
+type panicClipboard struct{}
+
+func (panicClipboard) ReadText() (string, error) { panic("boom") }
+func (panicClipboard) WriteText(string) error    { return nil }
+
+func TestPastePanicRecovered(t *testing.T) {
+	game := newTestGame(t)
+	game.clipboard = panicClipboard{}
+	source := game.source.(*fakeSource)
+	source.events = []input.Event{{Kind: input.KindKeyDown, Key: input.KeyV, Mods: input.ModCtrl}}
+	if err := game.Update(); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	finishPaste(t, game)
+	if got := strings.Join(game.charset.Log, "\n"); !strings.Contains(got, "clipboard panic") {
+		t.Errorf("log = %q, want the recovered panic", got)
+	}
+}
+
+func TestRepeatArrowMovesSelection(t *testing.T) {
+	game := newTestGame(t)
+	source := game.source.(*fakeSource)
+	source.events = []input.Event{
+		{Kind: input.KindKeyDown, Key: input.KeyRight, Repeat: true},
+		{Kind: input.KindKeyDown, Key: input.KeyDown, Repeat: true},
+	}
+	if err := game.Update(); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if want := byte(0x41 + 1 + 16); game.charset.Selected != want {
+		t.Errorf("selected = %#02x, want %#02x", game.charset.Selected, want)
+	}
+}
+
+func TestPreviewPrefix(t *testing.T) {
+	if got := previewPrefix("abc", 10); got != "abc" {
+		t.Errorf("short prefix = %q, want abc", got)
+	}
+	if got := previewPrefix("abc", 0); got != "" {
+		t.Errorf("zero prefix = %q, want empty", got)
+	}
+	long := strings.Repeat("é", 3000)
+	got := previewPrefix(long, 100)
+	if len(got) > 100 {
+		t.Errorf("prefix length = %d, want <= 100", len(got))
+	}
+	if !utf8.ValidString(got) {
+		t.Error("prefix split a UTF-8 sequence")
+	}
+}
+
+func TestLogHideBoundary(t *testing.T) {
+	cases := []struct {
+		selected byte
+		wantRow  uint8
+	}{
+		{0xdf, 0},
+		{0xe0, 1},
+	}
+	for _, tc := range cases {
+		charset := NewCharset()
+		charset.Background = 1
+		charset.Log = []string{"hello"}
+		charset.Selected = tc.selected
+		surface := render.NewSurface(CanvasWidth, CanvasHeight)
+		charset.Draw(surface)
+		if got := surface.At(1, 232); got != tc.wantRow {
+			t.Errorf("selected %#02x: At(0,232) = %d, want %d", tc.selected, got, tc.wantRow)
+		}
+	}
+}
+
+func TestOverlayCellLabelAndBottomBorder(t *testing.T) {
+	charset := NewCharset()
+	charset.Background = 1
+	charset.Overlay = true
+	surface := render.NewSurface(CanvasWidth, CanvasHeight)
+	charset.Draw(surface)
+
+	want := render.NewSurface(4, font.CellHeight)
+	want.DrawText(0, 0, "0", 10, 1)
+	for y := 0; y < font.CellHeight; y++ {
+		for x := 0; x < 3; x++ {
+			if got, expected := surface.At(12+x, 9+y), want.At(x, y); got != expected {
+				t.Errorf("cell label At(%d,%d) = %d, want %d", 12+x, 9+y, got, expected)
+			}
+		}
+	}
+	if got := surface.At(15, 11); got != 5 {
+		t.Errorf("cell-label right border = %d, want 5", got)
+	}
+	if got := surface.At(12, 15); got != 5 {
+		t.Errorf("bottom border = %d, want 5", got)
 	}
 }

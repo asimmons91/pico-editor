@@ -25,7 +25,7 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 | --- | --- |
 | Renderer | Go + Ebitengine 2.10+ (pinned `v2.10.6` during V1) |
 | Editor UI | Custom-drawn PICO-8 UI using a 1-bit glyph atlas |
-| Canvas | 256×256 logical, 64×42 cells, integer-scaled 2×–8× |
+| Canvas | 256×256 logical, 64×42 cells, integer-scaled 1×–8×; automatic sizing clamps to 2×–8× |
 | Vim | Curated core: normal/insert/visual char/line/block, core motions/operators/text objects, registers, search, undo, `:s`, `:w`/`:q`/`:e` |
 | LSP | pico-lsp in-process through thin public `pkg/*` facades |
 | Cart view | Show only `__lua__`, split into `-->8` code tabs, preserve all other cart sections |
@@ -418,7 +418,7 @@ normative.
 
 | Decision | Resolution | Spec |
 | --- | --- | --- |
-| Canvas | 256×256 logical, 64×42 cells, integer 2×–8× | M0/M1 |
+| Canvas | 256×256 logical, 64×42 cells, integer 1×–8×; auto 2×–8× | M0/M1 |
 | Settings | TOML global config plus workspace override; keymaps in the same file | M0/M7 |
 | License | MIT | M0 |
 | Linux release formats | AppImage plus tar.gz, `amd64` and `arm64` | M8 |

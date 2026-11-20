@@ -44,8 +44,15 @@ A headless run therefore starts normally and returns a typed
 `input.ErrUnavailable` only when the user tries to paste. Reads run on a
 background goroutine and are delivered to the Update goroutine through a
 buffered channel, so a hung X11 owner or Wayland data-control offer cannot
-freeze drawing or key handling. Runtime `clipboard.ErrUnavailable` and
+freeze drawing or key handling. A pending read is abandoned after five seconds
+and stale results are ignored. Runtime `clipboard.ErrUnavailable` and
 `ErrUnsupported` results are also mapped to `input.ErrUnavailable`.
+
+Known limitation: the clipboard package's native Wayland read path has no
+deadline, so a source that never closes its transfer pipe can leave the worker
+goroutine blocked. The editor clears the pending state after five seconds and
+remains usable, but that worker (and its pipe) leaks until exit. M3/M6 should
+add cancellable clipboard reads or a native backend with deadlines.
 
 Real round-trips were run with the editor's `SystemClipboard` (write a token,
 read it back, restore the previous text):
@@ -115,13 +122,20 @@ the paste call site; a lone CR is preserved because it is a P8SCII byte.
 - Scale math is table-tested at device scale factors 1.25, 1.5, and 2.0. For
   example, a 4x window on a 1.25-factor display occupies 1280 physical pixels,
   which the final-screen pass draws at integer 5x; no fractional scaling or
-  linear filtering is used.
+  linear filtering is used. Manual/debug scale selection includes 1x; automatic
+  sizing clamps to 2x-8x.
 - Pressing `1`-`4` in the charset screen sets the window to
   `256*scale` device-independent pixels. The final-screen pass still chooses an
   integer physical scale, so the grid stays sharp.
-- Ebitengine's cursor position is read in logical canvas units; the M1 screen
-  does not yet consume mouse clicks. M4 must verify the cursor mapping against
-  the final-screen rectangle before tree/tab hit testing.
+- Ebitengine's cursor position is read through its default letterbox transform;
+  `input.CanvasPosition` inverts that transform and applies the editor's
+  integer canvas rectangle before the position becomes a mouse event. Table
+  tests cover integer, letterboxed, wide-window, and HiDPI cases. M4 should
+  still add a click-level integration test before tree/tab hit testing.
+- The CI `xvfb` smoke job builds with `CGO_ENABLED=0`, opens the editor under
+  Xvfb, and requires the `first-frame` log record emitted after the
+  final-screen pass. It therefore fails if window/GL initialization hangs or
+  the final-screen draw never runs.
 
 ## Open manual checks
 

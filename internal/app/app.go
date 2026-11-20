@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -29,24 +30,37 @@ type Config struct {
 }
 
 type clipboardResult struct {
-	text string
-	err  error
+	generation uint64
+	text       string
+	err        error
 }
+
+// pasteTimeout bounds a pending clipboard read. The clipboard package's
+// native Wayland backend has no read deadline, so the editor abandons a
+// pending paste rather than disabling paste forever.
+const pasteTimeout = 5 * time.Second
+
+// maxPastePreviewBytes bounds the text normalized and quoted for the debug
+// log. The full clipboard text is never copied just to show a short preview.
+const maxPastePreviewBytes = 4096
 
 // Game is the root Ebitengine game. It owns no package-level state.
 type Game struct {
-	logger           *slog.Logger
-	step             func() error
-	fatalErr         error
-	source           input.Source
-	clipboard        input.Clipboard
-	clipboardResults chan clipboardResult
-	clipboardBusy    bool
-	renderer         *Renderer
-	charset          *Charset
-	blink            *Blink
-	scale            int
-	now              func() time.Time
+	logger              *slog.Logger
+	step                func() error
+	fatalErr            error
+	source              input.Source
+	clipboard           input.Clipboard
+	clipboardResults    chan clipboardResult
+	clipboardBusy       bool
+	clipboardStarted    time.Time
+	clipboardGeneration uint64
+	renderer            *Renderer
+	charset             *Charset
+	blink               *Blink
+	scale               int
+	now                 func() time.Time
+	firstFrame          bool
 }
 
 // New returns a game configured by cfg.
@@ -69,7 +83,7 @@ func New(cfg Config) *Game {
 	}
 	game := &Game{
 		logger:           logger,
-		source:           input.NewEbitenSource(),
+		source:           input.NewEbitenSource(CanvasWidth, CanvasHeight),
 		clipboard:        clipboard,
 		clipboardResults: make(chan clipboardResult, 1),
 		renderer:         NewRenderer(CanvasWidth, CanvasHeight, logger),
@@ -101,7 +115,7 @@ func (g *Game) Update() (err error) {
 func (g *Game) updateFrame() error {
 	now := g.now()
 	changed := g.blink.Update(now)
-	if g.pollPaste() {
+	if g.pollPaste(now) {
 		changed = true
 	}
 	events := g.source.Poll()
@@ -212,18 +226,27 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 }
 
 func (g *Game) startPaste() {
+	now := g.now()
 	if g.clipboardBusy {
-		g.charset.AddLog("paste pending")
-		return
+		if now.Sub(g.clipboardStarted) < pasteTimeout {
+			g.charset.AddLog("paste pending")
+			return
+		}
+		g.clipboardBusy = false
+		g.clipboardGeneration++
+		g.charset.AddLog("paste timed out")
 	}
 	if g.clipboardResults == nil {
 		g.clipboardResults = make(chan clipboardResult, 1)
 	}
 	g.clipboardBusy = true
+	g.clipboardStarted = now
+	g.clipboardGeneration++
+	generation := g.clipboardGeneration
 	clipboard := g.clipboard
 	results := g.clipboardResults
 	go func() {
-		result := clipboardResult{}
+		result := clipboardResult{generation: generation}
 		func() {
 			defer func() {
 				if recovered := recover(); recovered != nil {
@@ -236,17 +259,29 @@ func (g *Game) startPaste() {
 	}()
 }
 
-func (g *Game) pollPaste() bool {
+func (g *Game) pollPaste(now time.Time) bool {
 	if g.clipboardResults == nil {
 		return false
 	}
-	select {
-	case result := <-g.clipboardResults:
+	changed := false
+	if g.clipboardBusy && now.Sub(g.clipboardStarted) >= pasteTimeout {
 		g.clipboardBusy = false
-		g.applyPaste(result)
-		return true
-	default:
-		return false
+		g.clipboardGeneration++
+		g.charset.AddLog("paste timed out")
+		changed = true
+	}
+	for {
+		select {
+		case result := <-g.clipboardResults:
+			if result.generation != g.clipboardGeneration {
+				continue
+			}
+			g.clipboardBusy = false
+			g.applyPaste(result)
+			return true
+		default:
+			return changed
+		}
 	}
 }
 
@@ -255,8 +290,22 @@ func (g *Game) applyPaste(result clipboardResult) {
 		g.charset.AddLog("paste error: " + shortError(result.err))
 		return
 	}
-	text := input.NormalizeNewlines(result.text)
+	text := input.NormalizeNewlines(previewPrefix(result.text, maxPastePreviewBytes))
 	g.charset.AddLog("paste " + truncate(text, 48))
+}
+
+func previewPrefix(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:cut]
 }
 
 func shortError(err error) string {
@@ -306,7 +355,16 @@ func (g *Game) Draw(screen *ebiten.Image) {
 func (g *Game) DrawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Image, _ ebiten.GeoM) {
 	g.doFrame("final screen", func() {
 		g.drawFinalScreen(screen, offscreen)
+		g.markFirstFrame()
 	})
+}
+
+func (g *Game) markFirstFrame() {
+	if g.firstFrame {
+		return
+	}
+	g.firstFrame = true
+	g.logger.Info("first-frame")
 }
 
 func (g *Game) drawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Image) {

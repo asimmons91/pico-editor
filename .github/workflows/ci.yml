@@ -79,6 +79,7 @@ jobs:
             exit 1
           fi
           grep -q 'msg=starting' "$RUNNER_TEMP/pico-editor-smoke.log"
+          grep -q 'msg=first-frame' "$RUNNER_TEMP/pico-editor-smoke.log"
           if grep -q 'level=ERROR' "$RUNNER_TEMP/pico-editor-smoke.log"; then
             cat "$RUNNER_TEMP/pico-editor-smoke.log"
             exit 1
