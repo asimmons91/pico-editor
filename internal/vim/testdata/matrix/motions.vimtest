@@ -1,0 +1,189 @@
+matrix: 2.2-hjkl
+name: hjkl moves by cluster
+buffer: abcd\nefgh
+cursor: 1,1
+keys: khllj
+want.buffer: abcd\nefgh
+want.cursor: 1,2
+want.mode: normal
+---
+matrix: 2.2-words
+name: word motions walk runs
+buffer: one two-three
+cursor: 0,0
+keys: webbb
+want.buffer: one two-three
+want.cursor: 0,0
+---
+matrix: 2.2-words-big
+name: big word motions cross punctuation
+buffer: one.two three
+cursor: 0,0
+keys: WBB
+want.buffer: one.two three
+want.cursor: 0,0
+---
+matrix: 2.2-line
+name: line motions 0 caret dollar
+buffer: \s\sabc
+cursor: 0,4
+keys: 0^$
+want.buffer: \s\sabc
+want.cursor: 0,4
+---
+matrix: 2.2-gg-G
+name: gg and G with counts
+buffer: one\ntwo\nthree\nfour
+cursor: 1,0
+keys: Ggg2G
+want.buffer: one\ntwo\nthree\nfour
+want.cursor: 1,0
+---
+matrix: 2.2-find
+name: find repeats and reverses
+buffer: a-b-c-d
+cursor: 0,0
+keys: f-;,
+want.buffer: a-b-c-d
+want.cursor: 0,1
+---
+matrix: 2.2-percent
+name: percent matches nested brackets
+buffer: if (a[b]) then
+cursor: 0,3
+keys: %
+want.buffer: if (a[b]) then
+want.cursor: 0,8
+---
+matrix: 2.2-paragraph
+name: paragraph motions cross blank lines
+buffer: one\ntwo\n\nthree\nfour
+cursor: 0,0
+keys: }}
+want.buffer: one\ntwo\n\nthree\nfour
+want.cursor: 4,0
+---
+matrix: 2.2-screen
+name: screen motions move within viewport
+buffer: 1\n2\n3\n4\n5\n6\n7\n8\n9\n10
+cursor: 4,0
+keys: HML
+want.buffer: 1\n2\n3\n4\n5\n6\n7\n8\n9\n10
+want.cursor: 9,0
+---
+matrix: 2.2-half-page
+name: half page motions
+buffer: 1\n2\n3\n4\n5\n6\n7\n8\n9\n10
+cursor: 4,0
+keys: <c-d><c-u>
+want.buffer: 1\n2\n3\n4\n5\n6\n7\n8\n9\n10
+want.cursor: 0,0
+---
+matrix: 2.2-full-page
+name: full page motions
+buffer: 1\n2\n3\n4\n5\n6\n7\n8\n9\n10
+cursor: 4,0
+keys: <c-f><c-b>
+want.buffer: 1\n2\n3\n4\n5\n6\n7\n8\n9\n10
+want.cursor: 0,0
+---
+matrix: 2.2-line-motion
+name: plus minus and enter move by lines
+buffer:   one\n  two\n  three
+cursor: 1,3
+keys: +-
+want.buffer:   one\n  two\n  three
+want.cursor: 1,2
+---
+matrix: 2.2-space-bs
+name: space and backspace wrap lines
+buffer: abc\ndef
+cursor: 0,2
+keys: <space>
+want.buffer: abc\ndef
+want.cursor: 1,0
+---
+matrix: 2.2-space-bs-wrap
+name: space wraps to next line start
+buffer: abc\ndef
+cursor: 0,0
+keys: lll<space>
+want.buffer: abc\ndef
+want.cursor: 1,0
+---
+matrix: 2.2-space-bs-back
+name: backspace wraps to previous line end
+buffer: abc\ndef
+cursor: 1,0
+keys: <bs>
+want.buffer: abc\ndef
+want.cursor: 0,2
+---
+matrix: 2.2-search-next
+name: search then n and N
+buffer: foo bar foo baz foo
+cursor: 0,0
+keys: /foo<enter>nN
+want.buffer: foo bar foo baz foo
+want.cursor: 0,8
+---
+matrix: 2.2-star-hash
+name: star and hash search the word
+buffer: foo bar foo
+cursor: 0,0
+keys: *#
+want.buffer: foo bar foo
+want.cursor: 0,0
+---
+matrix: 2.2-gg-count
+name: gg accepts a line count
+buffer: a\nb\nc\nd
+keys: 2gg
+want.buffer: a\nb\nc\nd
+want.cursor: 1,0
+want.mode: normal
+---
+matrix: 2.2-percent-string
+name: percent ignores brackets inside Lua strings
+buffer: x = "("
+keys: %
+want.buffer: x = "("
+want.cursor: 0,0
+want.bell: true
+want.mode: normal
+---
+matrix: 2.2-find-F
+name: F finds backward on the line
+buffer: a-b-c
+cursor: 0,4
+keys: F-
+want.buffer: a-b-c
+want.cursor: 0,3
+want.mode: normal
+---
+matrix: 2.2-find-t
+name: t stops before the target
+buffer: a-b-c
+cursor: 0,1
+keys: t-
+want.buffer: a-b-c
+want.cursor: 0,2
+want.mode: normal
+---
+matrix: 2.2-find-T
+name: T stops after the target
+buffer: a-b-c-
+cursor: 0,5
+keys: T-
+want.buffer: a-b-c-
+want.cursor: 0,4
+want.mode: normal
+---
+matrix: 2.2-enter-motion
+name: enter moves to the next first nonblank
+buffer: a\n\s\sb
+cursor: 0,0
+keys: <enter>
+want.buffer: a\n\s\sb
+want.cursor: 1,2
+want.mode: normal

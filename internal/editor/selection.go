@@ -1,6 +1,9 @@
 package editor
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // SelectionKind is the shape of a selection. Blockwise selection is added in
 // M3.
@@ -13,6 +16,9 @@ const (
 	SelectionChar
 	// SelectionLine is a linewise range.
 	SelectionLine
+	// SelectionBlock is a rectangular cell range. Its endpoints are inclusive
+	// cells, and block edges never split a wide cluster.
+	SelectionBlock
 )
 
 // Selection is an anchor and cursor pair. Normalized endpoints are inclusive
@@ -42,6 +48,46 @@ func (s Selection) Normalized() (start, end Pos) {
 func (s Selection) LineRange() (first, last int) {
 	start, end := s.Normalized()
 	return start.Line, end.Line
+}
+
+// BlockRange returns the inclusive line and cell bounds of a block selection.
+// The cell bounds are normalized to display cells, not rune offsets.
+func (s Selection) BlockRange(buffer *Buffer) (first, last, left, right int) {
+	first, last = s.LineRange()
+	anchorCell := buffer.CellColumn(s.Anchor)
+	cursorCell := buffer.CellColumn(s.Cursor)
+	if anchorCell <= cursorCell {
+		return first, last, anchorCell, cursorCell
+	}
+	return first, last, cursorCell, anchorCell
+}
+
+// BlockLineRange returns the cluster-aligned half-open range covered by the
+// block rectangle on line. It reports false when the line has no cluster in the
+// rectangle. Clusters that straddle either edge are included whole.
+func (s Selection) BlockLineRange(buffer *Buffer, line int) (start, end Pos, ok bool) {
+	if s.Kind != SelectionBlock {
+		return Pos{}, Pos{}, false
+	}
+	first, last, left, right := s.BlockRange(buffer)
+	if line < first || line > last || line < 0 || line >= len(buffer.Lines) {
+		return Pos{}, Pos{}, false
+	}
+	text := buffer.Lines[line]
+	for cluster := range LineClusters(text, buffer.TabWidth) {
+		if cluster.Cells == 0 {
+			continue
+		}
+		if cluster.Cell+cluster.Cells-1 < left || cluster.Cell > right {
+			continue
+		}
+		if !ok {
+			start = Pos{Line: line, Rune: cluster.Rune}
+			ok = true
+		}
+		end = Pos{Line: line, Rune: cluster.Rune + utf8.RuneCountInString(cluster.Text)}
+	}
+	return start, end, ok
 }
 
 // StartSelection begins a selection at the cursor.
@@ -95,6 +141,27 @@ func (e *Editor) SelectedText() (string, bool) {
 			return "", false
 		}
 		return text, true
+	}
+	if e.Selection.Kind == SelectionBlock {
+		first, last, left, right := e.Selection.BlockRange(e.Buffer)
+		width := right - left + 1
+		lines := make([]string, 0, last-first+1)
+		for line := first; line <= last; line++ {
+			start, end, ok := e.Selection.BlockLineRange(e.Buffer, line)
+			if !ok {
+				lines = append(lines, strings.Repeat(" ", width))
+				continue
+			}
+			text, err := e.Buffer.TextInRange(start, end)
+			if err != nil {
+				return "", false
+			}
+			if cells := e.Buffer.Info(end).Cell - e.Buffer.Info(start).Cell; cells < width {
+				text += strings.Repeat(" ", width-cells)
+			}
+			lines = append(lines, text)
+		}
+		return strings.Join(lines, "\n"), true
 	}
 	start, end, ok := e.characterwiseRange()
 	if !ok {

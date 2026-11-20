@@ -1,0 +1,201 @@
+matrix: 2.1-visual, 2.5-visual
+name: visual character mode extends with motions
+buffer: abcd
+keys: vll
+want.buffer: abcd
+want.cursor: 0,2
+want.mode: visual
+want.selection: char,0,0,0,2
+---
+matrix: 2.5-v-line
+name: visual line mode selects whole lines
+buffer: a\nb\nc
+keys: Vj
+want.buffer: a\nb\nc
+want.mode: v-line
+want.selection: line,0,0,1,0
+---
+matrix: 2.5-v-block
+name: visual block mode selects a rectangle
+buffer: abcd\nefgh
+keys: <c-v>jl
+want.buffer: abcd\nefgh
+want.mode: v-block
+want.selection: block,0,0,1,1
+---
+matrix: 2.5-o
+name: o swaps selection anchor and cursor
+buffer: abcd
+keys: vllo
+want.buffer: abcd
+want.mode: visual
+want.selection: char,0,2,0,0
+---
+matrix: 2.1-gv, 2.5-gv
+name: gv restores the last visual selection
+buffer: abcd
+keys: vlygv
+want.buffer: abcd
+want.mode: visual
+want.selection: char,0,0,0,1
+---
+matrix: 2.5-extend
+name: motions extend the selection
+buffer: abcd
+keys: vll
+want.buffer: abcd
+want.selection: char,0,0,0,2
+want.mode: visual
+---
+matrix: 2.5-d-c-y
+name: visual delete
+buffer: abcd
+keys: vlld
+want.buffer: d
+want.mode: normal
+---
+matrix: 2.5-change
+name: visual change enters insert
+buffer: abcd
+keys: vlcX<esc>
+want.buffer: Xcd
+want.mode: normal
+---
+matrix: 2.5-yank
+name: visual yank stores the selected text
+buffer: abcd
+keys: vly
+want.buffer: abcd
+want.register: unnamed:char:ab
+want.mode: normal
+---
+matrix: 2.5-shift
+name: shift selected lines right
+buffer: a\nb\nc
+keys: Vj>
+want.buffer: \s\sa\n\s\sb\nc
+want.mode: normal
+---
+matrix: 2.5-shift-left
+name: shift selected lines left
+buffer: \s\sa\n\s\sb\nc
+keys: Vj<
+want.buffer: a\nb\nc
+want.mode: normal
+---
+matrix: 2.5-case
+name: toggle case of a visual selection
+buffer: AbC
+keys: vll~
+want.buffer: aBc
+want.mode: normal
+---
+matrix: 2.5-case-upper
+name: uppercase a visual selection
+buffer: AbC
+keys: vlU
+want.buffer: ABC
+want.mode: normal
+---
+matrix: 2.5-case-lower
+name: lowercase a visual selection
+buffer: AbC
+keys: vllu
+want.buffer: abc
+want.mode: normal
+---
+matrix: 2.5-J
+name: join selected lines
+buffer: a\nb\nc
+keys: VjJ
+want.buffer: a b\nc
+want.mode: normal
+---
+matrix: 2.5-paste
+name: paste over a visual selection
+buffer: abc
+keys: ylvlp
+want.buffer: ac
+want.register: unnamed:char:a
+want.mode: normal
+---
+matrix: 2.5-block-IA
+name: block insert mirrors typed text on every line
+buffer: ab\ncd
+keys: <c-v>jIX<esc>
+want.buffer: Xab\nXcd
+want.mode: normal
+---
+matrix: 2.5-block-A
+name: block append mirrors typed text at the right edge
+buffer: ab\ncd
+keys: <c-v>jAX<esc>
+want.buffer: aXb\ncXd
+want.mode: normal
+---
+matrix: 2.5-block-delete
+name: block delete removes a rectangle
+buffer: abcd\nefgh
+keys: <c-v>jlld
+want.buffer: d\nh
+want.mode: normal
+---
+matrix: 2.5-block-yank
+name: block yank stores padded rectangle text
+buffer: abcd\nefgh
+keys: <c-v>jly
+want.buffer: abcd\nefgh
+want.register: unnamed:block:ab\nef
+want.mode: normal
+---
+matrix: 2.5-colon
+name: visual colon pre-fills the line range
+buffer: a\na\nc
+keys: Vj:s/a/A/g<enter>
+want.buffer: A\nA\nc
+want.mode: normal
+---
+matrix: 2.5-esc
+name: escape leaves visual mode
+buffer: abcd
+keys: vll<esc>
+want.buffer: abcd
+want.cursor: 0,2
+want.mode: normal
+---
+matrix: 2.5-block-change
+name: block change mirrors replacement text
+buffer: abcd\nefgh
+cursor: 0,1
+keys: <c-v>jlcX<esc>
+want.buffer: aXd\neXh
+want.mode: normal
+---
+matrix: 2.5-block-shift
+name: block shift indents each covered line once
+buffer: ab\ncd
+keys: <c-v>j>
+want.buffer: \s\sab\n\s\scd
+want.mode: normal
+---
+matrix: 2.5-block-change-undo
+name: a block change is one undo entry
+buffer: abcd\nefgh
+cursor: 0,1
+keys: <c-v>jlcX<esc>u
+want.buffer: abcd\nefgh
+want.mode: normal
+---
+matrix: 2.5-line-change
+name: visual line change leaves one line
+buffer: a\nb\nc
+keys: VjcX<esc>
+want.buffer: X\nc
+want.mode: normal
+---
+matrix: 2.5-line-case
+name: visual line case transform covers whole lines
+buffer: Ab\nCd\ne
+keys: VjU
+want.buffer: AB\nCD\ne
+want.mode: normal

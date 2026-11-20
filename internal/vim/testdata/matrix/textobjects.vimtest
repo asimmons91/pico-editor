@@ -1,0 +1,95 @@
+matrix: 2.4-iw-aw
+name: inner word object
+buffer: one two three
+cursor: 0,5
+keys: diw
+want.buffer: one \sthree
+want.mode: normal
+---
+matrix: 2.4-aw
+name: around word object includes trailing space
+buffer: one two three
+cursor: 0,5
+keys: daw
+want.buffer: one three
+want.mode: normal
+---
+matrix: 2.4-iW-aW
+name: inner big word object
+buffer: one.two three
+cursor: 0,1
+keys: diW
+want.buffer: \sthree
+want.mode: normal
+---
+matrix: 2.4-aW
+name: around big word object
+buffer: one.two three
+cursor: 0,1
+keys: daW
+want.buffer: three
+want.mode: normal
+---
+matrix: 2.4-paren
+name: inner parentheses object
+buffer: if (one two) then
+cursor: 0,5
+keys: di(
+want.buffer: if () then
+want.mode: normal
+---
+matrix: 2.4-paren-close-alias
+name: close parenthesis is an alias
+buffer: if (one) then
+cursor: 0,5
+keys: di)
+want.buffer: if () then
+want.mode: normal
+---
+matrix: 2.4-brace
+name: inner brace object
+buffer: x {one} y
+cursor: 0,4
+keys: di{
+want.buffer: x {} y
+want.mode: normal
+---
+matrix: 2.4-bracket
+name: inner bracket object
+buffer: x [one] y
+cursor: 0,4
+keys: di[
+want.buffer: x [] y
+want.mode: normal
+---
+matrix: 2.4-dquote
+name: inner double quote object skips escapes
+buffer: say "one \"two\"" now
+cursor: 0,8
+keys: di"
+want.buffer: say "" now
+want.mode: normal
+---
+matrix: 2.4-squote
+name: inner single quote object
+buffer: say 'one' now
+cursor: 0,7
+keys: di'
+want.buffer: say '' now
+want.mode: normal
+---
+matrix: 2.4-paragraph
+name: inner paragraph object
+buffer: one\ntwo\n\nthree
+cursor: 1,0
+keys: dip
+want.buffer: \nthree
+want.mode: normal
+---
+matrix: 2.4-aparagraph
+name: around paragraph object includes trailing blank lines
+buffer: one\ntwo\n\nthree
+cursor: 1,0
+keys: dap
+want.buffer: three
+want.mode: normal

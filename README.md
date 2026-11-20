@@ -7,26 +7,31 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 > PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
 > with, sponsored by, or endorsed by Lexaloffle Games.
 
-**Status:** M2 implemented. Automated checks pass; interactive X11/Wayland
+**Status:** M3 implemented. Automated checks pass; interactive X11/Wayland
 spot checks from M1 are tracked in
-[docs/spikes/M1-input.md](docs/spikes/M1-input.md). The editor core now has a
-line-based P8SCII-aware buffer, cursor and selection, undo/redo, viewport,
-search, and atomic `.lua` open/save. M3 adds the Vim curated core; see
-[docs/ROADMAP.md](docs/ROADMAP.md).
+[docs/spikes/M1-input.md](docs/spikes/M1-input.md), and the M3 manual checklist
+is in [docs/spikes/M3-vim.md](docs/spikes/M3-vim.md). The editor now has the
+curated Vim core from [docs/VIM.md](docs/VIM.md): normal, insert, visual
+character/line/block, motions, operators, text objects, registers, search,
+undo/redo, dot repeat, and ex commands including `:s`. See
+[docs/ROADMAP.md](docs/ROADMAP.md) for the next milestone (M4: carts and the
+file tree).
 
-With no argument the charset demo opens: `1`–`4` change the window scale, `W`
-toggles the width overlay, `P` cycles the background palette, and the arrow keys
-move the selection. Pass a `.lua` file to open the temporary M2 buffer screen:
+With no argument an empty Vim buffer opens. Pass a `.lua` file to edit it:
 
 ```sh
 mise exec -- go run ./cmd/pico-editor path/to/file.lua
 ```
 
-In the buffer screen, arrows move, Shift+arrows select, Enter splits a line,
-Backspace/Delete remove a cluster, Tab inserts to the next tab stop, `Ctrl+S`
-saves, `Ctrl+Z`/`Ctrl+Y` undo/redo, `Ctrl+V` pastes, and `Ctrl+Q` quits.
-`.p8` carts are rejected until M4 can preserve non-code sections. The debug
-screen is temporary and is replaced by Vim in M3.
+The M1 charset demo is still available with `--debug-charset`: `1`–`4` change
+the window scale, `W` toggles the width overlay, `P` cycles the background
+palette, and the arrow keys move the selection.
+
+In the editor, `:help` lists the core keys. Use `i`/`a` to insert, `Esc` to
+return to normal mode, `:w` to save, `:q` to close (or `:q!` to discard), and
+`:wq`/`:x` to write and close. `Ctrl+Q` and the window close button also refuse
+to discard unsaved changes. `.p8` carts are rejected until M4 can preserve
+non-code sections.
 
 ## Requirements
 
@@ -42,7 +47,7 @@ screen is temporary and is replaced by Vim in M3.
 ```sh
 mise install
 mise run build     # bin/pico-editor
-mise run run       # opens the full-charset demo
+mise run run       # opens an empty Vim buffer
 mise exec -- go run ./cmd/pico-editor path/to/file.lua
 ```
 
@@ -72,6 +77,7 @@ inject the version, commit, and build date into
 - [Frozen Vim command matrix](docs/VIM.md)
 - [Notices and attributions](NOTICE)
 - [M1 input and rendering spike results](docs/spikes/M1-input.md)
+- [M3 Vim manual checklist](docs/spikes/M3-vim.md)
 - [License](LICENSE)
 
 ## Contributing

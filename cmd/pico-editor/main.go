@@ -76,6 +76,9 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 	ebiten.SetWindowSize(app.CanvasWidth*scale, app.CanvasHeight*scale)
 	ebiten.SetWindowSizeLimits(app.CanvasWidth, app.CanvasHeight, -1, -1)
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
+	// The game decides whether a close request can proceed so unsaved buffers
+	// are not discarded silently.
+	ebiten.SetWindowClosingHandled(true)
 
 	game := app.New(app.Config{
 		Logger:       logger,

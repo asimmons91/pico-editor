@@ -1,7 +1,8 @@
 # pico-editor V1 Roadmap
 
-Status: M2 — Editor core implemented; M3 (Vim curated core) next. Interactive
-M1 spot checks remain tracked in `docs/spikes/M1-input.md`.
+Status: M3 — Vim curated core implemented; M4 (cart model and file tree) next.
+Interactive M1 spot checks remain tracked in `docs/spikes/M1-input.md`, and the
+M3 manual checklist lives in `docs/spikes/M3-vim.md`.
 Date: 2026-11-20
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise
@@ -429,7 +430,13 @@ normative.
 | File watching | Refresh-on-focus in M7; full watcher post-V1 | M7 |
 | `.lua` mixed line endings | Reject with `ErrMixedNewlines`; LF and CRLF files round-trip byte-for-byte | M2 |
 | External changes | M2 checks mtime, size, and content hash on save; M4 adds the conflict dialog and backups | M2/M4 |
-| M2 debug screen | `pico-editor <file>`; `.p8` rejected until M4; no argument keeps the charset screen | M2 |
+| M2 debug screen | Replaced by the M3 Vim screen; `--debug-charset` keeps the charset demo | M2/M3 |
+| M3 startup | No argument opens an empty unnamed buffer in NORMAL mode | M3 |
+| M3 buffer/tab scope | Minimal `.lua` multi-buffer session for `:e`/`:bn`/`:bp`/`:b`/`:ls`; `:tabn`/`:tabp` report one code tab until M4 | M3 |
+| M3 save pipeline | Vim returns actions; the app snapshots and writes off the Update goroutine, then commits the save point | M3 |
+| M3 clipboard registers | `"+`/`"*` reads are asynchronous; yanks queue writes; internal registers remain the fallback | M3 |
+| M3 Backspace/Space | Normal-mode motions use Vim h/l semantics with line wrap | M3 |
+| M3 help | Minimal scrollable overlay for `keys`, `input`, `lsp`, and `config`; M7 expands topics | M3 |
 | Tab insertion | Spaces to the next tab stop, matching VIM.md | M2 |
 | Run-cart command | Post-V1 | — |
 | References, rename, formatting, code actions | Post-V1 | — |

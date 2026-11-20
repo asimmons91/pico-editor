@@ -379,10 +379,33 @@ Development rules:
   directory-fsync failure after the rename is reported as a
   `fsutil.CommitError` after the save point is updated, so retries are not
   blocked by a false external-change error.
-- M2's temporary debug screen saves synchronously; M3/M4 route saves through
-  the message/result path described in §2.
-- M3 will replace the debug screen's direct key map with `internal/vim`; the
-  editor package stays free of modal or Vim-specific state.
+- M2's temporary debug screen saved synchronously. M3 replaces it with the
+  Vim-backed editor screen and routes saves through the message/result path
+  described in §2: `Vim.Handle` returns actions, `app.Session.PrepareSave`
+  snapshots the buffer on the Update goroutine, the snapshot is written on a
+  background goroutine, and `CommitSave` records the save point on the Update
+  goroutine. A save in flight does not block input; `:wq` waits for the result
+  before closing.
+- M3 adds `internal/vim`: modes, count and operator state, motions, text
+  objects, registers, search with Vim-magic translation, ex commands including
+  `:s`, visual block operations, dot repeat, and the jump list. The editor
+  package stays free of modal or Vim-specific state. `internal/editor` gained
+  blockwise selections, word-end motions, `Search.FindAll`, and the
+  `PrepareSave`/`CommitSave` snapshot API.
+- The M3 screen owns a small `.lua` multi-buffer session: `:e` opens or reuses a
+  file, `:bn`/`:bp`/`:b`/`:ls` move through buffers, and `:tabn`/`:tabp` report
+  that one code tab exists until M4's cart adapter lands. `:q` closes the
+  current buffer or exits when it is the last one; window close and `Ctrl+Q`
+  refuse to discard dirty buffers.
+- `"+`/`"*` register reads always go through the asynchronous clipboard
+  adapter; a yank queues a write action. Clipboard failures keep the internal
+  register and surface a notification. The M1 charset screen remains available
+  behind `--debug-charset`; no argument now opens an empty normal-mode buffer.
+- The M3 screen draws buffer text with search-match and visual-selection
+  backgrounds, a block/bar cursor, a one-row mode/file/position status, the
+  command-line prompt in place of the status row, and a small scrollable help
+  and buffer-list overlay. M7 replaces the interim status with the compact
+  segmented status bar and expands help topics.
 - Clipboard access uses `golang.design/x/clipboard` `v0.11.0` behind
   `input.Clipboard`, initialized lazily. Reads run on a background goroutine and
   are applied through a channel on the Update goroutine. On GNOME Wayland the
