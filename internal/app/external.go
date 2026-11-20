@@ -58,6 +58,7 @@ func (s *Session) RefreshFromDisk() *ExternalConflict {
 				if reloadErr := buffer.Editor.Reload(); reloadErr != nil {
 					return &ExternalConflict{Buffer: buffer, Err: err}
 				}
+				s.reloadLSPDocument(buffer)
 				buffer.Editor.Buffer.SetWorkspaceRoot(s.Workspace.Root)
 				if index == s.Current {
 					s.prepareBuffer(buffer)

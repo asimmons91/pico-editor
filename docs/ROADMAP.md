@@ -1,9 +1,10 @@
 # pico-editor V1 Roadmap
 
-Status: M4 — cart model and file tree implemented; M5 (in-process pico-lsp)
-next. Interactive M1 spot checks remain tracked in `docs/spikes/M1-input.md`,
-the M3 manual checklist lives in `docs/spikes/M3-vim.md`, and the M4 manual
-checklist is in `docs/spikes/M4-cart.md`.
+Status: M5 — in-process pico-lsp implemented; M6 (P8SCII input UX) next.
+Interactive M1 spot checks remain tracked in `docs/spikes/M1-input.md`, the M3
+manual checklist lives in `docs/spikes/M3-vim.md`, the M4 manual checklist is in
+`docs/spikes/M4-cart.md`, and the M5 integration notes are in
+`docs/spikes/M5-lsp.md`.
 Date: 2026-11-20
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise
@@ -261,7 +262,8 @@ Goal: use pico-lsp as the editor's language engine without a subprocess.
 Deliverables:
 
 - Public pico-lsp packages `pkg/lsp` and `pkg/glyphs`; `pkg/cart` and
-  `pkg/p8scii` were delivered in M4 and M1.
+  `pkg/p8scii` were delivered earlier. All four public packages ship in
+  pico-lsp `v1.6.0` (M17–M19 were released together).
 - In-process JSON-RPC transport over `net.Pipe` or equivalent.
 - Initialize, configuration, workspace folders, and didOpen/didChange/didSave.
 - Diagnostics, semantic tokens, completion, hover, signature help, and
@@ -362,6 +364,9 @@ pkg/cart    before M4
 pkg/lsp     before M5
 ```
 
+M17–M19 shipped together in pico-lsp `v1.6.0`, so all four public packages
+(`pkg/p8scii`, `pkg/cart`, `pkg/lsp`, `pkg/glyphs`) share one pin.
+
 M3 (Vim) and M4/M5 can overlap if there are separate workstreams. M6 needs the
 input pipeline from M1/M3 and the glyph picker/completion from M5. The
 pico-lsp extractions are separate prerequisite tasks tracked upstream: M1 starts
@@ -446,6 +451,11 @@ normative.
 | M3 Backspace/Space | Normal-mode motions use Vim h/l semantics with line wrap | M3 |
 | M3 help | Minimal scrollable overlay for `keys`, `input`, `lsp`, and `config`; M7 expands topics | M3 |
 | Tab insertion | Spaces to the next tab stop, matching VIM.md | M2 |
+| M5 pico-lsp pin | `v1.6.0` includes `pkg/lsp` and `pkg/glyphs`; M17–M19 shipped together | M5 |
+| M5 semantic colors | M7 final palette table implemented in M5 | M5 |
+| M5 LSP failure | Persistent status message plus `:lsp restart`; no modal | M5 |
+| M5 status bar | Compact LSP suffix in the existing row; M7 redesigns it | M5 |
+| M5 test fixtures | Copied pico-lsp `v1.6.0` testdata subset with provenance | M5 |
 | Run-cart command | Post-V1 | — |
 | References, rename, formatting, code actions | Post-V1 | — |
 | `.p8.png` read-only support | Post-V1 | — |

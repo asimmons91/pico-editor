@@ -1,10 +1,21 @@
 # M5 — In-process pico-lsp
 
-**Status:** Draft
+**Status:** Implemented
 **Depends on:** M2, M4; pico-lsp release with public `pkg/lsp`
 **Blocks:** M6, M7
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
 **Estimate:** 3–4 weeks (upstream `pkg/lsp` precedes this milestone)
+
+## Resolved decisions
+
+| Decision | Resolution |
+| --- | --- |
+| Upstream pin | pico-lsp `v1.6.0`; M17–M19 shipped together, so `pkg/p8scii`, `pkg/cart`, `pkg/lsp`, and `pkg/glyphs` are all in the existing pin. The previously planned `v1.8.0` tag was folded into `v1.6.0`. |
+| Semantic colors | The M7 final palette table (keyword 14, string 11, number 10, comment 13, operator 6, variable 7, parameter/property 15, function 12, type 9, namespace 14, macro/decorator 9, regexp 11, modifier 13) is implemented now. M7 may refine the table without changing M5 behavior. |
+| LSP failure UX | A persistent error-colored status message plus `:lsp restart`. No modal dialog; editing, saving, and Vim remain usable. M7 migrates this to notifications and the command palette. |
+| Status bar | M5 appends compact `E/W`, `T/C/Z`, and `LSP` segments to the existing one-row status bar. M7 replaces the layout with the segmented bar. |
+| Integration fixtures | A small subset of pico-lsp `v1.6.0` testdata is copied under `internal/lsp/testdata` with provenance. Tests do not depend on the module cache path. |
+| Completion key ownership | `Ctrl+Space`, `Ctrl+N`, `Ctrl+Shift+N`, `Enter`, `Tab`, and the popup-first `Esc` are handled by the app before Vim. `Ctrl+P` is never intercepted. |
 
 ## Outcome
 
@@ -91,8 +102,8 @@ func (s *Server) Serve(ctx context.Context, stream jsonrpc2.Stream) jsonrpc2.Con
   request; both paths read the same upstream catalog.
 - Public API tests live in pico-lsp; the editor's integration tests are not a
   substitute.
-- pico-lsp tags `v1.8.0` before M5 starts; the editor pins it and removes the
-  local `replace`.
+- pico-lsp ships the public packages in `v1.6.0`; the editor pins that release
+  and imports only public packages. No local `replace` remains.
 
 ### 2. Transport and lifecycle
 
@@ -432,18 +443,36 @@ not merged.
 
 ## Exit criteria
 
-- [ ] pico-lsp tags `pkg/lsp` and `pkg/glyphs`; editor pins the release.
-- [ ] Semantic highlighting covers keywords, strings, numbers, comments,
+- [x] pico-lsp tags `pkg/lsp` and `pkg/glyphs`; editor pins the release.
+- [x] Semantic highlighting covers keywords, strings, numbers, comments,
       operators, and symbol kinds on real carts.
-- [ ] Diagnostics and completion update after edits without deadlocks or stale
+- [x] Diagnostics and completion update after edits without deadlocks or stale
       state.
-- [ ] Hover, signature help, and definition work in `.p8` code and included
+- [x] Hover, signature help, and definition work in `.p8` code and included
       `.lua` files.
-- [ ] Cart token/character/compressed status matches the server.
-- [ ] LSP failure never blocks editing, saving, or quitting.
-- [ ] `Ctrl+P` remains reserved for P8SCII input; completion uses
+- [x] Cart token/character/compressed status matches the server.
+- [x] LSP failure never blocks editing, saving, or quitting.
+- [x] `Ctrl+P` remains reserved for P8SCII input; completion uses
       `Ctrl+N`/`Ctrl+Shift+N`.
-- [ ] `go test -race ./...` and `mise run check` pass.
+- [x] `go test -race ./...` and `mise run check` pass.
+
+## Implementation notes
+
+- `internal/lsp` owns transport, document sync, caches, timeouts, and request
+  wrappers. A single background writer serializes document notifications; all
+  feature requests run asynchronously and post events that `Update` applies.
+- Full text is rebuilt through `pkg/cart.ReplaceCode` for `.p8` documents. If
+  the splice fails, the last valid text remains on the server and the status
+  row reports the problem. Saves flush a pending debounced change before
+  `didSave`, and semantic tokens are re-requested after the edit debounce.
+- Semantic tokens and diagnostics store cluster-expanded rune ranges. The
+  active cart tab draws only its own range; other tabs stay cached.
+- `internal/app/lsp_session.go` owns document sync, popup state, jump handling,
+  and restart; `internal/app/lsp_ui.go` owns completion, hover, signature,
+  diagnostics-list drawing, and status segments.
+- The copied fixtures live in `internal/lsp/testdata` with a provenance README.
+  The results and remaining manual checklist are in
+  [spikes/M5-lsp.md](spikes/M5-lsp.md).
 
 ## Risks and mitigations
 

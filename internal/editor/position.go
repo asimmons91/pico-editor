@@ -462,6 +462,63 @@ func (b *Buffer) PosFromUTF16(line, column int) Pos {
 	return b.normalizePos(Pos{Line: line, Rune: runeOffset})
 }
 
+// PosFromUTF16Start converts a UTF-16 column to the start of the P8SCII cluster
+// containing it. It is used for LSP ranges, whose endpoints may fall inside a
+// wide glyph or a base-rune/VS16 sequence.
+func (b *Buffer) PosFromUTF16Start(line, column int) Pos {
+	if len(b.Lines) == 0 {
+		return Pos{}
+	}
+	line = clampLine(line, len(b.Lines))
+	text := b.Lines[line]
+	if column <= 0 {
+		return Pos{Line: line}
+	}
+	raw := runeFromUTF16(text, column)
+	if raw >= utf8.RuneCountInString(text) {
+		return Pos{Line: line, Rune: utf8.RuneCountInString(text)}
+	}
+	return Pos{Line: line, Rune: clusterStart(text, raw)}
+}
+
+// PosFromUTF16End converts a UTF-16 column to the end of the P8SCII cluster
+// containing it. A column on a cluster boundary stays put.
+func (b *Buffer) PosFromUTF16End(line, column int) Pos {
+	if len(b.Lines) == 0 {
+		return Pos{}
+	}
+	line = clampLine(line, len(b.Lines))
+	text := b.Lines[line]
+	if column <= 0 {
+		return Pos{Line: line}
+	}
+	raw := runeFromUTF16(text, column)
+	length := utf8.RuneCountInString(text)
+	if raw >= length {
+		return Pos{Line: line, Rune: length}
+	}
+	for start := 0; start < length; start = clusterEnd(text, start) {
+		end := clusterEnd(text, start)
+		if raw == start {
+			return Pos{Line: line, Rune: raw}
+		}
+		if raw < end {
+			return Pos{Line: line, Rune: end}
+		}
+	}
+	return Pos{Line: line, Rune: length}
+}
+
+func clampLine(line, count int) int {
+	if line < 0 {
+		return 0
+	}
+	if line >= count {
+		return count - 1
+	}
+	return line
+}
+
 // PosFromCell converts a display cell on line to a cluster-boundary position.
 // Cells inside a wide glyph or tab snap to the start of that cluster.
 func (b *Buffer) PosFromCell(line, cell int) Pos {

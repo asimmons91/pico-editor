@@ -287,3 +287,24 @@ func TestSnapNearestClusterBoundary(t *testing.T) {
 		t.Fatalf("test line has %d runes, want 4", utf8.RuneCountInString(line))
 	}
 }
+
+func TestUTF16RangeExpansion(t *testing.T) {
+	t.Parallel()
+
+	buffer := New("")
+	buffer.Lines = []string{"a⬅️b"}
+	// ⬅ is one UTF-16 unit; the trailing VS16 is a second. A column in the
+	// middle of the cluster must expand outward for LSP ranges.
+	if got := buffer.PosFromUTF16Start(0, 2); got.Rune != 1 {
+		t.Errorf("start column 2 = rune %d, want cluster start 1", got.Rune)
+	}
+	if got := buffer.PosFromUTF16End(0, 2); got.Rune != 3 {
+		t.Errorf("end column 2 = rune %d, want cluster end 3", got.Rune)
+	}
+	if got := buffer.PosFromUTF16Start(0, 3); got.Rune != 3 {
+		t.Errorf("start at boundary 3 = rune %d, want 3", got.Rune)
+	}
+	if got := buffer.PosFromUTF16End(0, 3); got.Rune != 3 {
+		t.Errorf("end at boundary 3 = rune %d, want 3", got.Rune)
+	}
+}

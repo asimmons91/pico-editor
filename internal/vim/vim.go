@@ -22,6 +22,11 @@ const (
 	ActionHelp
 	ActionClipboardWrite
 	ActionClipboardRead
+	ActionDiagnostics
+	ActionHover
+	ActionDefinition
+	ActionLSPRestart
+	ActionJump
 )
 
 func (k ActionKind) String() string {
@@ -44,6 +49,16 @@ func (k ActionKind) String() string {
 		return "clipboard-write"
 	case ActionClipboardRead:
 		return "clipboard-read"
+	case ActionDiagnostics:
+		return "diagnostics"
+	case ActionHover:
+		return "hover"
+	case ActionDefinition:
+		return "definition"
+	case ActionLSPRestart:
+		return "lsp-restart"
+	case ActionJump:
+		return "jump"
 	default:
 		return "none"
 	}
@@ -67,6 +82,8 @@ type Action struct {
 	QuitAfter bool
 	// Topic is set for ActionHelp.
 	Topic string
+	// Pos is the cursor position for ActionDefinition/ActionHover/ActionJump.
+	Pos editor.Pos
 	// Text and Register are set for clipboard actions. Register is '+' or '*'.
 	Text     string
 	Register byte
@@ -422,6 +439,9 @@ func (v *Vim) executeNormalRune(r rune, ed *editor.Editor) {
 		v.pending = pendingState{kind: pendReplace, count: v.takeCount()}
 	case 'J':
 		v.joinLines(ed)
+	case 'K':
+		v.Count = 0
+		v.queue(Action{Kind: ActionHover, Pos: ed.Cursor.Pos})
 	case '~':
 		v.toggleCase(ed)
 	case '>':
@@ -462,6 +482,9 @@ func (v *Vim) handleSpecialKey(key input.Key, mods input.Mods, ed *editor.Editor
 		v.executeMotionKey(ctrlRune('b'), ed)
 	case key == input.KeyR && ctrl:
 		v.redo(ed)
+	case key == input.KeyRightBracket && ctrl:
+		v.Count = 0
+		v.queue(Action{Kind: ActionDefinition, Pos: ed.Cursor.Pos})
 	case key == input.KeyEnter:
 		v.executeMotionKey('\n', ed)
 	case key == input.KeyBackspace:
@@ -524,6 +547,9 @@ func (v *Vim) resolvePendingRune(r rune, ed *editor.Editor) {
 		switch r {
 		case 'g':
 			v.doubleGMotion(ed)
+		case 'd':
+			v.Count = 0
+			v.queue(Action{Kind: ActionDefinition, Pos: ed.Cursor.Pos})
 		case 'v':
 			v.reselectVisual(ed)
 		default:

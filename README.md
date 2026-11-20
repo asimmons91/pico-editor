@@ -7,14 +7,16 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 > PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
 > with, sponsored by, or endorsed by Lexaloffle Games.
 
-**Status:** M4 implemented. Automated checks pass; interactive X11/Wayland
+**Status:** M5 implemented. Automated checks pass; interactive X11/Wayland
 spot checks from M1 are tracked in
 [docs/spikes/M1-input.md](docs/spikes/M1-input.md), the M3 manual checklist is
-in [docs/spikes/M3-vim.md](docs/spikes/M3-vim.md), and the M4 cart/tree
-checklist is in [docs/spikes/M4-cart.md](docs/spikes/M4-cart.md). The editor now
-opens `.p8` carts as code-only tabs and browses a project folder with the file
-tree, in addition to the curated Vim core from [docs/VIM.md](docs/VIM.md). See
-[docs/ROADMAP.md](docs/ROADMAP.md) for M5 (in-process pico-lsp).
+in [docs/spikes/M3-vim.md](docs/spikes/M3-vim.md), the M4 cart/tree checklist is
+in [docs/spikes/M4-cart.md](docs/spikes/M4-cart.md), and the M5 LSP checklist is
+in [docs/spikes/M5-lsp.md](docs/spikes/M5-lsp.md). pico-lsp now runs in-process:
+editing a cart or include gets semantic highlighting, diagnostics, completion,
+hover, signature help, and go-to-definition, with token/character/compressed
+sizes in the status row. See [docs/ROADMAP.md](docs/ROADMAP.md) for M6 (P8SCII
+input UX).
 
 With no argument the current directory opens as a workspace with the file tree
 focused. Pass a `.p8` cart, `.lua` include, or directory to start there:
@@ -35,7 +37,9 @@ return to normal mode, `:w` to save, `:q` to close (or `:q!` to discard), and
 tree. `Ctrl+Q` and the window close button offer Save all / Discard all /
 Cancel when buffers are dirty. Carts save only the `__lua__` body; the header
 and every other section are preserved byte-for-byte. `.p8.png` remains
-unsupported.
+unsupported. `K` shows hover, `gd`/`Ctrl+]` jumps to a definition, `Ctrl+Space`
+opens completion in insert mode, `:diag` lists diagnostics, and `:lsp restart`
+restarts the in-process language server.
 
 ## Requirements
 
@@ -83,6 +87,7 @@ inject the version, commit, and build date into
 - [M1 input and rendering spike results](docs/spikes/M1-input.md)
 - [M3 Vim manual checklist](docs/spikes/M3-vim.md)
 - [M4 cart and file tree checklist](docs/spikes/M4-cart.md)
+- [M5 in-process LSP checklist](docs/spikes/M5-lsp.md)
 - [License](LICENSE)
 
 ## Contributing

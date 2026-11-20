@@ -47,6 +47,8 @@ written as zero or more modifiers followed by a key name:
 | `u` / `Ctrl+R` | Undo / redo |
 | `gv` | Reselect the last visual selection |
 | `Ctrl+O` / `Ctrl+I` | Jump back / forward |
+| `K` | Hover at the cursor (M5) |
+| `gd` / `Ctrl+]` | Go to definition (M5) |
 | `zz` / `zt` / `zb` | Center / top / bottom the cursor line |
 
 ### 2.2 Motions
@@ -194,6 +196,7 @@ written as zero or more modifiers followed by a key name:
 | `:help` | Open the help overlay |
 | `:help <topic>` | Open a help topic (`keys`, `input`, `lsp`, `config`) |
 | `:diag` | List diagnostics (M5) |
+| `:lsp restart` | Restart the in-process language server (M5) |
 | `:messages` | Show recent notifications (M7) |
 | `:reload` | Reload configuration (M7) |
 | `:s/.../.../[gi]` | Substitute (see below) |

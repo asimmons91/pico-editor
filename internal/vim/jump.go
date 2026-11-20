@@ -56,11 +56,20 @@ func (v *Vim) jump(ed *editor.Editor, delta int) {
 		v.jumps.back = append(v.jumps.back, current)
 		v.jumps.back = trimJumps(v.jumps.back)
 	}
-	if entry.Path != "" && ed.Buffer.Path != "" && entry.Path != ed.Buffer.Path {
-		// Cross-file jumps are wired to the buffer layer in M5.
-		v.info("cross-file jump is not available until M5")
-		v.ringBell()
-		return
+	// Same-file jumps stay immediate when the target is in the active line
+	// window. Cross-file jumps, and jumps into another cart tab, are queued for
+	// the app, which owns buffer and tab lookup.
+	if entry.Path == "" || ed.Buffer.Path == "" || entry.Path == ed.Buffer.Path {
+		if entry.Pos.Line >= ed.WindowFirst() && entry.Pos.Line <= ed.WindowLast() {
+			ed.SetCursor(entry.Pos)
+			return
+		}
 	}
-	ed.SetCursor(entry.Pos)
+	v.queue(Action{Kind: ActionJump, Path: entry.Path, Pos: entry.Pos})
+}
+
+// RecordJump pushes the current position before a cross-file or definition
+// jump. The app calls it before changing buffers.
+func (v *Vim) RecordJump(ed *editor.Editor) {
+	v.recordJump(ed)
 }

@@ -342,6 +342,14 @@ func appNamedKey(name string) (input.Event, bool) {
 		key, mods = input.KeyI, input.ModCtrl
 	case "c-v":
 		key, mods = input.KeyV, input.ModCtrl
+	case "c-space":
+		key, mods = input.KeySpace, input.ModCtrl
+	case "c-n":
+		key, mods = input.KeyN, input.ModCtrl
+	case "c-S-n":
+		key, mods = input.KeyN, input.ModCtrl|input.ModShift
+	case "c-]":
+		key, mods = input.KeyRightBracket, input.ModCtrl
 	default:
 		return input.Event{}, false
 	}
