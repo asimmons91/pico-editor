@@ -35,3 +35,6 @@ and no Rune code, assets, or vendored dependencies are copied here.
 pico-editor depends on third-party Go modules, including Ebitengine, pico-lsp
 `v1.6.0`, and `golang.design/x/clipboard`. Those modules retain their own
 licenses; see `go.mod` for the exact versions in use.
+
+The LSP integration fixtures under `internal/lsp/testdata` are copied unchanged
+from pico-lsp `v1.6.0` `testdata/` and remain under pico-lsp's MIT license.

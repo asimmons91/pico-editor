@@ -61,7 +61,8 @@ window resizes with integer scaling and never blurs.
 11. A written pico-lsp dependency plan:
     - `pkg/p8scii` in pico-lsp `v1.6.0`, required before M1.
     - `pkg/cart` in pico-lsp `v1.6.0`, required before M4.
-    - `pkg/lsp` and `pkg/glyphs` in pico-lsp `v1.8.0`, required before M5.
+    - `pkg/lsp` and `pkg/glyphs` in pico-lsp `v1.6.0` (M17–M19 shipped
+      together), required before M5.
     - Local `replace` during development; released version pinned before each
       milestone exits.
 
@@ -212,8 +213,8 @@ The document is normative for later milestones. It must contain:
   pins that release. The temporary `replace` is removed.
 - Before M4 starts: `pkg/cart` in pico-lsp `v1.6.0` exposes byte-preserving
   save/splice; the editor pins it.
-- Before M5 starts: pico-lsp `v1.8.0` publishes `pkg/lsp` and `pkg/glyphs`; the
-  editor pins that release.
+- Before M5 starts: pico-lsp `v1.6.0` publishes `pkg/lsp` and `pkg/glyphs`
+  alongside the earlier public packages; the editor pins that release.
 - A milestone cannot exit on a pseudo-version or a branch. Only a tagged
   release counts.
 

@@ -47,7 +47,7 @@ internal/editor   -> pico-lsp pkg/p8scii, internal/fsutil
 internal/render   -> internal/font, pico-lsp pkg/p8scii
 internal/cart     -> internal/{editor,fsutil}, pico-lsp pkg/cart
 internal/workspace-> pico-lsp pkg/cart
-internal/lsp      -> pico-lsp pkg/lsp, pkg/cart, pkg/p8scii
+internal/lsp      -> internal/editor, pico-lsp pkg/lsp
 internal/config   -> TOML parser (selected in M7), standard library
 internal/font     -> pico-lsp pkg/p8scii
 internal/fsutil   -> standard library only
@@ -321,9 +321,10 @@ be used at a milestone exit.
 | golangci-lint | `2.15.0` (mise) | M0 |
 | pico-lsp `pkg/p8scii` (pico-lsp M17) | `v1.6.0` | before M1 |
 | pico-lsp `pkg/cart` (pico-lsp M18) | `v1.6.0` | before M4 |
-| pico-lsp `pkg/lsp`, `pkg/glyphs` (pico-lsp M19) | `v1.8.0` | before M5 |
-| `go.lsp.dev/protocol` | latest tagged version at integration | M5 |
-| `go.lsp.dev/jsonrpc2` | latest tagged version at integration | M5 |
+| pico-lsp `pkg/lsp`, `pkg/glyphs` (pico-lsp M19) | `v1.6.0` (M17–M19 shipped together) | before M5 |
+| `go.lsp.dev/protocol` | `v1.0.1` | M5 |
+| `go.lsp.dev/jsonrpc2` | `v1.0.1` | M5 |
+| `go.lsp.dev/uri` | `v1.0.1` (transitive) | M5 |
 | TOML parser | selected and pinned in M7 | M7 |
 | `golang.design/x/clipboard` | `v0.11.0` (pure Go on Linux) | M1 |
 
@@ -340,8 +341,8 @@ Development rules:
   the pinned release.
 - A milestone cannot exit on a pseudo-version: only a tagged pico-lsp release
   with the required public packages counts.
-- The pico-lsp public-package schedule (`pkg/p8scii` and `pkg/cart` in `v1.6.0`;
-  `pkg/lsp`/`pkg/glyphs` targeted for `v1.8.0`; pico-lsp milestones M17–M19) is
+- The pico-lsp public-package schedule (`pkg/p8scii`, `pkg/cart`, and
+  `pkg/lsp`/`pkg/glyphs` all in `v1.6.0`; pico-lsp milestones M17–M19) is
   a cross-repository commitment. pico-lsp's roadmap records the same schedule;
   the editor must not import an unreleased API.
 
@@ -455,3 +456,27 @@ Development rules:
   default letterbox transform with the last final-screen bounds and applies
   the same integer `CanvasRect` used for drawing. `internal/input` receives the
   mapper as a function so it does not duplicate window geometry.
+- M5 adds `internal/lsp`, an in-process client over `net.Pipe` using
+  pico-lsp `pkg/lsp` `v1.6.0`. `Service.Start` creates one server, sends
+  `initialize` with UTF-16-only capabilities, workspace folders, and
+  `initializationOptions.pico8`, then replays open documents. A single
+  background writer serializes notifications; feature requests are asynchronous
+  and results are applied by `Service.Poll` on the Update goroutine. Document
+  changes are full-text and debounced by 120 ms; cart info is requested after
+  saves, after a 300 ms edit debounce, and when the active buffer changes.
+- `internal/lsp/positions.go` centralizes full-cart, code-buffer, and UTF-16
+  conversion. Tokens and diagnostics store cluster-expanded rune ranges;
+  `internal/app/screen.go` draws only the active cart tab. The M7 semantic color
+  table is already implemented in `internal/lsp/colors.go`.
+- LSP-backed UI lives in `internal/app/lsp_session.go` and
+  `internal/app/lsp_ui.go`: diagnostics underlines and `:diag`, completion
+  (`Ctrl+Space`, `Ctrl+N`/`Ctrl+Shift+N`, `Enter`/`Tab`, popup-first `Esc`),
+  `K` hover, signature help, `gd`/`Ctrl+]` definition, cross-file jump actions,
+  and `:lsp restart`. `Ctrl+P` remains reserved for M6.
+- LSP failure is non-fatal: the status row keeps a persistent error message,
+  editing/saving/Vim continue, and `:lsp restart` creates a fresh server on the
+  same service. M7 moves this into the notification system and command palette.
+- M5 tests use a copied subset of pico-lsp `v1.6.0` testdata under
+  `internal/lsp/testdata`. Integration tests exercise the real server over
+  `net.Pipe` for tokens, diagnostics, completion (including `p8_left`), hover,
+  signature help, definition, cart info, and restart.
