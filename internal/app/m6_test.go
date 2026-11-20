@@ -498,6 +498,59 @@ func TestM6GlyphCompletionAliasAndKana(t *testing.T) {
 	}
 }
 
+func TestM6GlyphCompletionCoverage(t *testing.T) {
+	tests := []struct {
+		typed string
+		label string
+		text  string
+	}{
+		{"p8_left", "p8_left", "⬅️"},
+		{"p8_right", "p8_right", "➡️"},
+		{"p8_up", "p8_up", "⬆️"},
+		{"p8_down", "p8_down", "⬇️"},
+		{"p8_heart", "p8_heart", "♥"},
+		{"p8_hiragana_a", "p8_hiragana_a", "あ"},
+		{"p8-left", "p8_left", "⬅️"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.typed, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "glyph_coverage.lua")
+			if err := os.WriteFile(path, []byte("print(1)\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			game := newLSPGame(t, path)
+			waitLSPReady(t, game)
+			waitLSPTokens(t, game)
+			if err := sendKeys(t, game, "1Go"+tc.typed); err != nil {
+				t.Fatal(err)
+			}
+			eventually(t, func() bool {
+				updateGame(t, game)
+				return game.session.Completion != nil
+			})
+			popup := game.session.Completion
+			selected := -1
+			for index, item := range popup.Items {
+				if strings.HasSuffix(item.Label, " "+tc.label) {
+					selected = index
+					break
+				}
+			}
+			if selected < 0 {
+				t.Fatalf("completion items = %+v, want %s", popup.Items, tc.label)
+			}
+			popup.Selected = selected
+			if err := sendKeys(t, game, "<enter>"); err != nil {
+				t.Fatal(err)
+			}
+			if line := game.session.CurrentEditor().Buffer.Lines[1]; !strings.Contains(line, tc.text) {
+				t.Fatalf("line = %q, want %q", line, tc.text)
+			}
+		})
+	}
+}
+
 func TestM6SystemClipboardBindings(t *testing.T) {
 	clipboard := &recordingClipboard{text: "pasted\n"}
 	game, _ := newEditorGame(t, "one\n", clipboard)
