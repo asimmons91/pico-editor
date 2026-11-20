@@ -11,12 +11,15 @@ import (
 	"github.com/asimmons91/pico-editor/internal/vim"
 )
 
-func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor) {
+func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow, first, last, height int) {
 	viewport := &ed.Viewport
 	matches := s.Vim.SearchHighlights(ed)
 	for _, visible := range viewport.VisibleLines(ed.Buffer) {
+		if visible.Line < first || visible.Line >= last || visible.Row >= height {
+			continue
+		}
 		line := ed.Buffer.Lines[visible.Line]
-		y := visible.Row * font.LineAdvance
+		y := (topRow + visible.Row) * font.LineAdvance
 		for cluster := range editor.LineClusters(line, ed.Buffer.TabWidth) {
 			x := (cluster.Cell - viewport.LeftCell) * font.NarrowWidth
 			if x >= surface.Width {
@@ -51,18 +54,25 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor) {
 	}
 }
 
-func (s *Session) drawCursor(surface *render.Surface, ed *editor.Editor) {
+func (s *Session) drawCursor(surface *render.Surface, ed *editor.Editor, topRow, first, last int) {
 	if _, _, _, active := s.Vim.Prompt(); active {
 		return
 	}
 	position := ed.Cursor.Pos
 	viewport := &ed.Viewport
+	if first == last {
+		surface.DrawCursor(0, topRow*font.LineAdvance, font.NarrowWidth, render.CursorBlock)
+		return
+	}
+	if position.Line < first || position.Line >= last {
+		return
+	}
 	if position.Line < viewport.TopLine || position.Line >= viewport.TopLine+viewport.Height {
 		return
 	}
 	info := ed.Buffer.Info(position)
 	x := (info.Cell - viewport.LeftCell) * font.NarrowWidth
-	y := (position.Line - viewport.TopLine) * font.LineAdvance
+	y := (topRow + position.Line - viewport.TopLine) * font.LineAdvance
 	cells := ed.Buffer.ClusterAt(position).Cells
 	width := cells * font.NarrowWidth
 	if width <= 0 {
@@ -130,19 +140,22 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 	mode := s.Vim.Mode.String()
 	x := surface.DrawText(0, y, mode+"  ", 10, render.DefaultBackground)
 
-	name := ed.Buffer.Path
-	if name == "" {
-		name = "[No Name]"
-	} else {
-		name = filepath.Base(name)
+	buffer := s.CurrentBuffer()
+	name := s.bufferName(buffer)
+	if buffer != nil && buffer.Cart != nil {
+		name = fmt.Sprintf("%s:%d", name, buffer.ActiveTab)
 	}
 	marker := ""
 	if ed.Buffer.Dirty() {
 		marker = " *"
 	}
+	owner := ""
+	if buffer != nil && buffer.Owner != "" {
+		owner = " [" + filepath.Base(buffer.Owner) + "]"
+	}
 	info := ed.Buffer.Info(ed.Cursor.Pos)
 	position := fmt.Sprintf("%d:%d", info.Pos.Line+1, info.Cell+1)
-	status := fmt.Sprintf("%s%s  %s", name, marker, position)
+	status := fmt.Sprintf("%s%s%s  %s", name, marker, owner, position)
 	if s.Status != "" {
 		status += "  " + s.Status
 	}
@@ -150,7 +163,7 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 	if s.StatusError {
 		color = statusErrorColor
 	}
-	surface.DrawText(x*font.NarrowWidth, y, status, color, render.DefaultBackground)
+	surface.DrawText(x*font.NarrowWidth, y, clipCells(status, GridColumns-x-1), color, render.DefaultBackground)
 }
 
 func (s *Session) drawHelp(surface *render.Surface) {

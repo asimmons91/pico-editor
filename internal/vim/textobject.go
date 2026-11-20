@@ -20,6 +20,11 @@ func (v *Vim) applyTextObject(ed *editor.Editor, key rune, inner bool) {
 		v.ringBell()
 		return
 	}
+	if ed.WindowEmpty() {
+		v.Operator = OpNone
+		v.ringBell()
+		return
+	}
 	count := v.takeCount()
 	if v.opCount > 1 {
 		count *= v.opCount
@@ -88,7 +93,7 @@ func textObjectLines(ed *editor.Editor, object objectRange, inner bool) (int, in
 		first = object.start.Line
 		last = first
 	}
-	return clampLine(first, len(ed.Buffer.Lines)), clampLine(last, len(ed.Buffer.Lines))
+	return clampVimLine(ed, first), clampVimLine(ed, last)
 }
 
 func wordObject(ed *editor.Editor, big, inner bool, count int) objectRange {
@@ -284,7 +289,7 @@ func bracketObject(ed *editor.Editor, open, close rune, inner bool) objectRange 
 func bracketPairs(ed *editor.Editor, open, close rune) []bracketPair {
 	var stack []editor.Pos
 	var pairs []bracketPair
-	for line := 0; line < len(ed.Buffer.Lines); line++ {
+	for line := ed.WindowFirst(); line <= ed.WindowLast(); line++ {
 		text := ed.Buffer.Lines[line]
 		position := 0
 		for position < utf8.RuneCountInString(text) {
@@ -370,26 +375,26 @@ func paragraphObject(ed *editor.Editor, around bool) objectRange {
 	line := ed.Cursor.Pos.Line
 	first, last := line, line
 	if isBlankLine(lines[line]) {
-		for first > 0 && isBlankLine(lines[first-1]) {
+		for first > ed.WindowFirst() && isBlankLine(lines[first-1]) {
 			first--
 		}
-		for last+1 < len(lines) && isBlankLine(lines[last+1]) {
+		for last+1 <= ed.WindowLast() && isBlankLine(lines[last+1]) {
 			last++
 		}
 	} else {
-		for first > 0 && !isBlankLine(lines[first-1]) {
+		for first > ed.WindowFirst() && !isBlankLine(lines[first-1]) {
 			first--
 		}
-		for last+1 < len(lines) && !isBlankLine(lines[last+1]) {
+		for last+1 <= ed.WindowLast() && !isBlankLine(lines[last+1]) {
 			last++
 		}
 	}
 	if around {
-		for last+1 < len(lines) && isBlankLine(lines[last+1]) {
+		for last+1 <= ed.WindowLast() && isBlankLine(lines[last+1]) {
 			last++
 		}
 		if last == line {
-			for first > 0 && isBlankLine(lines[first-1]) {
+			for first > ed.WindowFirst() && isBlankLine(lines[first-1]) {
 				first--
 			}
 		}

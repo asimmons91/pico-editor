@@ -1,7 +1,7 @@
 # M4 — Cart model and file tree
 
-**Status:** Draft
-**Depends on:** M2; pico-lsp release with public `pkg/cart`; M3 may overlap
+**Status:** Implemented (automated checks pass; interactive checklist pending in [spikes/M4-cart.md](spikes/M4-cart.md))
+**Depends on:** M2; pico-lsp `v1.6.0` (public `pkg/cart`); M3 may overlap
 **Blocks:** M5
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
 **Estimate:** 2–3 weeks (upstream `pkg/cart` precedes this milestone)
@@ -63,6 +63,9 @@ backup behavior.
 The editor consumes a tagged pico-lsp release. pico-lsp already parses carts in
 `internal/cart`, but it has no save path. The upstream prerequisite adds both
 the public facade and a new, tested splice API.
+
+**Resolved:** M18 shipped in pico-lsp `v1.6.0`. The editor pins `v1.6.0`; no
+`v1.7.0` tag or local `replace` is required.
 
 Minimum public surface:
 
@@ -145,8 +148,8 @@ Requirements:
 - Upstream tests must cover byte-identical `Parse`→`ReplaceCode` round-trips for
   every cart in pico-lsp's corpus, plus edits inside the code section, CRLF
   carts, and header/empty-body boundaries.
-- pico-lsp tags the release (target `v1.7.0`) before M4 starts. The editor
-  removes the local `replace` and pins the tag.
+- pico-lsp tags the release (`v1.6.0`, which includes M18) before M4 starts. The
+  editor pins that tag and uses no local `replace`.
 
 ### 2. `internal/cart` adapter
 
@@ -170,7 +173,9 @@ func (d *Document) Save() error
   re-encoded.
 - `BaseLine` is `Parsed.CodeStartLine()`, the full-cart line of code line 0. It
   is constant for the lifetime of the document because the header is not
-  editable.
+  editable. The adapter converts `Parsed.Tabs()` to local code-body ranges once
+  and stores them in `Tabs`; `Tab.StartLine`/`EndLine`/`MarkerLine` are
+  code-buffer lines, not full-cart lines.
 - The editor buffer is LF-normalized. `FullText` calls
   `Parsed.ReplaceCode(Code.Text())`; `ReplaceCode` restores the original code
   newline style, so CRLF carts round-trip. A lone `\r` is P8SCII glyph 13 data,
@@ -279,7 +284,8 @@ func (w *Workspace) ResolveInclude(path string) (*CartRef, bool)
   - skip hidden entries (leading `.`), `.git`, `node_modules`, `vendor`,
     `bin`, and `dist` by default; M7 makes this configurable,
   - follow file symlinks; do not recurse directory symlinks; detect loops,
-  - cap at 20,000 entries; show a notification and stop scanning.
+  - cap at 20,000 entries; show a notification and stop scanning,
+  - skip `.p8` files larger than the 2 MiB cart limit before reading them.
 - Sort directories first, then case-insensitive name.
 - File tree UI:
   - `Ctrl+Shift+B` toggles and focuses the tree; `Esc` returns to the editor,
@@ -331,18 +337,21 @@ func (w *Workspace) ResolveInclude(path string) (*CartRef, bool)
 ```text
 internal/cart/
   document.go      adapter over pkg/cart
-  tabs.go          tab ranges and view state
   save.go          conflict detection, backup, atomic write
 internal/workspace/
-  workspace.go     root, scan, entries
-  include.go       resolver facade and association
+  workspace.go     root, scan, entries, include association
   workspace_test.go
 internal/app/
-  cartview.go      code-only view and tab bar
+  buffers.go       buffer lifecycle, cart tabs, view state
+  cartview.go      (layout and code-only view live in screen.go/buffers.go)
+  dialog.go        modal conflict/quit/error dialogs
+  external.go      focus refresh and external conflict detection
   filetree.go      overlay tree
-  filetabs.go      file buffer tabs
-  buffers.go       open/close/switch lifecycle
+  filetabs.go      file and cart tab strips
 ```
+
+The implementation keeps the code-only view in `screen.go` and the tab strips in
+`filetabs.go`; `cartview.go` was not needed as a separate file.
 
 ## Interfaces and state
 
@@ -364,6 +373,21 @@ type CartView struct {
 
 `Document.Raw` is immutable. Only `Code` changes. This is the invariant that
 guarantees byte-preserving saves.
+
+## Resolved decisions
+
+| Decision | Resolution |
+| --- | --- |
+| pico-lsp dependency | `pkg/cart` ships in `v1.6.0`; the editor pins that release. |
+| Tab confinement | `internal/editor` owns an active half-open line window. Cursor motions, operators, boundary joins/deletes, paste, search, `gg`/`G`, and ex ranges stay inside the active code tab. Empty tabs use a virtual cursor and materialize one blank line on the first edit. |
+| Startup layout | A file argument opens with the tree hidden and editor focus. A directory or no argument opens an empty buffer with the tree visible and focused. |
+| Dialog input | Dialogs use arrows/Tab plus Enter, single-key accelerators drawn from the option labels (O/R/C, S/D/C), and Esc for Cancel or OK. |
+| Conflict backups | Every conflicting overwrite, cart or `.lua`, writes `<name>.bak` or `<name>.bak.1`–`.bak.9` before the atomic replace. Failed backups abort the write. Conflict overwrites refresh the target mode from disk before the write. |
+| Recreated modes | A deleted writable file keeps its recorded mode; a deleted read-only file is recreated `0644`. |
+| Symlink targets | Save targets resolve parent/final/chained symlinks component by component, including broken links, before the workspace boundary check. |
+| Focus refresh | On focus the workspace rescans, clean changed buffers reload (carts preserve the active tab and view), dirty buffers prompt, and deleted files prompt. |
+| New tab separators | M4 rejects typing a new `-->8` separator in insert mode; code tabs derive from markers already in the cart. Adding tabs by editing markers is deferred. |
+| Section headers in code | Save fails with a typed error if code text would introduce a cart section header and truncate `__lua__`. |
 
 ## Testing
 
@@ -408,14 +432,14 @@ guarantees byte-preserving saves.
 
 ## Exit criteria
 
-- [ ] pico-lsp tags `pkg/cart` with `ReplaceCode`; editor pins the release.
-- [ ] Golden tests show only the `__lua__` body changing on save.
-- [ ] Code tabs switch cleanly and preserve cursor/scroll state per tab.
-- [ ] The file tree opens carts and includes without losing unsaved changes.
-- [ ] Save failures surface a useful error and never corrupt the cart.
-- [ ] External changes and overwrite backups behave as specified.
-- [ ] No editor-local cart parser or P8SCII mapping exists.
-- [ ] `mise run check` passes.
+- [x] pico-lsp tags `pkg/cart` with `ReplaceCode`; editor pins the release.
+- [x] Golden tests show only the `__lua__` body changing on save.
+- [x] Code tabs switch cleanly and preserve cursor/scroll state per tab.
+- [x] The file tree opens carts and includes without losing unsaved changes.
+- [x] Save failures surface a useful error and never corrupt the cart.
+- [x] External changes and overwrite backups behave as specified.
+- [x] No editor-local cart parser or P8SCII mapping exists.
+- [x] `mise run check` passes.
 
 ## Risks and mitigations
 

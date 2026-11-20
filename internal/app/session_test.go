@@ -246,13 +246,13 @@ func TestHelpAndCommandLinePrompt(t *testing.T) {
 	}
 }
 
-func TestTabCommandsReportSingleTab(t *testing.T) {
+func TestTabCommandsReportNoCartTabs(t *testing.T) {
 	game, _ := newEditorGame(t, "abc\n", &recordingClipboard{})
 	if err := sendKeys(t, game, ":tabn<enter>"); err != nil {
 		t.Fatalf("Update tabn: %v", err)
 	}
-	if !strings.Contains(game.session.Status, "M4") {
-		t.Fatalf("status = %q, want the M4 single-tab message", game.session.Status)
+	if !strings.Contains(game.session.Status, "E85") {
+		t.Fatalf("status = %q, want E85 for a .lua buffer", game.session.Status)
 	}
 }
 
@@ -505,8 +505,11 @@ func TestCtrlQRefusesDirtySessionThenForceQuits(t *testing.T) {
 	if err := game.Update(); err != nil {
 		t.Fatalf("Update ctrl+q: %v", err)
 	}
-	if !strings.Contains(game.session.Status, "E37") {
-		t.Fatalf("status = %q, want E37", game.session.Status)
+	if game.session.Dialog == nil || game.session.Dialog.Kind != DialogQuit {
+		t.Fatalf("dialog = %+v, want quit dialog", game.session.Dialog)
+	}
+	if err := sendKeys(t, game, "c"); err != nil {
+		t.Fatalf("cancel: %v", err)
 	}
 	if err := sendKeys(t, game, ":q!<enter>"); err != ebiten.Termination {
 		t.Fatalf("force quit = %v, want Termination", err)
@@ -657,12 +660,11 @@ func TestWindowCloseRefusesDirtyBuffers(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 	quit, changed := game.handleWindowClose(true)
-	if quit || !changed || !strings.Contains(game.session.Status, "E37") {
-		t.Fatalf("dirty close = quit %t changed %t status %q", quit, changed, game.session.Status)
+	if quit || !changed || game.session.Dialog == nil || game.session.Dialog.Kind != DialogQuit {
+		t.Fatalf("dirty close = quit %t changed %t dialog %+v", quit, changed, game.session.Dialog)
 	}
-	quit, changed = game.handleWindowClose(true)
-	if quit || changed {
-		t.Fatalf("repeated dirty close = quit %t changed %t", quit, changed)
+	if err := sendKeys(t, game, "c"); err != nil {
+		t.Fatalf("cancel: %v", err)
 	}
 	if err := sendKeys(t, game, ":q!<enter>:q!<enter>"); err != ebiten.Termination {
 		t.Fatalf("force quits = %v, want Termination", err)

@@ -69,9 +69,9 @@ func (e *Editor) Move(motion Motion, count int) {
 	case MotionLineEnd:
 		e.setCursor(Pos{Line: e.Cursor.Pos.Line, Rune: utf8.RuneCountInString(e.Buffer.Lines[e.Cursor.Pos.Line])}, true)
 	case MotionBufferStart:
-		e.setCursor(Pos{}, true)
+		e.setCursor(Pos{Line: e.WindowFirst()}, true)
 	case MotionBufferEnd:
-		last := len(e.Buffer.Lines) - 1
+		last := e.WindowLast()
 		e.setCursor(Pos{Line: last, Rune: utf8.RuneCountInString(e.Buffer.Lines[last])}, true)
 	case MotionPageUp:
 		e.movePage(-count)
@@ -150,11 +150,15 @@ func (e *Editor) MoveToCell(cell int) {
 // MoveTo moves to a display cell on line.
 func (e *Editor) MoveTo(line, cell int) {
 	e.BreakGroup()
-	if line < 0 {
-		line = 0
-	}
-	if line >= len(e.Buffer.Lines) {
-		line = len(e.Buffer.Lines) - 1
+	if e.lineWindow.active {
+		line = e.clampLine(line)
+	} else {
+		if line < 0 {
+			line = 0
+		}
+		if line >= len(e.Buffer.Lines) {
+			line = len(e.Buffer.Lines) - 1
+		}
 	}
 	if cell < 0 {
 		cell = 0
@@ -167,6 +171,9 @@ func (e *Editor) MoveTo(line, cell int) {
 func (e *Editor) moveLeft(count int) {
 	position := e.Cursor.Pos
 	for i := 0; i < count; i++ {
+		if e.lineWindow.active && position.Line == e.lineWindow.first && position.Rune == 0 {
+			break
+		}
 		if position.Rune > 0 {
 			line := e.Buffer.Lines[position.Line]
 			position.Rune = prevClusterBoundary(line, position.Rune)
@@ -189,6 +196,9 @@ func (e *Editor) moveRight(count int) {
 			position.Rune = nextClusterBoundary(line, position.Rune)
 			continue
 		}
+		if e.lineWindow.active && position.Line >= e.lineWindow.end-1 {
+			break
+		}
 		if position.Line+1 >= len(e.Buffer.Lines) {
 			break
 		}
@@ -200,11 +210,15 @@ func (e *Editor) moveRight(count int) {
 
 func (e *Editor) moveVertical(delta int) {
 	line := e.Cursor.Pos.Line + delta
-	if line < 0 {
-		line = 0
-	}
-	if line >= len(e.Buffer.Lines) {
-		line = len(e.Buffer.Lines) - 1
+	if e.lineWindow.active {
+		line = e.clampLine(line)
+	} else {
+		if line < 0 {
+			line = 0
+		}
+		if line >= len(e.Buffer.Lines) {
+			line = len(e.Buffer.Lines) - 1
+		}
 	}
 	position := e.Buffer.PosFromCell(line, e.Cursor.DesiredCell)
 	e.setCursor(position, false)
@@ -264,11 +278,14 @@ func (e *Editor) atWordEnd(position Pos, big bool) bool {
 }
 
 func (e *Editor) atBufferStart(position Pos) bool {
-	return position.Line == 0 && position.Rune == 0
+	return position.Line == e.WindowFirst() && position.Rune == 0
 }
 
 func (e *Editor) atBufferEnd(position Pos) bool {
-	last := len(e.Buffer.Lines) - 1
+	last := e.WindowLast()
+	if e.lineWindow.active && e.WindowEmpty() {
+		return true
+	}
 	return position.Line == last && position.Rune >= utf8.RuneCountInString(e.Buffer.Lines[last])
 }
 

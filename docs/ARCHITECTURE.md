@@ -45,7 +45,7 @@ internal/vim      -> internal/{input,editor}
 internal/input    -> pico-lsp pkg/p8scii
 internal/editor   -> pico-lsp pkg/p8scii, internal/fsutil
 internal/render   -> internal/font, pico-lsp pkg/p8scii
-internal/cart     -> pico-lsp pkg/cart
+internal/cart     -> internal/{editor,fsutil}, pico-lsp pkg/cart
 internal/workspace-> pico-lsp pkg/cart
 internal/lsp      -> pico-lsp pkg/lsp, pkg/cart, pkg/p8scii
 internal/config   -> TOML parser (selected in M7), standard library
@@ -320,12 +320,16 @@ be used at a milestone exit.
 | Ebitengine | `v2.10.6` | M0 |
 | golangci-lint | `2.15.0` (mise) | M0 |
 | pico-lsp `pkg/p8scii` (pico-lsp M17) | `v1.6.0` | before M1 |
-| pico-lsp `pkg/cart` (pico-lsp M18) | `v1.7.0` | before M4 |
+| pico-lsp `pkg/cart` (pico-lsp M18) | `v1.6.0` | before M4 |
 | pico-lsp `pkg/lsp`, `pkg/glyphs` (pico-lsp M19) | `v1.8.0` | before M5 |
 | `go.lsp.dev/protocol` | latest tagged version at integration | M5 |
 | `go.lsp.dev/jsonrpc2` | latest tagged version at integration | M5 |
 | TOML parser | selected and pinned in M7 | M7 |
 | `golang.design/x/clipboard` | `v0.11.0` (pure Go on Linux) | M1 |
+
+`pkg/cart` in pico-lsp `v1.6.0` brings `go.lsp.dev/jsonrpc2`, `protocol`, and
+`uri` in transitively. They appear as indirect `go.mod` entries before M5; the
+editor does not import those packages directly until the LSP client lands.
 
 Development rules:
 
@@ -336,9 +340,9 @@ Development rules:
   the pinned release.
 - A milestone cannot exit on a pseudo-version: only a tagged pico-lsp release
   with the required public packages counts.
-- The pico-lsp public-package schedule (`pkg/p8scii` 1.6.0, `pkg/cart` 1.7.0,
-  `pkg/lsp`/`pkg/glyphs` 1.8.0; pico-lsp milestones M17–M19) is a
-  cross-repository commitment. pico-lsp's roadmap records the same schedule;
+- The pico-lsp public-package schedule (`pkg/p8scii` and `pkg/cart` in `v1.6.0`;
+  `pkg/lsp`/`pkg/glyphs` targeted for `v1.8.0`; pico-lsp milestones M17–M19) is
+  a cross-repository commitment. pico-lsp's roadmap records the same schedule;
   the editor must not import an unreleased API.
 
 ## 13. M0 implementation notes
@@ -370,7 +374,7 @@ Development rules:
   (`AtomicWrite` with owner/mode preservation and directory fsync). Its
   temporary debug screen was replaced by M3: no argument now opens an empty
   normal-mode buffer, `--debug-charset` keeps the charset screen, and `.p8`
-  files are rejected until M4.
+  files were rejected until M4's cart adapter.
 - M2 stores the save point as a SHA-256 of the canonical text, so undo/redo
   across the save point updates `Dirty()` without writing. It rejects files
   mixing CRLF and LF, rejects ambiguous CR-at-EOL saves, checks mtime, size,
@@ -413,6 +417,37 @@ Development rules:
   package falls back to XWayland; without a data-control manager or X11 display
   it returns a typed unavailable error and the UI degrades to internal
   registers.
+- M4 adds `internal/cart`, an adapter over pico-lsp `pkg/cart` `v1.6.0`. It
+  keeps `Raw` immutable, exposes only the `__lua__` body as `editor.Buffer`, and
+  splices saves back through `ReplaceCode`. Tabs are local line ranges derived
+  from `pkg/cart.Tabs()` and are re-derived through `pkg/cart` after edits.
+  `internal/cart` also owns conflict metadata, read-only checks, the workspace
+  root boundary, and save snapshots; `internal/fsutil` adds numbered `.bak`
+  copies for conflict overwrites.
+- `internal/editor` gained an active line window for cart code tabs. Cursor
+  motion, operators, join/delete-at-line-edge commands, paste, search, `G`/`gg`,
+  and ex ranges are clamped to the active tab; the hidden `-->8` separator is
+  never editable. Empty tabs use a virtual cursor and materialize one blank line
+  on the first edit, so opening and saving an untouched cart stays byte-exact.
+  M4 rejects creating a new `-->8` separator by typing; code that would read
+  back as a cart section header is rejected at save time.
+- `internal/workspace` scans the project root with the M4 ignore list and entry
+  cap, follows file symlinks but not directory symlinks, and builds cart/include
+  associations through the public `pkg/cart` resolver. Oversized carts are
+  skipped before reading. `ResolveInclude` returns the nearest owning cart;
+  `.lua` buffers show the owner in the status row.
+- M4 layout is row 0 file tabs, row 1 cart code tabs for `.p8`, rows 2–40 for
+  cart code (rows 1–40 for `.lua`), and row 41 for status. The file tree overlay
+  covers columns 0–19 and rows 0–40 without resizing the code area. Ctrl+Tab and
+  Ctrl+Shift+Tab switch code tabs; Ctrl+Shift+B toggles the tree; Ctrl+S saves.
+- Save conflicts, deleted files, outside-root symlinks, read-only failures, and
+  dirty-session quits are modal dialogs. Conflict overwrites create a numbered
+  backup before the atomic replace. External changes are checked on save and on
+  focus; clean files reload automatically, dirty files prompt. `Ctrl+Q` and
+  window close now enter the Save all / Discard all / Cancel flow.
+- The CLI accepts a file or directory. A file opens with its parent as the
+  workspace and the tree hidden; a directory or no argument opens an empty
+  buffer with the tree visible and focused.
 - Ebitengine 2.10.6's experimental `exp/textinput` package is not used. V1
   accepts committed text only and does not promise preedit or candidate-window
   rendering.

@@ -273,7 +273,7 @@ func TestRunRejectsMissingFile(t *testing.T) {
 	}
 }
 
-func TestRunRejectsCartAtStartup(t *testing.T) {
+func TestRunRejectsMissingCart(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr bytes.Buffer
@@ -282,7 +282,7 @@ func TestRunRejectsCartAtStartup(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("run(cart.p8) = %d, want 1; stderr: %s", code, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "unsupported file type") {
-		t.Errorf("stderr = %q, want the unsupported-file message", stderr.String())
+	if !strings.Contains(stderr.String(), "cart.p8") {
+		t.Errorf("stderr = %q, want the missing cart path", stderr.String())
 	}
 }

@@ -83,6 +83,11 @@ func (v *Vim) executeVisualOperator(op rune, ed *editor.Editor) {
 		v.leaveVisual(ed)
 		return
 	}
+	if ed.WindowEmpty() {
+		v.ringBell()
+		v.leaveVisual(ed)
+		return
+	}
 	record := v.visualRecord(op, ed)
 	if ed.Selection.Kind == editor.SelectionBlock {
 		v.executeBlockOperator(op, ed, record)
@@ -458,6 +463,11 @@ func byteOffsetForRune(line string, runeIndex int) int {
 }
 
 func (v *Vim) startBlockInsert(ed *editor.Editor, appendMode bool) {
+	if ed.WindowEmpty() {
+		v.ringBell()
+		v.leaveVisual(ed)
+		return
+	}
 	first, last, left, right := ed.Selection.BlockRange(ed.Buffer)
 	v.saveVisual(ed)
 	ed.ClearSelection()
@@ -627,6 +637,11 @@ func insertAtCell(ed *editor.Editor, line string, cell int, text string) string 
 }
 
 func (v *Vim) visualPaste(ed *editor.Editor, before bool) {
+	if ed.WindowEmpty() {
+		v.ringBell()
+		v.leaveVisual(ed)
+		return
+	}
 	if v.clipboardBusy {
 		v.info("clipboard paste pending")
 		return
@@ -768,4 +783,9 @@ func (v *Vim) scrollCursor(ed *editor.Editor, r rune) {
 		return
 	}
 	ed.Viewport.TopLine = min(max(ed.Viewport.TopLine, 0), max(0, len(ed.Buffer.Lines)-height))
+	if ed.WindowEmpty() {
+		ed.Viewport.TopLine = ed.WindowFirst()
+	} else if first, end, active := ed.LineRange(); active {
+		ed.Viewport.TopLine = min(max(ed.Viewport.TopLine, first), max(first, end-height))
+	}
 }

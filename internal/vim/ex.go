@@ -222,7 +222,7 @@ func resolveExCommand(name string) (string, bool) {
 
 func parseExRange(line string, ed *editor.Editor, v *Vim) (exRange, string, bool) {
 	current := ed.Cursor.Pos.Line
-	whole := exRange{first: 0, last: len(ed.Buffer.Lines) - 1}
+	whole := exRange{first: ed.WindowFirst(), last: ed.WindowLast()}
 	if strings.HasPrefix(line, "%") {
 		return whole, line[1:], true
 	}
@@ -230,13 +230,13 @@ func parseExRange(line string, ed *editor.Editor, v *Vim) (exRange, string, bool
 		if !v.hasVisualRange {
 			return exRange{}, "", false
 		}
-		return exRange{first: v.lastVisualRange[0], last: v.lastVisualRange[1], set: true}, line[len("'<,'>"):], true
+		return exRange{first: clampVimLine(ed, v.lastVisualRange[0]), last: clampVimLine(ed, v.lastVisualRange[1]), set: true}, line[len("'<,'>"):], true
 	}
 	if line == "." || strings.HasPrefix(line, ".") {
 		return exRange{first: current, last: current, set: true}, line[1:], true
 	}
 	if strings.HasPrefix(line, "$") {
-		return exRange{first: len(ed.Buffer.Lines) - 1, last: len(ed.Buffer.Lines) - 1, set: true}, line[1:], true
+		return exRange{first: ed.WindowLast(), last: ed.WindowLast(), set: true}, line[1:], true
 	}
 	if line[0] < '0' || line[0] > '9' {
 		return exRange{first: current, last: current}, line, true
@@ -249,14 +249,14 @@ func parseExRange(line string, ed *editor.Editor, v *Vim) (exRange, string, bool
 			return exRange{}, "", false
 		}
 		rest = rest[1+secondConsumed:]
-		first = clampLine(first-1, len(ed.Buffer.Lines))
-		second = clampLine(second-1, len(ed.Buffer.Lines))
+		first = clampVimLine(ed, first-1)
+		second = clampVimLine(ed, second-1)
 		if first > second {
 			first, second = second, first
 		}
 		return exRange{first: first, last: second, set: true}, rest, true
 	}
-	first = clampLine(first-1, len(ed.Buffer.Lines))
+	first = clampVimLine(ed, first-1)
 	return exRange{first: first, last: first, set: true}, rest, true
 }
 
@@ -276,6 +276,10 @@ func (v *Vim) substitute(ed *editor.Editor, lineRange exRange, args string) {
 	// splitExCommand stops at the first non-letter, so "s/old/new/g" leaves
 	// args as "/old/new/g". A bang is accepted and ignored.
 	args = strings.TrimPrefix(strings.TrimSpace(args), "!")
+	if ed.WindowEmpty() {
+		v.message(msgPatternNotFound)
+		return
+	}
 	if args == "" {
 		v.message(msgNoPreviousCommand)
 		v.ringBell()
@@ -322,8 +326,8 @@ func (v *Vim) substitute(ed *editor.Editor, lineRange exRange, args string) {
 		return
 	}
 
-	first := clampLine(lineRange.first, len(ed.Buffer.Lines))
-	last := clampLine(lineRange.last, len(ed.Buffer.Lines))
+	first := clampVimLine(ed, lineRange.first)
+	last := clampVimLine(ed, lineRange.last)
 	newLines := make([]string, 0, last-first+1)
 	total := 0
 	changedLines := 0

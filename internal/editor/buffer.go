@@ -233,10 +233,33 @@ func (b *Buffer) Dirty() bool {
 // text data first, so callers that load Lines directly (for example the M4 cart
 // adapter) get a correct hash rather than a stale one.
 func (b *Buffer) MarkSaved() {
+	b.MarkSavedText(b.Text())
+}
+
+// MarkSavedText records text as the save point without requiring the buffer's
+// current text to match it. The cart adapter uses it when a background save
+// commits a snapshot while newer edits are already in the buffer.
+func (b *Buffer) MarkSavedText(text string) {
+	b.MarkSavedTextVersion(text, b.Version)
+}
+
+// MarkSavedTextVersion records text as the save point and an explicit saved
+// version. Cart saves use it when a background snapshot commits after newer
+// edits have already advanced the buffer version.
+func (b *Buffer) MarkSavedTextVersion(text string, version int) {
 	b.hashValid = false
 	b.indexValid = false
-	b.savedHash = b.textHash()
-	b.SavedVersion = b.Version
+	b.savedHash = sha256.Sum256([]byte(text))
+	b.SavedVersion = version
+}
+
+// SetWorkspaceRoot narrows or widens the directory used for the save-time
+// symlink boundary check. It does not affect file contents.
+func (b *Buffer) SetWorkspaceRoot(root string) {
+	if root == "" {
+		return
+	}
+	b.workspaceRoot = root
 }
 
 func (b *Buffer) textHash() [sha256.Size]byte {
@@ -281,9 +304,24 @@ type SaveSnapshot struct {
 	diskHash [sha256.Size]byte // encoded bytes on disk
 }
 
+// SaveOptions controls checks that the M4 conflict UI can explicitly override.
+type SaveOptions struct {
+	// AllowExternalChange permits writing even though the file changed or was
+	// deleted after open/last save. The caller is responsible for backing up
+	// conflicting bytes first.
+	AllowExternalChange bool
+	// AllowOutsideRoot permits a resolved target outside WorkspaceRoot.
+	AllowOutsideRoot bool
+}
+
 // PrepareSave performs the same checks as Save and captures the bytes to write.
 // It returns typed errors without modifying the buffer or the file.
 func (b *Buffer) PrepareSave() (SaveSnapshot, error) {
+	return b.PrepareSaveWithOptions(SaveOptions{})
+}
+
+// PrepareSaveWithOptions is PrepareSave with explicit conflict overrides.
+func (b *Buffer) PrepareSaveWithOptions(options SaveOptions) (SaveSnapshot, error) {
 	if b.Path == "" {
 		return SaveSnapshot{}, ErrNoPath
 	}
@@ -293,16 +331,30 @@ func (b *Buffer) PrepareSave() (SaveSnapshot, error) {
 	if b.hasAmbiguousCR() {
 		return SaveSnapshot{}, pathError("save", b.Path, ErrAmbiguousCR)
 	}
-	if b.disk.known {
+	if b.disk.known && !options.AllowExternalChange {
 		if err := b.checkExternal(); err != nil {
 			return SaveSnapshot{}, err
 		}
 	}
-	if b.Mode.Perm()&0o222 == 0 {
+	mode := b.Mode
+	if options.AllowExternalChange {
+		info, statErr := os.Stat(b.Path)
+		switch {
+		case statErr == nil:
+			mode = info.Mode() & modeBits
+		case errors.Is(statErr, fs.ErrNotExist):
+			if mode.Perm()&0o222 == 0 {
+				mode = 0o644
+			}
+		default:
+			return SaveSnapshot{}, pathError("save", b.Path, statErr)
+		}
+	}
+	if mode.Perm()&0o222 == 0 {
 		return SaveSnapshot{}, pathError("save", b.Path, ErrReadOnly)
 	}
 
-	target, err := b.saveTarget()
+	target, err := b.saveTarget(options.AllowOutsideRoot)
 	if err != nil {
 		return SaveSnapshot{}, err
 	}
@@ -311,7 +363,7 @@ func (b *Buffer) PrepareSave() (SaveSnapshot, error) {
 		Path:     b.Path,
 		Target:   target,
 		Data:     data,
-		Mode:     b.Mode,
+		Mode:     mode,
 		Version:  b.Version,
 		hash:     b.textHash(),
 		diskHash: sha256.Sum256(data),
@@ -431,31 +483,25 @@ func (b *Buffer) checkExternal() error {
 	return nil
 }
 
+// CheckExternal reports whether the file changed since open or the last save.
+// It returns nil when no disk state is known or the file still matches.
+func (b *Buffer) CheckExternal() error {
+	if !b.disk.known {
+		return nil
+	}
+	return b.checkExternal()
+}
+
 // saveTarget resolves symlinks and enforces the M2 workspace boundary. The
 // workspace root is the directory containing the buffer path.
-func (b *Buffer) saveTarget() (string, error) {
+func (b *Buffer) saveTarget(allowOutsideRoot bool) (string, error) {
 	absolute, err := filepath.Abs(b.Path)
 	if err != nil {
 		return "", pathError("save", b.Path, err)
 	}
-	info, err := os.Lstat(absolute)
-	if errors.Is(err, fs.ErrNotExist) {
-		return absolute, nil
-	}
+	target, err := fsutil.ResolveTarget(absolute)
 	if err != nil {
 		return "", pathError("save", b.Path, err)
-	}
-
-	target := absolute
-	if info.Mode()&os.ModeSymlink != 0 {
-		target, err = filepath.EvalSymlinks(absolute)
-		if err != nil {
-			return "", pathError("save", b.Path, err)
-		}
-	} else if directory, dirErr := filepath.EvalSymlinks(filepath.Dir(absolute)); dirErr == nil {
-		// Resolve symlinked parent directories even when the final component
-		// is a regular file, so the boundary check compares real paths.
-		target = filepath.Join(directory, filepath.Base(absolute))
 	}
 	if isCartPath(target) {
 		return "", pathError("save", b.Path, ErrUnsupportedFile)
@@ -470,7 +516,9 @@ func (b *Buffer) saveTarget() (string, error) {
 	}
 	relative, err := filepath.Rel(root, target)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", pathError("save", b.Path, ErrOutsideRoot)
+		if !allowOutsideRoot {
+			return "", pathError("save", b.Path, ErrOutsideRoot)
+		}
 	}
 	return target, nil
 }
@@ -492,7 +540,9 @@ func (b *Buffer) Reload() error {
 	b.Mode = fresh.Mode
 	b.TabWidth = fresh.TabWidth
 	b.disk = fresh.disk
-	b.workspaceRoot = fresh.workspaceRoot
+	if b.workspaceRoot == "" {
+		b.workspaceRoot = fresh.workspaceRoot
+	}
 	b.Version++
 	b.SavedVersion = b.Version
 	b.hashValid = false

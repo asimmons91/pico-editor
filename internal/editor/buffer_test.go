@@ -163,6 +163,78 @@ func TestEditedCRLFAndBOMRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDeletedWritableFileKeepsMode(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "private.lua", []byte("print(1)\n"), 0o600)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := buffer.PrepareSaveWithOptions(SaveOptions{AllowExternalChange: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Mode.Perm() != 0o600 {
+		t.Fatalf("recreate mode = %o, want preserved 0600", snapshot.Mode.Perm())
+	}
+}
+
+func TestConflictOverwriteUsesCurrentFileMode(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "mode.lua", []byte("print(1)\n"), 0o644)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := buffer.PrepareSaveWithOptions(SaveOptions{AllowExternalChange: true}); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("read-only overwrite err = %v, want ErrReadOnly", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := buffer.PrepareSaveWithOptions(SaveOptions{AllowExternalChange: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Mode.Perm() != 0o600 {
+		t.Fatalf("snapshot mode = %o, want current 0600", snapshot.Mode.Perm())
+	}
+}
+
+func TestDeletedReadOnlyFileCanBeRecreated(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "readonly.lua", []byte("print(1)\n"), 0o444)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := buffer.PrepareSaveWithOptions(SaveOptions{AllowExternalChange: true})
+	if err != nil {
+		t.Fatalf("PrepareSaveWithOptions: %v", err)
+	}
+	if snapshot.Mode.Perm() != 0o644 {
+		t.Fatalf("recreate mode = %o, want 0644", snapshot.Mode.Perm())
+	}
+	if err := snapshot.Write(); err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.CommitSave(snapshot, nil); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("recreated file = %v %v", info, err)
+	}
+}
+
 func TestSaveRejectsReadOnlyFile(t *testing.T) {
 	t.Parallel()
 
