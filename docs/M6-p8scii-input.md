@@ -10,13 +10,13 @@ pico-lsp `v1.7.0` (complete printable glyph catalog)
 ## Outcome
 
 PICO-8's special-character input feels native: Shift+letter inserts glyphs in
-insert mode, kana and literal modes work, the glyph picker is searchable,
+insert mode, kana and puny modes work, the glyph picker is searchable,
 `p8_left` completion inserts canonical Unicode, and paste/copy round-trip
 through `.p8` files. Normal-mode Vim Shift commands remain untouched.
 
 **Demo:** Enter every printable P8SCII glyph through Shift+letter, kana modes,
 or the picker; save, reload, and verify identical canonical text. Type an
-uppercase identifier using the literal path. Run `:help input` and see the mode
+uppercase identifier using the puny path. Run `:help input` and see the mode
 table.
 
 ## Scope
@@ -116,7 +116,7 @@ Rules:
   timeout and a visible pending indicator.
 - Kana characters insert canonical Unicode and occupy two cells.
 - Kana mode does not change Shift+letter behavior: Shift still inserts the
-  symbol glyphs from §1 unless literal mode is active.
+  symbol glyphs from §1 unless puny mode is active.
 
 ### 3. Ctrl+P puny/uppercase mode
 
@@ -223,15 +223,15 @@ editor-invented rendering mode that PICO-8 does not have.
 - `docs/INPUT.md` contains:
   - the Shift+letter table,
   - kana mode entry/exit and table capture notes,
-  - literal mode and the uppercase workflow,
+  - puny mode and the uppercase workflow,
   - picker and completion usage,
   - clipboard behavior,
   - known IME limitation.
 - `:help input` opens an in-editor overlay with the same content in condensed
   form.
 - The command palette lists `Help: input`, `Glyph: pick`, and
-  `Input: toggle literal`.
-- The status bar always shows the active input mode (`LIT`, `HIRA`, `KATA`) so
+  `Input: toggle puny`.
+- The status bar always shows the active input mode (`PUNY`, `HIRA`, `KATA`) so
   the user is never trapped.
 
 ### 9. Capture tests
@@ -240,7 +240,7 @@ PICO-8 is a proprietary binary and is not a CI dependency. Capture is a
 one-time, documented manual process:
 
 - Use PICO-8 0.2.7 at 4× scale.
-- Enter every key sequence for Shift+letter, kana, and literal modes.
+- Enter every key sequence for Shift+letter, kana, and puny modes.
 - Save screenshots under `testdata/pico8/input/` with a manifest that maps
   screenshot, keys, and expected canonical glyph.
 - Check in the derived tables with a hash and a comment naming the capture.

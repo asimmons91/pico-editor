@@ -169,12 +169,6 @@ func (v *Vim) handleInsert(ev input.Event, ed *editor.Editor) {
 		if ctrl {
 			v.deleteToLineStart(ed)
 		}
-	case input.KeyJ, input.KeyK, input.KeyP:
-		if ctrl {
-			// P8SCII input modes are owned by M6. The key is deliberately not
-			// inserted as text.
-			v.info("P8SCII input modes are available in M6")
-		}
 	}
 }
 

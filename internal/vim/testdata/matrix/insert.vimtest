@@ -65,11 +65,10 @@ want.buffer: Xabc
 want.mode: normal
 ---
 matrix: 2.6-p8-modes
-name: p8 modes are deferred to M6
+name: p8 mode chords are inert in the vim core
 buffer: abc
 keys: i<c-j><c-k><c-p><esc>
 want.buffer: abc
-want.notify: M6
 want.mode: normal
 ---
 matrix: 2.6-completion
