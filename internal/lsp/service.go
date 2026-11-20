@@ -140,12 +140,12 @@ func (s *Service) Start(ctx context.Context) error {
 
 	s.mu.Lock()
 	docs := make([]document, 0, len(s.docs))
-	opened := make(map[string]int, len(s.docs))
+	opened := make(map[string]document, len(s.docs))
 	for _, doc := range s.docs {
 		doc.Sent = false
 		doc.NeedsOpen = false
 		docs = append(docs, *doc)
-		opened[doc.URI] = doc.Version
+		opened[doc.URI] = *doc
 	}
 	if s.generation != generation || s.stopping {
 		s.startCancel = nil
@@ -156,7 +156,7 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 
-	out := make(chan outbound, 2*len(docs)+16)
+	out := make(chan outbound, 3*len(docs)+16)
 	for _, doc := range docs {
 		s.enqueueTo(out, "textDocument/didOpen", &protocol.DidOpenTextDocumentParams{
 			TextDocument: protocol.TextDocumentItem{
@@ -192,7 +192,7 @@ func (s *Service) Start(ctx context.Context) error {
 	// already queued above.
 	for _, doc := range s.docs {
 		var message outbound
-		if version, ok := opened[doc.URI]; !ok {
+		if previous, ok := opened[doc.URI]; !ok {
 			message = outbound{method: "textDocument/didOpen", params: &protocol.DidOpenTextDocumentParams{
 				TextDocument: protocol.TextDocumentItem{
 					URI:        uri.URI(doc.URI),
@@ -201,7 +201,7 @@ func (s *Service) Start(ctx context.Context) error {
 					Text:       doc.Text,
 				},
 			}, documentURI: doc.URI, version: doc.Version}
-		} else if doc.Version > version {
+		} else if doc.Version != previous.Version || doc.Text != previous.Text {
 			message = outbound{method: "textDocument/didChange", params: &protocol.DidChangeTextDocumentParams{
 				TextDocument: protocol.VersionedTextDocumentIdentifier{
 					TextDocumentIdentifier: protocol.TextDocumentIdentifier{URI: uri.URI(doc.URI)},
@@ -222,6 +222,21 @@ func (s *Service) Start(ctx context.Context) error {
 			} else {
 				doc.Dirty = true
 			}
+		}
+	}
+	closed := make(map[string]bool, len(s.docs))
+	for _, doc := range s.docs {
+		closed[doc.URI] = true
+	}
+	for documentURI := range opened {
+		if closed[documentURI] {
+			continue
+		}
+		select {
+		case out <- outbound{method: "textDocument/didClose", params: &protocol.DidCloseTextDocumentParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri.URI(documentURI)},
+		}}:
+		default:
 		}
 	}
 	writerCtx, writerCancel := context.WithCancel(ctx)
