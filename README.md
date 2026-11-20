@@ -7,17 +7,26 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 > PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
 > with, sponsored by, or endorsed by Lexaloffle Games.
 
-**Status:** M1 implemented. Automated checks pass, with interactive
-X11/Wayland spot checks tracked in
-[docs/spikes/M1-input.md](docs/spikes/M1-input.md). The editor opens a
-pixel-perfect 256×256 P8SCII full-charset screen at 4× (1024×1024) and has the
-palette, software renderer, font atlas, keyboard/text/clipboard input
-foundation, and pico-lsp `pkg/p8scii` dependency in place. M2 adds the editor
-core; see [docs/ROADMAP.md](docs/ROADMAP.md).
+**Status:** M2 implemented. Automated checks pass; interactive X11/Wayland
+spot checks from M1 are tracked in
+[docs/spikes/M1-input.md](docs/spikes/M1-input.md). The editor core now has a
+line-based P8SCII-aware buffer, cursor and selection, undo/redo, viewport,
+search, and atomic `.lua` open/save. M3 adds the Vim curated core; see
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
-On the charset screen, `1`–`4` change the window scale, `W` toggles the width
-overlay, `P` cycles the background palette, and the arrow keys move the
-selection. Typing and `Ctrl+V` paste into the debug log; `Ctrl+Q` quits.
+With no argument the charset demo opens: `1`–`4` change the window scale, `W`
+toggles the width overlay, `P` cycles the background palette, and the arrow keys
+move the selection. Pass a `.lua` file to open the temporary M2 buffer screen:
+
+```sh
+mise exec -- go run ./cmd/pico-editor path/to/file.lua
+```
+
+In the buffer screen, arrows move, Shift+arrows select, Enter splits a line,
+Backspace/Delete remove a cluster, Tab inserts to the next tab stop, `Ctrl+S`
+saves, `Ctrl+Z`/`Ctrl+Y` undo/redo, `Ctrl+V` pastes, and `Ctrl+Q` quits.
+`.p8` carts are rejected until M4 can preserve non-code sections. The debug
+screen is temporary and is replaced by Vim in M3.
 
 ## Requirements
 
@@ -34,6 +43,7 @@ selection. Typing and `Ctrl+V` paste into the debug log; `Ctrl+Q` quits.
 mise install
 mise run build     # bin/pico-editor
 mise run run       # opens the full-charset demo
+mise exec -- go run ./cmd/pico-editor path/to/file.lua
 ```
 
 `Ctrl+Q` or closing the window quits.

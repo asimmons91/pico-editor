@@ -1,6 +1,6 @@
 # M2 — Editor core
 
-**Status:** Draft
+**Status:** Implemented
 **Depends on:** M0, M1
 **Blocks:** M3, M4
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
@@ -13,8 +13,9 @@ viewport, search, and safe `.lua` file IO. It knows nothing about Vim, carts, or
 LSP. Every later feature edits through this layer.
 
 **Demo:** Open a 64KB `.lua` file, edit it with the primitive API and a debug
-keyboard map for a full session, undo and redo every change, search with `/`,
-and save without corrupting line endings or the trailing newline.
+keyboard map for a full session, undo and redo every change, exercise the
+`Search` API, and save without corrupting line endings or the trailing newline.
+(The `/` prompt itself is M3; M2 provides the search engine and match ranges.)
 
 ## Scope
 
@@ -81,7 +82,8 @@ func (b *Buffer) MarkSaved()
 - Preserve a missing trailing newline exactly.
 - Preserve the original file mode. Do not change ownership.
 - `Version` increases on every accepted edit; `SavedVersion` records the last
-  successful save. `Dirty()` is `Version != SavedVersion`.
+  successful save. `Dirty()` compares a cached hash of the current text with the
+  saved text hash, so undoing back to the save point clears it.
 - No rope. Carts and includes are small; line slices plus a rebuilt line index
   are fast enough. Rebuild indexes after each edit.
 
@@ -113,8 +115,9 @@ Requirements:
 - `ByteOffset`/`PosFromByte` round-trip for every cluster boundary.
 - Tabs are literal `\t` characters. Display width is the next multiple of
   `TabWidth` (default 2); a tab at cell 0 occupies 2 cells, at cell 1 it
-  occupies 1 cell. Editing Tab inserts `TabWidth` spaces in M2; literal tabs in
-  existing files are preserved.
+  occupies 1 cell. The Tab edit primitive inserts spaces to the next tab stop,
+  matching the VIM.md insert-mode matrix; literal tabs in existing files are
+  preserved.
 - Unknown runes are one cluster of width 4.
 
 ### 3. Cursor and selection
@@ -178,7 +181,10 @@ Required operations, all built on `Apply`:
 
 Rules:
 
-- Every edit is rejected if `Start`/`End` are not cluster boundaries.
+- Every public edit is rejected if `Start`/`End` are not cluster boundaries, or
+  if the inserted text is not valid UTF-8. Undo/redo use an internal raw range
+  that may end inside a cluster, because reversing an insertion that merged
+  with an adjacent VS16 cannot otherwise restore the original text.
 - An edit never produces invalid UTF-8.
 - `Change` contains enough information for undo without re-reading the file.
 - After a successful edit, increment `Version` and normalize the cursor.
@@ -244,9 +250,10 @@ type Search struct {
 type Match struct {
     Start Pos
     End   Pos
+    Wrapped bool // the search continued from the other buffer end
 }
 
-func (s *Search) Find(text string, from Pos) (Match, bool)
+func (s Search) Find(text string, from Pos) (Match, bool, error)
 ```
 
 - Literal search by default; regex mode uses Go's `regexp` package.
@@ -263,11 +270,16 @@ func (s *Search) Find(text string, from Pos) (Match, bool)
 ### 8. File IO
 
 - Open:
-  - reject directories, missing files, and files larger than 2MB with a typed
-    error,
+  - reject directories, non-regular files (FIFOs, devices), missing files, and
+    files larger than 2MB with a typed error,
+  - resolve symlinks and reject `.p8`/`.p8.png` targets, not just literal cart
+    paths,
   - read bytes, validate UTF-8, strip BOM, detect newline, split lines,
   - initialize `Version = 1`, `SavedVersion = 1`.
 - Save:
+  - reject an LF buffer with a line whose content ends in CR when a newline
+    follows, returning `ErrAmbiguousCR` instead of writing bytes that would
+    reopen as CRLF,
   - join lines with `Newline`,
   - append a trailing newline only if `TrailingNewline`,
   - prepend BOM if `HadBOM`,
@@ -275,12 +287,19 @@ func (s *Search) Find(text string, from Pos) (Match, bool)
   - update `SavedVersion`, `Version`, and the saved-text hash.
 - Atomic write:
   - create a temp file in the same directory with mode `0600`,
-  - write all bytes, `Sync`, `Chmod` to the original mode, `Close`,
+  - write all bytes, `Sync`, `Chmod` to the original mode (including setuid,
+    setgid, and sticky bits), `Close`,
   - `Rename` over the target,
   - open and `Sync` the directory,
   - remove the temp file on any failure.
+  - A directory-sync failure after the rename returns `fsutil.CommitError`; the
+    editor records the committed bytes and save point before reporting the
+    durability error, so a retry is not blocked by a false
+    `ErrExternalChange`.
 - Saving a read-only file returns a typed permission error and leaves the
-  original untouched.
+  original untouched. `checkExternal` also compares the current mode so an
+  external `chmod` is treated as an external change rather than silently
+  ignored.
 - Saving a symlink writes through to the resolved target and preserves the
   symlink. Refuse if the resolved target escapes the workspace root without an
   explicit confirmation (M4 adds the dialog; M2 returns an error).
@@ -320,7 +339,7 @@ type Editor struct {
     Cursor    Cursor
     Selection Selection
     Viewport  Viewport
-    Undo      UndoStack
+    History   UndoStack
     Search    Search
 }
 
@@ -334,11 +353,68 @@ func (e *Editor) Redo()
 `Editor` is the only mutable editing state. M3 adds a Vim state machine above
 it; M4 adds a cart adapter below it; M5 maps LSP positions through `Position`.
 
+## Resolved implementation decisions
+
+These were settled while implementing M2.
+
+- The temporary debug screen is reached with `pico-editor <file>`. With no
+  argument the M1 charset screen remains; `--debug-charset` still forces it.
+  `--debug-charset` and a file argument are mutually exclusive.
+- `.p8` carts are rejected with `ErrUnsupportedFile` until M4 can preserve
+  non-code sections. The debug screen never opens raw cart text.
+- Files mixing CRLF and LF are rejected with `ErrMixedNewlines`; a lone CR is a
+  P8SCII character and round-trips unchanged.
+- Save checks the target's mtime, size, and SHA-256 against the values recorded
+  at open/last save and returns `ErrExternalChange` on a mismatch. M4 adds the
+  conflict dialog and backups.
+- The M2 workspace root is the directory containing the buffer path. A symlink
+  whose resolved target leaves that directory returns `ErrOutsideRoot`; M4 adds
+  explicit confirmation.
+- The Tab primitive inserts spaces to the next tab stop, matching VIM.md,
+  rather than a fixed two spaces.
+- `Dirty()` uses a cached text hash rather than `Version != SavedVersion`, so
+  undo and redo across the save point work without a new save.
+- `Editor` exposes the undo stack as `History` because Go cannot declare both a
+  `Undo` field and an `Undo()` method. `Buffer` carries `TabWidth` so cell
+  conversion has one tab-stop source.
+- `Selection.Cursor`/`Anchor` endpoints are inclusive; `Match` ranges are
+  half-open. `Search.Find` includes a forward match starting at `from` and
+  excludes a backward match starting at `from`, and `Match.Wrapped` reports a
+  wrap. M3 can map visual and `n`/`N` semantics directly.
+- `NormalizeNewlines` must be applied exactly once per input boundary.
+  `Editor.Insert` and `Editor.ReplaceCluster` do that; `Buffer.Apply` and
+  `Editor.Apply` expect canonical LF text, so undo/redo and indentation replay
+  do not normalize a lone CR that sits next to a line separator.
+- Undo/redo apply recorded changes with a raw range path that permits endpoints
+  inside a cluster. This is required to reverse an insertion that merged with a
+  following standalone VS16; the resulting buffer is still validated as UTF-8
+  and the endpoints remain valid rune offsets.
+- LF files cannot represent line content ending in CR when a newline follows;
+  save returns `ErrAmbiguousCR` rather than creating a file that reopens as
+  CRLF. CRLF files round-trip such content as `\r\r\n`.
+- `Buffer.Open` rejects non-regular files and resolves symlinks before the
+  `.p8` extension check. Save also rejects cart targets, including symlink
+  targets.
+- `MarkSaved` invalidates cached text data first, so the M4 cart adapter can
+  load `Lines` directly and then establish a correct save point.
+- `Editor.Reload` is the editor-aware reload path: it clears undo/redo, drops
+  the selection, and clamps the cursor. `Buffer.Reload` alone is low-level and
+  must not be used while an `Editor` owns the buffer.
+- The temporary M2 debug screen saves synchronously on the Update goroutine.
+  M3/M4 must route `:w` and the save pipeline through the architecture's
+  message/result path rather than copying this scaffolding.
+- Clipboard reads stay asynchronous, as in M1. The debug screen applies a paste
+  when the result arrives; M3/M4 own command sequencing and pending-state UX
+  for paste ordering.
+
 ## Error handling
 
 - Open/save errors are typed (`ErrNotUTF8`, `ErrTooLarge`, `ErrReadOnly`,
-  `ErrExternalChange`) and carry the path.
-- Editing errors (invalid position, invalid range) leave the buffer unchanged.
+  `ErrExternalChange`, `ErrMixedNewlines`, `ErrAmbiguousCR`,
+  `ErrNotRegularFile`, `ErrUnsupportedFile`, `ErrOutsideRoot`) and carry the
+  path.
+- Editing errors (invalid position, invalid range, invalid UTF-8 text) leave
+  the buffer unchanged.
 - Search errors preserve the previous pattern.
 - Any panic in an edit operation is a test failure; add a fuzz target for
   sequences of edits, undo, and redo.
@@ -348,12 +424,23 @@ it; M4 adds a cart adapter below it; M5 maps LSP positions through `Position`.
 
 ### Unit and property tests
 
-- Position round-trips: byte ↔ rune ↔ cell ↔ UTF-16 for ASCII, P8SCII glyphs,
-  VS16 sequences, tabs, and empty lines.
+- Position round-trips: byte ↔ rune ↔ cell ↔ UTF-16 for ASCII, all P8SCII
+  glyphs, all VS16 sequences, tabs, and empty lines.
 - Cursor motion across narrow/wide glyphs and line boundaries.
 - Edit, undo, redo, and redo invalidation.
 - Save-point dirty tracking after undo/redo cycles.
-- CRLF, lone CR, BOM, missing trailing newline, and empty file round-trips.
+- CRLF, lone CR, BOM, missing trailing newline, and empty file round-trips,
+  including editing a CRLF/BOM file before saving.
+- Lone CR before CRLF insertion, ambiguous CR-at-EOL save rejection, and
+  external touch/hash/mode/delete detection.
+- Undo/redo of CR-ending edits, VS16-merging insertions, and net-zero
+  insert/backspace groups that must not consume history.
+- Cart-path rejection through a symlink and saves through symlinked parent
+  directories.
+- Post-rename directory-sync error bookkeeping and atomic failure cleanup.
+- Editor reload clears stale undo history and clamps the cursor.
+- Debug-screen editing keys, navigation, select-all consistency, and a scrolled
+  render with a nonzero top line.
 - Join/split line edge cases and indentation.
 - Search literal/regex, smartcase, wrapping, and cluster expansion.
 
@@ -361,24 +448,30 @@ it; M4 adds a cart adapter below it; M5 maps LSP positions through `Position`.
 
 - Random edit sequences followed by undo-all: the buffer equals the initial
   text.
-- Random save/load: bytes are identical for valid UTF-8 inputs.
+- Random save/load: bytes are identical for valid UTF-8 inputs with consistent
+  line endings; mixed-ending files are rejected.
 
 ### Performance
 
 - Open and split a 64KB, 8,000-line file in under 100ms.
 - Apply a single-character edit in under 2ms on the target machine.
 - `go test -bench` records the baseline; M7 enforces the full UI budget.
+- Baseline on the M2 target machine (Ryzen 7 7840U): `BenchmarkOpen64K`
+  ≈0.5 ms/op and `BenchmarkApplySingleCharacter` ≈115 µs/op on an
+  8,000-line buffer.
+- The CI `xvfb` smoke job opens both the charset screen and a `.lua` buffer
+  under Xvfb and requires the `first-frame` log record in each case.
 
 ## Exit criteria
 
-- [ ] A `.lua` file can be edited for a full session without corruption or
+- [x] A `.lua` file can be edited for a full session without corruption or
       panics.
-- [ ] Cursor movement across wide glyphs and VS16 sequences is correct.
-- [ ] Undo/redo and save round-trips are covered by tests.
-- [ ] Undo back to the save point clears the dirty flag.
-- [ ] Typing and scrolling stay smooth on a 64KB file.
-- [ ] Atomic save leaves the original intact on injected failure.
-- [ ] `mise run check` passes.
+- [x] Cursor movement across wide glyphs and VS16 sequences is correct.
+- [x] Undo/redo and save round-trips are covered by tests.
+- [x] Undo back to the save point clears the dirty flag.
+- [x] Typing and scrolling stay smooth on a 64KB file.
+- [x] Atomic save leaves the original intact on injected failure.
+- [x] `mise run check` passes.
 
 ## Risks and mitigations
 

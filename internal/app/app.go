@@ -27,6 +27,9 @@ type Config struct {
 	// DebugCharset forces the M1 charset screen and starts with the width
 	// overlay. M1 shows the screen regardless; M2 keeps the flag.
 	DebugCharset bool
+	// File opens a .lua file in the temporary M2 debug buffer screen. It is
+	// mutually exclusive with DebugCharset.
+	File string
 }
 
 type clipboardResult struct {
@@ -49,6 +52,8 @@ type Game struct {
 	clipboardBusy    bool
 	renderer         *Renderer
 	charset          *Charset
+	debug            *DebugBuffer
+	startupErr       error
 	blink            *Blink
 	scale            int
 	now              func() time.Time
@@ -87,8 +92,23 @@ func New(cfg Config) *Game {
 	}
 	game.source = input.NewEbitenSource(game.mapCursor)
 	game.step = game.updateFrame
+	if cfg.File != "" {
+		if cfg.DebugCharset {
+			game.startupErr = fmt.Errorf("cannot combine --debug-charset with a file argument")
+		} else if debug, openErr := NewDebugBuffer(cfg.File); openErr != nil {
+			game.startupErr = openErr
+		} else {
+			game.debug = debug
+		}
+	}
 	game.redraw()
 	return game
+}
+
+// StartupError reports a file or flag problem found while constructing the
+// game. Callers check it before starting the Ebitengine loop.
+func (g *Game) StartupError() error {
+	return g.startupErr
 }
 
 // Update advances one tick. Ebitengine calls Update on its game goroutine, so
@@ -137,9 +157,14 @@ func (g *Game) updateFrame() error {
 func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 	switch event.Kind {
 	case input.KindFocus:
-		g.charset.AddLog(fmt.Sprintf("focus %t", event.Focused))
+		if g.debug == nil {
+			g.charset.AddLog(fmt.Sprintf("focus %t", event.Focused))
+		}
 		return false, true
 	case input.KindText:
+		if g.debug != nil {
+			return false, g.debug.HandleText(event.Runes)
+		}
 		g.charset.AddLog(fmt.Sprintf("text %q", string(event.Runes)))
 		return false, true
 	case input.KindMouse:
@@ -155,6 +180,17 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 
 func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 	key := event.Key
+	if key == input.KeyQ && event.Mods&input.ModCtrl != 0 && !event.Repeat {
+		return true, false
+	}
+	if key == input.KeyV && event.Mods&input.ModCtrl != 0 && !event.Repeat {
+		g.startPaste()
+		return false, true
+	}
+	if g.debug != nil {
+		return false, g.debug.HandleKey(event)
+	}
+
 	if event.Repeat {
 		if event.Mods == 0 {
 			switch key {
@@ -176,13 +212,6 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 		return false, true
 	}
 
-	if key == input.KeyQ && event.Mods&input.ModCtrl != 0 {
-		return true, false
-	}
-	if key == input.KeyV && event.Mods&input.ModCtrl != 0 {
-		g.startPaste()
-		return false, true
-	}
 	if event.Mods == 0 {
 		switch {
 		case key >= input.Key1 && key <= input.Key4:
@@ -221,7 +250,11 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 
 func (g *Game) startPaste() {
 	if g.clipboardBusy {
-		g.charset.AddLog("paste pending")
+		if g.debug != nil {
+			g.debug.SetStatus("paste pending", false)
+		} else {
+			g.charset.AddLog("paste pending")
+		}
 		return
 	}
 	if g.clipboardResults == nil {
@@ -260,7 +293,15 @@ func (g *Game) pollPaste() bool {
 
 func (g *Game) applyPaste(result clipboardResult) {
 	if result.err != nil {
-		g.charset.AddLog("paste error: " + shortError(result.err))
+		if g.debug != nil {
+			g.debug.SetStatus("paste: "+shortError(result.err), true)
+		} else {
+			g.charset.AddLog("paste error: " + shortError(result.err))
+		}
+		return
+	}
+	if g.debug != nil {
+		g.debug.SetPaste(result.text)
 		return
 	}
 	text := input.NormalizeNewlines(previewPrefix(result.text, maxPastePreviewBytes))
@@ -309,7 +350,11 @@ func (g *Game) setScale(scale int) {
 
 func (g *Game) redraw() {
 	g.charset.CursorVisible = g.blink.Visible()
-	g.charset.Draw(&g.renderer.Surface)
+	if g.debug != nil {
+		g.debug.Draw(&g.renderer.Surface, g.blink.Visible())
+	} else {
+		g.charset.Draw(&g.renderer.Surface)
+	}
 	g.renderer.MarkDirty()
 }
 

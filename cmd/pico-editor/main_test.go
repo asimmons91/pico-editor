@@ -48,7 +48,9 @@ func TestRunRejectsBadFlags(t *testing.T) {
 	}{
 		{name: "unknown flag", args: []string{"--nope"}},
 		{name: "invalid log level", args: []string{"--log-level", "verbose"}},
-		{name: "unexpected argument", args: []string{"cart.p8"}},
+		{name: "too many files", args: []string{"a.lua", "b.lua"}},
+		{name: "charset with file", args: []string{"--debug-charset", "a.lua"}},
+		{name: "empty file", args: []string{""}},
 		{name: "empty log level", args: []string{"--log-level", ""}},
 	}
 
@@ -238,5 +240,49 @@ func TestParseFlagsDebugCharset(t *testing.T) {
 	}
 	if !opts.debugCharset {
 		t.Error("parseFlags(--debug-charset) did not enable debugCharset")
+	}
+}
+
+func TestParseFlagsFile(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	opts, err := parseFlags([]string{"script.lua"}, &stderr)
+	if err != nil {
+		t.Fatalf("parseFlags(script.lua) error = %v; stderr: %s", err, stderr.String())
+	}
+	if opts.file != "script.lua" {
+		t.Errorf("file = %q, want script.lua", opts.file)
+	}
+	if opts.debugCharset {
+		t.Error("file argument enabled the charset screen")
+	}
+}
+
+func TestRunRejectsMissingFile(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+	logPath := filepath.Join(t.TempDir(), "pico-editor.log")
+	code := run([]string{"--log-file", logPath, "missing.lua"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("run(missing.lua) = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "missing.lua") {
+		t.Errorf("stderr = %q, want the missing path", stderr.String())
+	}
+}
+
+func TestRunRejectsCartAtStartup(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+	logPath := filepath.Join(t.TempDir(), "pico-editor.log")
+	code := run([]string{"--log-file", logPath, "cart.p8"}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("run(cart.p8) = %d, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "unsupported file type") {
+		t.Errorf("stderr = %q, want the unsupported-file message", stderr.String())
 	}
 }
