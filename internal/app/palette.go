@@ -124,7 +124,8 @@ func (g *Game) handlePalette(ev input.Event) (quit, changed bool) {
 			return false, true
 		}
 		g.palette = nil
-		return command.Run(g)
+		quit, _ := command.Run(g)
+		return quit, true
 	case input.KeyUp:
 		palette.move(-1)
 	case input.KeyDown:

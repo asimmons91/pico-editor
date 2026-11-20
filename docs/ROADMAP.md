@@ -15,6 +15,8 @@ Go: `1.27.4`, managed by mise
   coordinate systems, render pipeline, LSP transport, and dependency pins.
 - [VIM.md](VIM.md) — frozen V1 Vim command matrix. M3 must not add commands
   without updating the roadmap.
+- [INPUT.md](INPUT.md) — P8SCII input tables, mode behavior, picker, clipboard,
+  and the PICO-8 0.2.7 capture notes.
 
 ## Vision
 
