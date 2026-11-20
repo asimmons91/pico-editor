@@ -21,22 +21,32 @@ type Config struct {
 	Logger *slog.Logger
 	// Clipboard defaults to the host clipboard when nil.
 	Clipboard input.Clipboard
+	// Now supplies wall-clock time for cursor blink. Nil uses time.Now.
+	Now func() time.Time
 	// DebugCharset forces the M1 charset screen and starts with the width
 	// overlay. M1 shows the screen regardless; M2 keeps the flag.
 	DebugCharset bool
 }
 
+type clipboardResult struct {
+	text string
+	err  error
+}
+
 // Game is the root Ebitengine game. It owns no package-level state.
 type Game struct {
-	logger    *slog.Logger
-	step      func() error
-	fatalErr  error
-	source    input.Source
-	clipboard input.Clipboard
-	renderer  *Renderer
-	charset   *Charset
-	blink     *Blink
-	scale     int
+	logger           *slog.Logger
+	step             func() error
+	fatalErr         error
+	source           input.Source
+	clipboard        input.Clipboard
+	clipboardResults chan clipboardResult
+	clipboardBusy    bool
+	renderer         *Renderer
+	charset          *Charset
+	blink            *Blink
+	scale            int
+	now              func() time.Time
 }
 
 // New returns a game configured by cfg.
@@ -53,15 +63,20 @@ func New(cfg Config) *Game {
 	if cfg.DebugCharset {
 		charset.Overlay = true
 	}
-	now := time.Now()
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
 	game := &Game{
-		logger:    logger,
-		source:    input.NewEbitenSource(),
-		clipboard: clipboard,
-		renderer:  NewRenderer(CanvasWidth, CanvasHeight, logger),
-		charset:   charset,
-		blink:     NewBlink(now),
-		scale:     DefaultScale,
+		logger:           logger,
+		source:           input.NewEbitenSource(),
+		clipboard:        clipboard,
+		clipboardResults: make(chan clipboardResult, 1),
+		renderer:         NewRenderer(CanvasWidth, CanvasHeight, logger),
+		charset:          charset,
+		blink:            NewBlink(now()),
+		scale:            DefaultScale,
+		now:              now,
 	}
 	game.step = game.updateFrame
 	game.redraw()
@@ -84,12 +99,18 @@ func (g *Game) Update() (err error) {
 }
 
 func (g *Game) updateFrame() error {
-	now := time.Now()
+	now := g.now()
 	changed := g.blink.Update(now)
+	if g.pollPaste() {
+		changed = true
+	}
 	events := g.source.Poll()
 	if len(events) > 0 {
+		wasVisible := g.blink.Visible()
 		g.blink.Reset(now)
-		changed = true
+		if !wasVisible {
+			changed = true
+		}
 	}
 	for _, event := range events {
 		quit, eventChanged := g.handleEvent(event)
@@ -126,17 +147,32 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 
 func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 	key := event.Key
+	if event.Repeat {
+		if event.Mods == 0 {
+			switch key {
+			case input.KeyLeft:
+				g.charset.Move(-1, 0)
+				return false, true
+			case input.KeyRight:
+				g.charset.Move(1, 0)
+				return false, true
+			case input.KeyUp:
+				g.charset.Move(0, -1)
+				return false, true
+			case input.KeyDown:
+				g.charset.Move(0, 1)
+				return false, true
+			}
+		}
+		g.charset.AddLog(fmt.Sprintf("key %s repeat", input.FormatKey(key, event.Mods)))
+		return false, true
+	}
+
 	if key == input.KeyQ && event.Mods&input.ModCtrl != 0 {
 		return true, false
 	}
 	if key == input.KeyV && event.Mods&input.ModCtrl != 0 {
-		text, err := g.clipboard.ReadText()
-		if err != nil {
-			g.charset.AddLog("paste error: " + shortError(err))
-		} else {
-			text = input.NormalizeNewlines(text)
-			g.charset.AddLog("paste " + truncate(text, 48))
-		}
+		g.startPaste()
 		return false, true
 	}
 	if event.Mods == 0 {
@@ -171,12 +207,56 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 		}
 	}
 
-	repeat := ""
-	if event.Repeat {
-		repeat = " repeat"
-	}
-	g.charset.AddLog(fmt.Sprintf("key %s%s", input.FormatKey(key, event.Mods), repeat))
+	g.charset.AddLog(fmt.Sprintf("key %s", input.FormatKey(key, event.Mods)))
 	return false, true
+}
+
+func (g *Game) startPaste() {
+	if g.clipboardBusy {
+		g.charset.AddLog("paste pending")
+		return
+	}
+	if g.clipboardResults == nil {
+		g.clipboardResults = make(chan clipboardResult, 1)
+	}
+	g.clipboardBusy = true
+	clipboard := g.clipboard
+	results := g.clipboardResults
+	go func() {
+		result := clipboardResult{}
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					result.err = fmt.Errorf("clipboard panic: %v", recovered)
+				}
+			}()
+			result.text, result.err = clipboard.ReadText()
+		}()
+		results <- result
+	}()
+}
+
+func (g *Game) pollPaste() bool {
+	if g.clipboardResults == nil {
+		return false
+	}
+	select {
+	case result := <-g.clipboardResults:
+		g.clipboardBusy = false
+		g.applyPaste(result)
+		return true
+	default:
+		return false
+	}
+}
+
+func (g *Game) applyPaste(result clipboardResult) {
+	if result.err != nil {
+		g.charset.AddLog("paste error: " + shortError(result.err))
+		return
+	}
+	text := input.NormalizeNewlines(result.text)
+	g.charset.AddLog("paste " + truncate(text, 48))
 }
 
 func shortError(err error) string {
@@ -187,11 +267,17 @@ func shortError(err error) string {
 }
 
 func truncate(text string, limit int) string {
-	runes := []rune(text)
-	if len(runes) <= limit {
-		return fmt.Sprintf("%q", text)
+	if limit < 0 {
+		limit = 0
 	}
-	return fmt.Sprintf("%q...", string(runes[:limit]))
+	count := 0
+	for index := range text {
+		if count == limit {
+			return fmt.Sprintf("%q...", text[:index])
+		}
+		count++
+	}
+	return fmt.Sprintf("%q", text)
 }
 
 func (g *Game) setScale(scale int) {

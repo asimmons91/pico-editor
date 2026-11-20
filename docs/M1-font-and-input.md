@@ -473,14 +473,24 @@ image.
   and mouse behavior are tested without a display. `EbitenSource` is the only
   adapter that reads Ebitengine globals.
 - Clipboard access uses `golang.design/x/clipboard` `v0.11.0`, lazily
-  initialized. On GNOME Wayland the package falls back to XWayland; without a
-  data-control manager or X11 display it returns `input.ErrUnavailable` and the
-  UI degrades to internal registers.
+  initialized. Reads run on a background goroutine and are applied through a
+  channel on the Update goroutine, so a hung clipboard owner cannot block
+  drawing or input. Runtime `ErrUnavailable`/`ErrUnsupported` results are
+  mapped to `input.ErrUnavailable`. On GNOME Wayland the package falls back to
+  XWayland; without a data-control manager or X11 display the UI degrades to
+  internal registers.
 - `internal/app` always opens the charset screen in M1. `--debug-charset` is
   already parsed and retained so M2 can keep it after the editor becomes the
-  default. `1`–`4` change the window scale, `W` toggles the width overlay, `P`
-  cycles the background, arrows move the selection, and `Ctrl+V` exercises the
-  clipboard through the debug log.
+  default. `1`–`4` change the window scale, `W` toggles the width overlay
+  (pixel and cell counts), `P` cycles the background, arrows move the
+  selection, and `Ctrl+V` exercises the clipboard through the debug log.
+  Repeat events move the selection but never re-trigger one-shot commands such
+  as paste, quit, overlay, background, or scale changes. The log panel hides
+  while the selection is in the bottom two tile rows so it cannot cover the
+  selected byte.
+- `Config.Now` is injectable for deterministic blink tests. The CI workflow
+  now includes the deferred `xvfb` smoke job, which builds with
+  `CGO_ENABLED=0` and opens a real X11 window under Xvfb.
 - V1 deliberately does not use Ebitengine's experimental `exp/textinput` IME
   API. Committed text only is recorded as the accepted limitation.
 

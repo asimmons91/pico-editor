@@ -12,6 +12,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/asimmons91/pico-lsp/pkg/p8scii"
 )
 
 // Record is one P8SCII byte's 1-bit glyph data.
@@ -97,22 +99,21 @@ func parseHex(text string, bits int) (uint64, error) {
 
 func validateRecord(record Record) error {
 	switch record.Width {
-	case 4:
-		if record.Byte >= 0x80 {
-			return errors.New("width 4 is invalid for bytes 0x80-0xff")
-		}
-		for i, row := range record.Rows {
-			if row&0xf0 != 0 {
-				return fmt.Errorf("row %d has ink outside the 4-pixel width: %#02x", i, row)
-			}
-		}
-	case 8:
-		if record.Byte < 0x80 {
-			return errors.New("width 8 is invalid for bytes 0x00-0x7f")
-		}
+	case 4, 8:
 	default:
 		return fmt.Errorf("width = %d, want 4 or 8", record.Width)
 	}
+
+	limit := uint8(0x0f)
+	if record.Width == 8 {
+		limit = 0xff
+	}
+	for i, row := range record.Rows {
+		if row&^limit != 0 {
+			return fmt.Errorf("row %d has ink outside the %d-pixel width: %#02x", i, record.Width, row)
+		}
+	}
+
 	if record.Byte < 0x10 {
 		if record.Width != 4 {
 			return errors.New("control byte must use width 4")
@@ -122,6 +123,12 @@ func validateRecord(record Record) error {
 				return fmt.Errorf("control byte row %d must be blank, got %#02x", i, row)
 			}
 		}
+		return nil
+	}
+
+	want := p8scii.Lookup(record.Byte)
+	if int(record.Width) != want.Width {
+		return fmt.Errorf("width = %d, want %d from pkg/p8scii", record.Width, want.Width)
 	}
 	return nil
 }

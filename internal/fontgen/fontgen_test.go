@@ -67,7 +67,7 @@ func TestParseRejectsBadData(t *testing.T) {
 		{"field count", base + "42 4 00 00\n", "got 4 fields"},
 		{"bad hex", strings.Replace(base, "42 4 00 00 00 00 00 00", "42 4 00 00 00 00 zz 00", 1), "not a 8-bit hexadecimal"},
 		{"bad width", strings.Replace(base, "41 4 00 06 05 07 05 00", "41 5 00 06 05 07 05 00", 1), "width = 5"},
-		{"wide in narrow range", strings.Replace(base, "41 4 00 06 05 07 05 00", "41 8 00 06 05 07 05 00", 1), "width 8 is invalid"},
+		{"wide in narrow range", strings.Replace(base, "41 4 00 06 05 07 05 00", "41 8 00 06 05 07 05 00", 1), "want 4 from pkg/p8scii"},
 		{"ink outside", strings.Replace(base, "41 4 00 06 05 07 05 00", "41 4 00 16 05 07 05 00", 1), "ink outside"},
 		{"control ink", strings.Replace(base, "00 4 00 00 00 00 00 00", "00 4 01 00 00 00 00 00", 1), "must be blank"},
 	}

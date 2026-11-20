@@ -149,3 +149,27 @@ func TestTrackerInitialFocusDoesNotEmit(t *testing.T) {
 		}
 	}
 }
+
+func TestTrackerRepressRestartsDelay(t *testing.T) {
+	tracker := NewTracker()
+	tracker.Poll(t0, Snapshot{JustPressed: []Key{KeyA}, Pressed: pressed(KeyA), Focused: true})
+
+	// The release was not observed. A fresh press must get a fresh 400 ms
+	// delay and must not inherit the old repeat deadline.
+	events := tracker.Poll(t0.Add(500*time.Millisecond), Snapshot{
+		JustPressed: []Key{KeyA},
+		Pressed:     pressed(KeyA),
+		Focused:     true,
+	})
+	keyEventsNow := keyEvents(events)
+	if len(keyEventsNow) != 1 || keyEventsNow[0].Repeat {
+		t.Fatalf("re-press events = %+v, want one non-repeat key event", keyEventsNow)
+	}
+
+	if got := keyEvents(tracker.Poll(t0.Add(899*time.Millisecond), Snapshot{Pressed: pressed(KeyA), Focused: true})); len(got) != 0 {
+		t.Fatalf("re-press repeated before its own delay: %+v", got)
+	}
+	if got := keyEvents(tracker.Poll(t0.Add(900*time.Millisecond), Snapshot{Pressed: pressed(KeyA), Focused: true})); len(got) != 1 || !got[0].Repeat {
+		t.Fatalf("re-press at 900ms = %+v, want one repeat", got)
+	}
+}

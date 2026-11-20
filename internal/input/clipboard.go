@@ -57,6 +57,9 @@ func (c *SystemClipboard) ReadText() (string, error) {
 	if errors.Is(err, clipboard.ErrNoData) {
 		return "", nil
 	}
+	if errors.Is(err, clipboard.ErrUnavailable) || errors.Is(err, clipboard.ErrUnsupported) {
+		return "", fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
 	if err != nil {
 		return "", fmt.Errorf("read clipboard: %w", err)
 	}
@@ -70,6 +73,9 @@ func (c *SystemClipboard) WriteText(text string) error {
 		return err
 	}
 	if err := c.write(context.Background(), []byte(text)); err != nil {
+		if errors.Is(err, clipboard.ErrUnavailable) || errors.Is(err, clipboard.ErrUnsupported) {
+			return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
 		return fmt.Errorf("write clipboard: %w", err)
 	}
 	return nil

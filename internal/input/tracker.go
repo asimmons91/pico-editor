@@ -82,9 +82,10 @@ func (t *Tracker) Poll(now time.Time, snap Snapshot) []Event {
 			Mods: snap.Mods,
 		})
 		if isRepeatable(key) {
-			if _, exists := t.held[key]; !exists {
-				t.held[key] = now.Add(RepeatDelay)
-			}
+			// A release and re-press between polls leaves the key in held
+			// without a visible release. Always restart the delay on a new
+			// press so the fresh press gets its own full RepeatDelay.
+			t.held[key] = now.Add(RepeatDelay)
 		}
 	}
 

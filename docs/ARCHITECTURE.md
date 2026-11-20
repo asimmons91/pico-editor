@@ -363,9 +363,11 @@ Development rules:
   from PICO-8 0.2.7 and verified pixel-for-pixel against a PICO-8 screenshot;
   see `docs/spikes/M1-input.md`.
 - Clipboard access uses `golang.design/x/clipboard` `v0.11.0` behind
-  `input.Clipboard`, initialized lazily. On GNOME Wayland the package falls back
-  to XWayland; without a data-control manager or X11 display it returns a typed
-  unavailable error and the UI degrades to internal registers.
+  `input.Clipboard`, initialized lazily. Reads run on a background goroutine and
+  are applied through a channel on the Update goroutine. On GNOME Wayland the
+  package falls back to XWayland; without a data-control manager or X11 display
+  it returns a typed unavailable error and the UI degrades to internal
+  registers.
 - Ebitengine 2.10.6's experimental `exp/textinput` package is not used. V1
   accepts committed text only and does not promise preedit or candidate-window
   rendering.

@@ -41,7 +41,11 @@ the milestone owner (see [Open manual checks](#open-manual-checks)).
 
 The adapter is lazy: `clipboard.Init` runs on the first paste, not at startup.
 A headless run therefore starts normally and returns a typed
-`input.ErrUnavailable` only when the user tries to paste.
+`input.ErrUnavailable` only when the user tries to paste. Reads run on a
+background goroutine and are delivered to the Update goroutine through a
+buffered channel, so a hung X11 owner or Wayland data-control offer cannot
+freeze drawing or key handling. Runtime `clipboard.ErrUnavailable` and
+`ErrUnsupported` results are also mapped to `input.ErrUnavailable`.
 
 Real round-trips were run with the editor's `SystemClipboard` (write a token,
 read it back, restore the previous text):

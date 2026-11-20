@@ -68,15 +68,15 @@ func (c *Charset) Draw(s *render.Surface) {
 		}
 		s.DrawText(x+2, y+9, fmt.Sprintf("%02X", b), fg, bg)
 		if c.Overlay {
+			pixels, cells := widthLabels(meta.Width)
+			s.DrawText(x+12, y+2, pixels, accent, bg)
+			s.DrawText(x+12, y+9, cells, accent, bg)
+			// Draw borders after the labels so their background cells do not
+			// erase the right and bottom edges.
 			s.FillRect(x, y, charsetTile, 1, grid)
 			s.FillRect(x, y+charsetTile-1, charsetTile, 1, grid)
 			s.FillRect(x, y, 1, charsetTile, grid)
 			s.FillRect(x+charsetTile-1, y, 1, charsetTile, grid)
-			width := "4"
-			if meta.Width == 8 {
-				width = "8"
-			}
-			s.DrawText(x+12, y+2, width, accent, bg)
 		}
 	}
 
@@ -94,7 +94,7 @@ func (c *Charset) Draw(s *render.Surface) {
 	s.FillRect(x, y, 1, charsetTile, accent)
 	s.FillRect(x+charsetTile-1, y, 1, charsetTile, accent)
 
-	if len(c.Log) == 0 {
+	if !c.showLog() {
 		return
 	}
 	meta := p8scii.Lookup(c.Selected)
@@ -103,6 +103,16 @@ func (c *Charset) Draw(s *render.Surface) {
 	for i, line := range c.Log {
 		s.DrawText(2, 238+i*6, line, 6, 0)
 	}
+}
+
+func (c *Charset) showLog() bool {
+	return len(c.Log) > 0 && c.Selected < 0xe0
+}
+
+// widthLabels returns the overlay's pixel and cell counts. Control bytes are
+// zero pixels and zero cells.
+func widthLabels(width int) (pixels, cells string) {
+	return fmt.Sprintf("%d", width), fmt.Sprintf("%d", width/font.NarrowWidth)
 }
 
 func contrast(index, bg uint8) uint8 {

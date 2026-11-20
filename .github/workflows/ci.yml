@@ -36,3 +36,50 @@ jobs:
 
       - name: Check
         run: mise run check
+
+  xvfb-smoke:
+    name: xvfb smoke
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+      GOFLAGS: "-mod=readonly"
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Install tools from mise.toml
+        uses: jdx/mise-action@v5
+
+      - name: Cache Go modules
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth libgl1 libgl1-mesa-dri
+
+      - name: Build
+        run: mise run build
+
+      - name: Open a window under Xvfb
+        shell: bash
+        run: |
+          set +e
+          timeout 10 xvfb-run -a ./bin/pico-editor --log-file "$RUNNER_TEMP/pico-editor-smoke.log"
+          status=$?
+          set -e
+          if [ "$status" -ne 124 ]; then
+            echo "expected the editor to run until timeout; exit=$status"
+            cat "$RUNNER_TEMP/pico-editor-smoke.log" 2>/dev/null || true
+            exit 1
+          fi
+          grep -q 'msg=starting' "$RUNNER_TEMP/pico-editor-smoke.log"
+          if grep -q 'level=ERROR' "$RUNNER_TEMP/pico-editor-smoke.log"; then
+            cat "$RUNNER_TEMP/pico-editor-smoke.log"
+            exit 1
+          fi
