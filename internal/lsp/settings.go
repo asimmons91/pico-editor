@@ -2,6 +2,8 @@ package lsp
 
 import (
 	"go.lsp.dev/protocol"
+
+	"github.com/asimmons91/pico-lsp/pkg/glyphs"
 )
 
 // Settings are the pico8 initialization options the editor sends. They mirror
@@ -11,6 +13,9 @@ type Settings struct {
 	TypeChecking string
 	InlayHints   bool
 	MaxProblems  int
+	// Glyphs carries custom picker entries from settings. M7 loads them from
+	// TOML; the server owns validation, aliases, and insertion text.
+	Glyphs []glyphs.Definition
 }
 
 // DefaultSettings matches pico-lsp's current defaults.
@@ -37,11 +42,15 @@ func (s Settings) normalize() Settings {
 
 func (s Settings) values() map[string]any {
 	s = s.normalize()
-	return map[string]any{
+	values := map[string]any{
 		"typeChecking": s.TypeChecking,
 		"inlayHints":   s.InlayHints,
 		"maxProblems":  s.MaxProblems,
 	}
+	if len(s.Glyphs) > 0 {
+		values["glyphs"] = s.Glyphs
+	}
+	return values
 }
 
 func (s Settings) initializationOptions() protocol.LSPAny {
