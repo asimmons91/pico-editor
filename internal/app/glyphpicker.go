@@ -126,6 +126,11 @@ func glyphMatches(entry lsp.Glyph, query string) bool {
 // OpenGlyphPicker opens the picker or requests a catalog if LSP is still
 // starting.
 func (s *Session) OpenGlyphPicker() bool {
+	s.clearP8Pending()
+	s.glyphPickerPending = false
+	if ed := s.CurrentEditor(); ed != nil && s.Vim != nil {
+		s.Vim.ResetOperator()
+	}
 	if s.Vim != nil && s.Vim.Mode == vim.ModeCommandLine {
 		s.SetStatus("glyph picker is not available in command-line mode", true)
 		return true
@@ -220,6 +225,13 @@ func (s *Session) handleGlyphPicker(ev input.Event) bool {
 	case input.KindKeyDown:
 	default:
 		return true
+	}
+	if ev.Repeat {
+		switch ev.Key {
+		case input.KeyUp, input.KeyDown, input.KeyPageUp, input.KeyPageDown:
+		default:
+			return true
+		}
 	}
 	switch ev.Key {
 	case input.KeyEsc:

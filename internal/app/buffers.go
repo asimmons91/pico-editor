@@ -100,6 +100,8 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 		return
 	}
 	s.clearLSPTransients()
+	s.GlyphPicker = nil
+	s.glyphPickerPending = false
 	ed := buffer.Editor
 	ed.Viewport.Width = GridColumns
 	ed.Viewport.ScrollOff = 2

@@ -46,7 +46,11 @@ func (g *Game) buildCommands() []Command {
 			return quit, changed
 		}},
 		{ID: "file.close", Title: "File: close", Category: "File", Key: ":q", Enabled: currentBuffer, Run: func(g *Game) (bool, bool) {
-			return g.applyActions([]vim.Action{{Kind: vim.ActionQuit}})
+			if g.saveBusy {
+				g.session.SetStatus("save in progress; close again when it finishes", true)
+				return false, true
+			}
+			return g.session.RequestQuit(false)
 		}},
 		{ID: "file.reload", Title: "File: reload", Category: "File", Key: ":e", Enabled: currentBuffer, Run: func(g *Game) (bool, bool) {
 			return false, g.session.OpenPath("", false)

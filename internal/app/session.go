@@ -174,22 +174,32 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 			s.suppressText = 0
 		}
 	}
+	if s.glyphPickerPending && (ev.Kind == input.KindKeyDown || ev.Kind == input.KindText) {
+		// Any input after "loading glyph catalog" cancels the deferred open.
+		s.glyphPickerPending = false
+	}
 	if s.Dialog != nil {
+		s.clearP8Pending()
 		return false, s.handleDialog(ev), nil
 	}
-	if s.Tree.Visible && s.Tree.Focused {
-		return false, s.handleTree(ev), nil
+	if s.GlyphPicker != nil {
+		s.clearP8Pending()
+		return false, s.handleGlyphPicker(ev), nil
 	}
 	if s.Help != nil {
+		s.clearP8Pending()
 		return false, s.handleHelp(ev), nil
 	}
 	if s.DiagList != nil {
+		s.clearP8Pending()
 		return false, s.handleDiagnosticList(ev), nil
 	}
-	if s.GlyphPicker != nil {
-		return false, s.handleGlyphPicker(ev), nil
+	if s.Tree.Visible && s.Tree.Focused {
+		s.clearP8Pending()
+		return false, s.handleTree(ev), nil
 	}
 	if handled := s.handleLSPInput(ev); handled {
+		s.clearP8Pending()
 		return false, true, nil
 	}
 	if s.Vim.Mode == vim.ModeInsert {
@@ -276,6 +286,12 @@ func (s *Session) blocksTabSeparator(ev input.Event) bool {
 	return false
 }
 
+func (s *Session) clearP8Pending() {
+	if s.P8 != nil {
+		s.P8.ClearPending()
+	}
+}
+
 func (s *Session) applyVimResult(result vim.Result) (quit bool) {
 	if result.Notify != "" {
 		s.Status = result.Notify
@@ -291,6 +307,12 @@ func (s *Session) CompleteClipboardRead(text string, err error) (changed bool, a
 		return false, nil
 	}
 	text = strings.TrimPrefix(text, "\ufeff")
+	if target := s.Vim.PendingPasteTarget(); target != nil && s.bufferForEditor(target) == nil {
+		s.Vim.CancelPendingPaste()
+		s.SetStatus("clipboard paste cancelled: buffer closed", true)
+		return true, nil
+	}
+	s.clearLSPTransients()
 	result := s.Vim.CompleteClipboardRead(text, err, ed)
 	s.applyVimResult(result)
 	if err == nil {
@@ -298,11 +320,26 @@ func (s *Session) CompleteClipboardRead(text string, err error) (changed bool, a
 			s.SetStatus(fmt.Sprintf("pasted %d unknown rune(s); preserved", count), true)
 		}
 	}
-	s.syncCurrentCart()
-	s.syncLSPCurrent()
+	s.syncAllBuffers()
 	s.tokenDue = time.Now().Add(120 * time.Millisecond)
 	s.cartInfoDue = time.Now().Add(300 * time.Millisecond)
 	return true, result.Actions
+}
+
+func (s *Session) bufferForEditor(ed *editor.Editor) *SessionBuffer {
+	for _, buffer := range s.Buffers {
+		if buffer.Editor == ed {
+			return buffer
+		}
+	}
+	return nil
+}
+
+func (s *Session) syncAllBuffers() {
+	for _, buffer := range s.Buffers {
+		s.syncCart(buffer)
+		s.syncLSPDocument(buffer)
+	}
 }
 
 func unknownGlyphCount(text string) int {
@@ -598,6 +635,10 @@ func (s *Session) ShowBufferList() bool {
 func (s *Session) OpenHelp(topic string) bool {
 	if topic == "" {
 		topic = "keys"
+	}
+	s.glyphPickerPending = false
+	if ed := s.CurrentEditor(); ed != nil && s.Vim != nil {
+		s.Vim.ResetOperator()
 	}
 	title, lines := helpTopic(topic)
 	s.Help = &HelpOverlay{Title: title, Lines: lines}

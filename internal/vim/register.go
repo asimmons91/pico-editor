@@ -195,6 +195,18 @@ func (v *Vim) finishClipboardPaste(request *pasteRequest, value registerValue, e
 	if request.editor != nil {
 		target = request.editor
 	}
+	if request.strictVersion && request.version != 0 && target.Buffer.Version != request.version {
+		v.info("clipboard paste skipped: buffer changed")
+		return
+	}
+	if request.insert && v.Mode != ModeInsert {
+		v.info("clipboard paste skipped: left insert mode")
+		return
+	}
+	if request.visual && !v.Mode.Visual() {
+		v.info("clipboard paste skipped: left visual mode")
+		return
+	}
 	inInsert := v.Mode == ModeInsert
 	current := ed.Cursor.Pos
 	target.SetCursor(request.pos)

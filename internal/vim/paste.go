@@ -22,6 +22,7 @@ func (v *Vim) paste(ed *editor.Editor, before bool) {
 			count:    count,
 			register: selector,
 			editor:   ed,
+			version:  ed.Buffer.Version,
 			pos:      ed.Cursor.Pos,
 		}
 		return
@@ -56,12 +57,14 @@ func (v *Vim) ClipboardPaste(ed *editor.Editor) Result {
 		return v.finish()
 	}
 	request := &pasteRequest{
-		before:   true,
-		insert:   v.Mode == ModeInsert,
-		count:    1,
-		register: '+',
-		editor:   ed,
-		pos:      ed.Cursor.Pos,
+		before:        true,
+		insert:        v.Mode == ModeInsert,
+		count:         1,
+		register:      '+',
+		editor:        ed,
+		version:       ed.Buffer.Version,
+		strictVersion: true,
+		pos:           ed.Cursor.Pos,
 	}
 	if v.Mode.Visual() {
 		request.visual = true
@@ -88,6 +91,20 @@ func (v *Vim) VisualClipboardYank(ed *editor.Editor) Result {
 	v.Register = '+'
 	v.executeVisualOperator('y', ed)
 	return v.finish()
+}
+
+// PendingPasteTarget returns the editor a deferred clipboard paste belongs to.
+func (v *Vim) PendingPasteTarget() *editor.Editor {
+	if v.pendingPaste == nil {
+		return nil
+	}
+	return v.pendingPaste.editor
+}
+
+// CancelPendingPaste drops a deferred clipboard paste without applying it.
+func (v *Vim) CancelPendingPaste() {
+	v.clipboardBusy = false
+	v.pendingPaste = nil
 }
 
 func (v *Vim) insertClipboardValue(ed *editor.Editor, value registerValue, pos editor.Pos) {

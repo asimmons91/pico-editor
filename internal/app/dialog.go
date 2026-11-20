@@ -37,6 +37,7 @@ type Dialog struct {
 
 // ShowDialog opens a modal dialog and selects defaultIndex.
 func (s *Session) ShowDialog(kind DialogKind, title, message string, options []DialogOption, defaultIndex int) {
+	s.glyphPickerPending = false
 	if len(options) == 0 {
 		options = []DialogOption{{Label: "OK"}}
 	}

@@ -25,6 +25,12 @@ type Palette struct {
 func (g *Game) openPalette() {
 	if g.session != nil {
 		g.session.clearLSPTransients()
+		g.session.clearP8Pending()
+		g.session.glyphPickerPending = false
+		if ed := g.session.CurrentEditor(); ed != nil {
+			g.session.Vim.ResetOperator()
+		}
+		g.session.GlyphPicker = nil
 		g.session.Help = nil
 		g.session.DiagList = nil
 		g.session.Tree.Focused = false
@@ -121,7 +127,19 @@ func (g *Game) handlePalette(ev input.Event) (quit, changed bool) {
 	default:
 		return false, false
 	}
+	if ev.Repeat {
+		switch ev.Key {
+		case input.KeyUp, input.KeyDown, input.KeyPageUp, input.KeyPageDown:
+		default:
+			return false, true
+		}
+	}
 	switch ev.Key {
+	case input.KeyQ:
+		if ev.Mods&input.ModCtrl != 0 {
+			g.palette = nil
+			return g.requestQuitAll()
+		}
 	case input.KeyEsc:
 		g.palette = nil
 	case input.KeyEnter:

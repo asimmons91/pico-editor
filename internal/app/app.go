@@ -315,7 +315,16 @@ func (g *Game) update() error {
 
 func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 	if g.palette != nil {
-		return g.handlePalette(event)
+		if g.session != nil && g.session.DialogOpen() {
+			// An async save conflict can open a dialog after the palette was
+			// shown; let the dialog take the next event.
+			g.palette = nil
+		} else if event.Kind == input.KindFocus {
+			// Do not swallow focus refresh while the palette is open.
+			g.palette = nil
+		} else {
+			return g.handlePalette(event)
+		}
 	}
 	switch event.Kind {
 	case input.KindFocus:
@@ -403,6 +412,9 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 		return true, false
 	}
 	if g.session != nil {
+		if g.session.GlyphPicker != nil {
+			return g.handleSessionEvent(event)
+		}
 		if g.session.DialogOpen() {
 			return g.handleSessionEvent(event)
 		}

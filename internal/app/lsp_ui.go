@@ -60,6 +60,7 @@ func (s *Session) moveCompletion(delta int) {
 }
 
 func (s *Session) acceptCompletion() {
+	s.clearP8Pending()
 	popup := s.Completion
 	s.Completion = nil
 	if popup == nil || len(popup.Items) == 0 {
