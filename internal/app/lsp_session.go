@@ -82,6 +82,8 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 			s.Signature = nil
 			s.Hover = nil
 			s.LSPGlyphs = nil
+			s.GlyphPicker = nil
+			s.glyphPickerPending = false
 			for _, buffer := range s.Buffers {
 				buffer.LSPCartAsked = -1
 			}
@@ -105,6 +107,8 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 		s.Signature = nil
 		s.Hover = nil
 		s.LSPGlyphs = nil
+		s.GlyphPicker = nil
+		s.glyphPickerPending = false
 		for _, buffer := range s.Buffers {
 			buffer.LSPCartAsked = -1
 		}
@@ -140,6 +144,14 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 		return true
 	case lsp.EventGlyphs:
 		s.LSPGlyphs = append([]lsp.Glyph(nil), event.Glyphs...)
+		if s.glyphPickerPending {
+			s.glyphPickerPending = false
+			if len(s.LSPGlyphs) == 0 {
+				s.SetStatus("glyph catalog is empty", true)
+			} else {
+				s.GlyphPicker = NewGlyphPicker(s.LSPGlyphs)
+			}
+		}
 		return true
 	case lsp.EventSemanticRefresh:
 		for _, buffer := range s.Buffers {
@@ -260,7 +272,7 @@ func (s *Session) afterInput(ev input.Event) {
 			return
 		}
 		last := ev.Runes[len(ev.Runes)-1]
-		if isCompletionTrigger(last) {
+		if isCompletionTrigger(last) || (last == '-' && s.atGlyphDashTrigger(buffer.Editor)) {
 			s.scheduleCompletion(now, string(last), false)
 		} else if s.Completion != nil {
 			s.Completion = nil
@@ -342,7 +354,27 @@ func (s *Session) completionPrefix(ed *editor.Editor) string {
 	for start > 0 && isIdentifierRune(line[start-1]) {
 		start--
 	}
+	// pico8-ls compatibility aliases use p8-. Include that prefix so the
+	// server sees the same trigger the user typed.
+	if start >= 3 && string(line[start-3:start]) == "p8-" {
+		start -= 3
+	}
 	return string(line[start:pos.Rune])
+}
+
+func (s *Session) atGlyphDashTrigger(ed *editor.Editor) bool {
+	if ed == nil {
+		return false
+	}
+	pos := ed.Cursor.Pos
+	if pos.Line < 0 || pos.Line >= len(ed.Buffer.Lines) {
+		return false
+	}
+	line := []rune(ed.Buffer.Lines[pos.Line])
+	if pos.Rune < 3 || pos.Rune > len(line) {
+		return false
+	}
+	return string(line[pos.Rune-3:pos.Rune]) == "p8-"
 }
 
 func isCompletionTrigger(r rune) bool {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/asimmons91/pico-editor/internal/cart"
 	"github.com/asimmons91/pico-editor/internal/editor"
+	"github.com/asimmons91/pico-editor/internal/font"
 	"github.com/asimmons91/pico-editor/internal/fsutil"
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/lsp"
@@ -36,6 +37,7 @@ type Session struct {
 	Buffers []*SessionBuffer
 	Current int
 	Vim     *vim.Vim
+	P8      *input.P8Input
 	Help    *HelpOverlay
 	Tree    TreeState
 	Dialog  *Dialog
@@ -55,10 +57,11 @@ type Session struct {
 	LSPCartInfo     map[string]lsp.CartInfo
 	LSPGlyphs       []lsp.Glyph
 
-	Completion *CompletionPopup
-	Hover      *HoverPopup
-	Signature  *SignaturePopup
-	DiagList   *DiagnosticList
+	Completion  *CompletionPopup
+	Hover       *HoverPopup
+	Signature   *SignaturePopup
+	DiagList    *DiagnosticList
+	GlyphPicker *GlyphPicker
 
 	logger         *slog.Logger
 	quit           bool
@@ -74,6 +77,7 @@ type Session struct {
 	signatureRetrigger bool
 	cartInfoDue        time.Time
 	tokenDue           time.Time
+	glyphPickerPending bool
 }
 
 // SessionBuffer is one open file. Cart is non-nil for .p8 buffers; its Code
@@ -182,8 +186,35 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 	if s.DiagList != nil {
 		return false, s.handleDiagnosticList(ev), nil
 	}
+	if s.GlyphPicker != nil {
+		return false, s.handleGlyphPicker(ev), nil
+	}
 	if handled := s.handleLSPInput(ev); handled {
 		return false, true, nil
+	}
+	if s.Vim.Mode == vim.ModeInsert {
+		if s.P8 != nil {
+			switch ev.Kind {
+			case input.KindKeyDown:
+				handled := false
+				if ev.Repeat {
+					handled = s.P8.HandleRepeat(ev.Key, ev.Mods)
+				} else {
+					handled = s.P8.HandleKey(ev.Key, ev.Mods)
+				}
+				if handled {
+					return false, true, nil
+				}
+			case input.KindText:
+				runes, handled := s.P8.TransformText(ev.Runes, ev.Mods)
+				if handled {
+					return false, true, nil
+				}
+				ev.Runes = runes
+			}
+		}
+	} else if s.P8 != nil {
+		s.P8.Reset()
 	}
 	if ev.Kind == input.KindText && s.blocksTabSeparator(ev) {
 		s.SetStatus("cannot create a -->8 tab separator in insert mode", true)
@@ -197,6 +228,9 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 	s.applyVimResult(result)
 	s.syncCurrentCart()
 	s.afterInput(ev)
+	if s.P8 != nil && s.Vim.Mode != vim.ModeInsert {
+		s.P8.Reset()
+	}
 	return false, true, result.Actions
 }
 
@@ -258,10 +292,49 @@ func (s *Session) CompleteClipboardRead(text string, err error) (changed bool, a
 	}
 	result := s.Vim.CompleteClipboardRead(text, err, ed)
 	s.applyVimResult(result)
+	if err == nil {
+		if count := unknownGlyphCount(text); count > 0 {
+			s.SetStatus(fmt.Sprintf("pasted %d unknown rune(s); preserved", count), true)
+		}
+	}
 	s.syncCurrentCart()
 	s.syncLSPCurrent()
 	s.tokenDue = time.Now().Add(120 * time.Millisecond)
 	s.cartInfoDue = time.Now().Add(300 * time.Millisecond)
+	return true, result.Actions
+}
+
+func unknownGlyphCount(text string) int {
+	count := 0
+	for cluster := range font.Clusters(text) {
+		if !cluster.Known {
+			count++
+		}
+	}
+	return count
+}
+
+// ClipboardPaste requests a Ctrl+Shift+V paste in insert or visual mode.
+func (s *Session) ClipboardPaste() (bool, []vim.Action) {
+	ed := s.CurrentEditor()
+	if ed == nil || s.Vim == nil {
+		return false, nil
+	}
+	result := s.Vim.ClipboardPaste(ed)
+	s.applyVimResult(result)
+	s.syncCurrentCart()
+	return true, result.Actions
+}
+
+// VisualClipboardYank writes the visual selection to the system clipboard.
+func (s *Session) VisualClipboardYank() (bool, []vim.Action) {
+	ed := s.CurrentEditor()
+	if ed == nil || s.Vim == nil {
+		return false, nil
+	}
+	result := s.Vim.VisualClipboardYank(ed)
+	s.applyVimResult(result)
+	s.syncCurrentCart()
 	return true, result.Actions
 }
 
@@ -682,6 +755,9 @@ func (s *Session) Draw(surface *render.Surface, cursorVisible bool) {
 	if s.DiagList != nil {
 		s.drawDiagnosticList(surface)
 	}
+	if s.GlyphPicker != nil {
+		s.drawGlyphPicker(surface)
+	}
 	if s.Tree.Visible {
 		s.drawTree(surface)
 	}
@@ -725,10 +801,16 @@ func helpTopic(topic string) (string, []string) {
 	switch topic {
 	case "input":
 		return "Help: input", []string{
-			"P8SCII input modes arrive in M6.",
-			"Shift+letter glyph insertion, Ctrl+J/K kana, and Ctrl+P",
-			"literal mode will be documented in docs/INPUT.md.",
+			"Insert mode is always authentic PICO-8 input.",
+			"Shift+letter inserts glyphs 0x80-0x99 (A=█ B=▒ C=🐱 ...).",
+			"Ctrl+J hiragana: type romaji (ka, kya, sha, ltsu).",
+			"Ctrl+K katakana: same romaji, plus Shift+0..9 symbols.",
+			"Ctrl+P puny: unshifted=uppercase ASCII, Shift=standard letters.",
+			"Ctrl+J/K/P are mutually exclusive; Esc leaves the mode.",
+			"Ctrl+Shift+G or :glyph opens the searchable glyph picker.",
+			"Ctrl+Shift+V pastes; Ctrl+Shift+C copies in visual mode.",
 			"Normal-mode Vim Shift commands are never converted.",
+			"See docs/INPUT.md for tables and the uppercase workflow.",
 		}
 	case "lsp":
 		return "Help: lsp", []string{

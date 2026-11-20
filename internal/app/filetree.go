@@ -119,6 +119,21 @@ func (s *Session) selectTreeIndex(index int, rows []treeRow) {
 	s.Tree.Top = max(0, s.Tree.Top)
 }
 
+// RefreshTree rescans the workspace and keeps the current selection when it
+// still exists.
+func (s *Session) RefreshTree() bool {
+	if s.Workspace == nil {
+		return false
+	}
+	if err := s.Workspace.Refresh(); err != nil {
+		s.SetStatus("tree refresh: "+err.Error(), true)
+		return true
+	}
+	s.Tree.Init(s)
+	s.SetStatus("tree refreshed", false)
+	return true
+}
+
 // ToggleTree implements Ctrl+Shift+B. A visible but unfocused tree is focused;
 // a focused tree closes; a hidden tree opens and focuses.
 func (s *Session) ToggleTree() bool {
