@@ -15,6 +15,24 @@ type atomicOps struct {
 	syncDir    func(dir string) error
 }
 
+// CommitError reports a failure after the new file was already renamed into
+// place. The target contains the new bytes, but durability could not be
+// confirmed.
+type CommitError struct {
+	Err error
+}
+
+func (e *CommitError) Error() string {
+	return "file committed but not durably synced: " + e.Err.Error()
+}
+
+// Unwrap exposes the underlying sync error.
+func (e *CommitError) Unwrap() error {
+	return e.Err
+}
+
+const chmodBits = fs.ModePerm | fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky
+
 var defaultOps = atomicOps{
 	createTemp: os.CreateTemp,
 	rename:     os.Rename,
@@ -47,12 +65,13 @@ func atomicWrite(path string, data []byte, mode fs.FileMode, ops atomicOps) erro
 			return fmt.Errorf("%s is a directory", target)
 		}
 		if mode == 0 {
-			mode = info.Mode().Perm()
+			mode = info.Mode() & chmodBits
 		}
 	}
 	if mode == 0 {
 		mode = 0o644
 	}
+	mode &= chmodBits
 
 	temp, err := ops.createTemp(dir, "."+filepath.Base(target)+".tmp-*")
 	if err != nil {
@@ -80,7 +99,7 @@ func atomicWrite(path string, data []byte, mode fs.FileMode, ops atomicOps) erro
 			return err
 		}
 	}
-	if err := temp.Chmod(mode.Perm()); err != nil {
+	if err := temp.Chmod(mode); err != nil {
 		_ = temp.Close()
 		return fmt.Errorf("chmod temporary file %s: %w", tempPath, err)
 	}
@@ -92,7 +111,7 @@ func atomicWrite(path string, data []byte, mode fs.FileMode, ops atomicOps) erro
 	}
 	renamed = true
 	if err := ops.syncDir(dir); err != nil {
-		return err
+		return &CommitError{Err: err}
 	}
 	return nil
 }

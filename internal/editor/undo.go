@@ -13,9 +13,10 @@ type Change struct {
 	After   Pos
 }
 
-// Empty reports whether the change contains no textual edit.
+// Empty reports whether the change contains no textual edit, including a
+// replacement whose old and new text are identical.
 func (c Change) Empty() bool {
-	return c.OldText == "" && c.NewText == ""
+	return c.OldText == c.NewText
 }
 
 // UndoStack is a linear undo/redo history with a bounded size.

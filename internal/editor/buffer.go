@@ -17,6 +17,9 @@ import (
 // maxFileSize is the M2 open limit. Cart-sized Lua files are far smaller.
 const maxFileSize = 2 * 1024 * 1024
 
+// modeBits are the mode bits os.Chmod preserves on Unix.
+const modeBits = os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+
 var utf8BOM = []byte{0xef, 0xbb, 0xbf}
 
 // Buffer is a line-based text buffer with no line terminators stored in Lines.
@@ -48,14 +51,22 @@ type diskState struct {
 	known   bool
 	size    int64
 	modTime time.Time
+	mode    os.FileMode
 	hash    [sha256.Size]byte
+}
+
+func isCartPath(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.HasSuffix(lower, ".p8") || strings.HasSuffix(lower, ".p8.png")
 }
 
 // Open reads an existing text file. Cart files are rejected until the M4 cart
 // adapter can preserve non-code sections.
 func Open(path string) (*Buffer, error) {
-	lower := strings.ToLower(path)
-	if strings.HasSuffix(lower, ".p8") || strings.HasSuffix(lower, ".p8.png") {
+	if isCartPath(path) {
+		return nil, pathError("open", path, ErrUnsupportedFile)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(path); resolveErr == nil && isCartPath(resolved) {
 		return nil, pathError("open", path, ErrUnsupportedFile)
 	}
 
@@ -65,6 +76,9 @@ func Open(path string) (*Buffer, error) {
 	}
 	if info.IsDir() {
 		return nil, pathError("open", path, errors.New("is a directory"))
+	}
+	if !info.Mode().IsRegular() {
+		return nil, pathError("open", path, ErrNotRegularFile)
 	}
 	if info.Size() > maxFileSize {
 		return nil, pathError("open", path, ErrTooLarge)
@@ -94,13 +108,14 @@ func Open(path string) (*Buffer, error) {
 		HadBOM:          hadBOM,
 		Version:         1,
 		SavedVersion:    1,
-		Mode:            info.Mode().Perm(),
+		Mode:            info.Mode() & modeBits,
 		TabWidth:        2,
 		workspaceRoot:   filepath.Dir(absolute),
 		disk: diskState{
 			known:   true,
 			size:    info.Size(),
 			modTime: info.ModTime(),
+			mode:    info.Mode() & modeBits,
 			hash:    sha256.Sum256(data),
 		},
 	}
@@ -214,8 +229,12 @@ func (b *Buffer) Dirty() bool {
 	return b.textHash() != b.savedHash
 }
 
-// MarkSaved records the current text as the save point.
+// MarkSaved records the current text as the save point. It invalidates cached
+// text data first, so callers that load Lines directly (for example the M4 cart
+// adapter) get a correct hash rather than a stale one.
 func (b *Buffer) MarkSaved() {
+	b.hashValid = false
+	b.indexValid = false
 	b.savedHash = b.textHash()
 	b.SavedVersion = b.Version
 }
@@ -235,11 +254,19 @@ func (b *Buffer) invalidate() {
 }
 
 // Save writes the buffer atomically. It refuses to overwrite a file that
-// changed since open/last save and refuses read-only files and symlink targets
-// outside the M2 workspace root (the file's parent directory).
+// changed since open/last save and refuses read-only files, cart paths, and
+// symlink targets outside the M2 workspace root (the file's parent directory).
+// An LF file whose line content ends in CR cannot be written unambiguously; it
+// returns ErrAmbiguousCR instead of creating bytes that would reopen as CRLF.
 func (b *Buffer) Save() error {
 	if b.Path == "" {
 		return ErrNoPath
+	}
+	if isCartPath(b.Path) {
+		return pathError("save", b.Path, ErrUnsupportedFile)
+	}
+	if b.hasAmbiguousCR() {
+		return pathError("save", b.Path, ErrAmbiguousCR)
 	}
 	if b.disk.known {
 		if err := b.checkExternal(); err != nil {
@@ -255,21 +282,50 @@ func (b *Buffer) Save() error {
 		return err
 	}
 	data := b.encode()
-	if err := fsutil.AtomicWrite(target, data, b.Mode); err != nil {
-		return pathError("save", b.Path, err)
+	return b.finishWrite(target, data, fsutil.AtomicWrite(target, data, b.Mode))
+}
+
+func (b *Buffer) hasAmbiguousCR() bool {
+	if b.Newline != "\n" {
+		return false
+	}
+	for i, line := range b.Lines {
+		if !strings.HasSuffix(line, "\r") {
+			continue
+		}
+		if i < len(b.Lines)-1 || b.TrailingNewline {
+			return true
+		}
+	}
+	return false
+}
+
+// finishWrite records the result of the atomic write. A CommitError means the
+// target was already replaced but a post-rename step failed; the bytes are on
+// disk, so the save point and disk metadata are updated before returning the
+// durability error. This keeps the next save retryable instead of reporting a
+// false ErrExternalChange forever.
+func (b *Buffer) finishWrite(target string, data []byte, writeErr error) error {
+	var committed *fsutil.CommitError
+	if writeErr != nil && !errors.As(writeErr, &committed) {
+		return pathError("save", b.Path, writeErr)
 	}
 
 	b.MarkSaved()
 	if info, statErr := os.Stat(target); statErr == nil {
+		b.Mode = info.Mode() & modeBits
 		b.disk = diskState{
 			known:   true,
 			size:    info.Size(),
 			modTime: info.ModTime(),
+			mode:    b.Mode,
 			hash:    sha256.Sum256(data),
 		}
-		b.Mode = info.Mode().Perm()
 	} else {
 		b.disk.known = false
+	}
+	if writeErr != nil {
+		return pathError("save", b.Path, writeErr)
 	}
 	return nil
 }
@@ -310,7 +366,8 @@ func (b *Buffer) checkExternal() error {
 	if err != nil {
 		return pathError("save", b.Path, errors.Join(ErrExternalChange, err))
 	}
-	if info.Size() != b.disk.size || !info.ModTime().Equal(b.disk.modTime) {
+	if info.Size() != b.disk.size || !info.ModTime().Equal(b.disk.modTime) ||
+		info.Mode()&modeBits != b.disk.mode {
 		return pathError("save", b.Path, ErrExternalChange)
 	}
 	data, err := os.ReadFile(b.Path)
@@ -348,6 +405,9 @@ func (b *Buffer) saveTarget() (string, error) {
 		// Resolve symlinked parent directories even when the final component
 		// is a regular file, so the boundary check compares real paths.
 		target = filepath.Join(directory, filepath.Base(absolute))
+	}
+	if isCartPath(target) {
+		return "", pathError("save", b.Path, ErrUnsupportedFile)
 	}
 
 	root := b.workspaceRoot

@@ -374,14 +374,22 @@ func (b *Buffer) normalizePos(p Pos) Pos {
 }
 
 func (b *Buffer) validatePos(p Pos) error {
+	if err := b.validateRunePos(p); err != nil {
+		return err
+	}
+	line := b.Lines[p.Line]
+	if !isClusterBoundary(line, p.Rune) {
+		return ErrInvalidPosition
+	}
+	return nil
+}
+
+func (b *Buffer) validateRunePos(p Pos) error {
 	if p.Line < 0 || p.Line >= len(b.Lines) {
 		return ErrInvalidPosition
 	}
 	line := b.Lines[p.Line]
 	if p.Rune < 0 || p.Rune > utf8.RuneCountInString(line) {
-		return ErrInvalidPosition
-	}
-	if !isClusterBoundary(line, p.Rune) {
 		return ErrInvalidPosition
 	}
 	return nil
@@ -513,19 +521,19 @@ func (b *Buffer) ClusterAt(p Pos) LineCluster {
 	return LineCluster{Rune: p.Rune}
 }
 
-// PosAfter returns the position after inserting text at start. It uses rune
-// counts, not cells, and assumes text uses LF newlines.
+// PosAfter returns the position after inserting canonical LF text at start. It
+// uses rune counts, not cells, and does not clamp to the current buffer because
+// the insertion may grow the line or add lines. Callers must normalize CRLF
+// exactly once before calling; Buffer.Apply expects canonical text.
 func (b *Buffer) PosAfter(start Pos, text string) Pos {
-	start = b.normalizePos(start)
-	text = NormalizeNewlines(text)
 	lines := strings.Split(text, "\n")
 	if len(lines) == 1 {
-		return b.normalizePos(Pos{Line: start.Line, Rune: start.Rune + utf8.RuneCountInString(text)})
+		return Pos{Line: start.Line, Rune: start.Rune + utf8.RuneCountInString(text)}
 	}
-	return b.normalizePos(Pos{
+	return Pos{
 		Line: start.Line + len(lines) - 1,
 		Rune: utf8.RuneCountInString(lines[len(lines)-1]),
-	})
+	}
 }
 
 // lineStart returns the cached byte offset of the first character of line.
@@ -547,13 +555,26 @@ func (b *Buffer) lineStart(line int) int {
 	return starts[line]
 }
 
-// TextInRange returns the canonical text between start and end.
+// TextInRange returns the canonical text between cluster-boundary positions.
 func (b *Buffer) TextInRange(start, end Pos) (string, error) {
-	if err := b.validatePos(start); err != nil {
-		return "", err
-	}
-	if err := b.validatePos(end); err != nil {
-		return "", err
+	return b.textInRange(start, end, true)
+}
+
+func (b *Buffer) textInRange(start, end Pos, requireBoundaries bool) (string, error) {
+	if requireBoundaries {
+		if err := b.validatePos(start); err != nil {
+			return "", err
+		}
+		if err := b.validatePos(end); err != nil {
+			return "", err
+		}
+	} else {
+		if err := b.validateRunePos(start); err != nil {
+			return "", err
+		}
+		if err := b.validateRunePos(end); err != nil {
+			return "", err
+		}
 	}
 	if end.Before(start) {
 		return "", ErrInvalidRange

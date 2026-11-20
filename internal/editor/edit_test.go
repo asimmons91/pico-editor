@@ -88,6 +88,219 @@ func TestApplyRejectsInvalidUTF8Text(t *testing.T) {
 	}
 }
 
+func TestUndoPreservesLoneCRAtLineEnd(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("abc\n")
+	editor.SetCursor(Pos{Line: 0, Rune: 3})
+	editor.BeginGroup()
+	if _, err := editor.Insert("\r"); err != nil {
+		t.Fatalf("Insert CR: %v", err)
+	}
+	if _, err := editor.SplitLine(); err != nil {
+		t.Fatalf("SplitLine: %v", err)
+	}
+	editor.EndGroup()
+	if got := editor.Buffer.Text(); got != "abc\r\n\n" {
+		t.Fatalf("text = %q, want abc\\r\\n\\n", got)
+	}
+	editor.Undo()
+	if got := editor.Buffer.Text(); got != "abc\n" {
+		t.Errorf("undo text = %q, want abc\\n", got)
+	}
+	editor.Redo()
+	if got := editor.Buffer.Text(); got != "abc\r\n\n" {
+		t.Errorf("redo text = %q, want abc\\r\\n\\n", got)
+	}
+}
+
+func TestUndoRestoresCRLineDeletedAcrossBreak(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("abc\r\ndef\n")
+	if _, err := editor.DeleteRange(Pos{Line: 0}, Pos{Line: 1}); err != nil {
+		t.Fatalf("DeleteRange: %v", err)
+	}
+	if got := editor.Buffer.Text(); got != "def\n" {
+		t.Fatalf("deleted text = %q, want def\\n", got)
+	}
+	editor.Undo()
+	if got := editor.Buffer.Text(); got != "abc\r\ndef\n" {
+		t.Errorf("undo text = %q, want the CR line restored", got)
+	}
+}
+
+func TestIndentPreservesLoneCRAtLineEnd(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("a\r\nb\n")
+	if _, err := editor.IndentLines(0, 1, 1); err != nil {
+		t.Fatalf("IndentLines: %v", err)
+	}
+	if got := editor.Buffer.Lines[0]; got != " a\r" {
+		t.Errorf("indented first line = %q, want a leading space and CR", got)
+	}
+	editor.Undo()
+	if got := editor.Buffer.Text(); got != "a\r\nb\n" {
+		t.Errorf("undo indent text = %q, want the original", got)
+	}
+}
+
+func TestUndoInsertBeforeStandaloneVS16(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("\ufe0f\n")
+	if _, err := editor.Insert("⬅"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if got := editor.Buffer.Lines[0]; got != "⬅\ufe0f" {
+		t.Fatalf("line = %q, want base plus VS16", got)
+	}
+	if _, ok := editor.Undo(); !ok {
+		t.Fatal("Undo failed for an insertion that merged with a following VS16")
+	}
+	if got := editor.Buffer.Text(); got != "\ufe0f\n" {
+		t.Errorf("undo text = %q, want the standalone VS16", got)
+	}
+	if _, ok := editor.Redo(); !ok {
+		t.Fatal("Redo failed after VS16 undo")
+	}
+	if got := editor.Buffer.Text(); got != "⬅\ufe0f\n" {
+		t.Errorf("redo text = %q, want the merged glyph", got)
+	}
+}
+
+func TestDeleteThenRetypeSameTextLeavesNoUndoEntry(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("axb\n")
+	editor.SetCursor(Pos{Line: 0, Rune: 2})
+	editor.BeginGroup()
+	if _, err := editor.DeleteClusterBefore(); err != nil {
+		t.Fatalf("DeleteClusterBefore: %v", err)
+	}
+	if _, err := editor.Insert("x"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	editor.EndGroup()
+	if got := editor.Buffer.Text(); got != "axb\n" {
+		t.Fatalf("text = %q, want axb\\n", got)
+	}
+	if len(editor.History.Undo) != 0 {
+		t.Errorf("undo entries = %d, want 0 for a net-zero replacement", len(editor.History.Undo))
+	}
+}
+
+func TestUndoInsertAfterBaseWithStandaloneVS16(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("ab\n")
+	editor.SetCursor(Pos{Line: 0, Rune: 1})
+	if _, err := editor.Insert("\ufe0f"); err != nil {
+		t.Fatalf("Insert VS16: %v", err)
+	}
+	if got := editor.Buffer.Lines[0]; got != "a\ufe0fb" {
+		t.Fatalf("line = %q, want base plus VS16", got)
+	}
+	if _, ok := editor.Undo(); !ok {
+		t.Fatal("Undo failed for an insertion that merged with the previous base")
+	}
+	if got := editor.Buffer.Text(); got != "ab\n" {
+		t.Errorf("undo text = %q, want ab\\n", got)
+	}
+	if _, ok := editor.Redo(); !ok {
+		t.Fatal("Redo failed after VS16 undo")
+	}
+	if got := editor.Buffer.Text(); got != "a\ufe0fb\n" {
+		t.Errorf("redo text = %q, want the merged glyph", got)
+	}
+}
+
+func TestUndoInsertThenBackspaceDoesNotMergeAcrossGroups(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("\n")
+	if _, err := editor.Insert("Z"); err != nil {
+		t.Fatalf("Insert Z: %v", err)
+	}
+	editor.BeginGroup()
+	if _, err := editor.Insert("a"); err != nil {
+		t.Fatalf("Insert a: %v", err)
+	}
+	if _, err := editor.DeleteClusterBefore(); err != nil {
+		t.Fatalf("DeleteClusterBefore: %v", err)
+	}
+	if _, err := editor.Insert("b"); err != nil {
+		t.Fatalf("Insert b: %v", err)
+	}
+	editor.EndGroup()
+	if got := editor.Buffer.Text(); got != "Zb\n" {
+		t.Fatalf("text = %q, want Zb\\n", got)
+	}
+	if len(editor.History.Undo) != 2 {
+		t.Fatalf("undo entries = %d, want 2; a net-zero group must not merge with older history", len(editor.History.Undo))
+	}
+}
+
+func TestInsertThenBackspaceLeavesNoUndoEntry(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("ab\n")
+	editor.SetCursor(Pos{Line: 0, Rune: 1})
+	editor.BeginGroup()
+	if _, err := editor.Insert("x"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if _, err := editor.DeleteClusterBefore(); err != nil {
+		t.Fatalf("DeleteClusterBefore: %v", err)
+	}
+	editor.EndGroup()
+	if got := editor.Buffer.Text(); got != "ab\n" {
+		t.Fatalf("text = %q, want ab\\n", got)
+	}
+	if len(editor.History.Undo) != 0 {
+		t.Errorf("undo entries = %d, want 0 for a net-zero group", len(editor.History.Undo))
+	}
+	if _, ok := editor.Undo(); ok {
+		t.Error("Undo reported a net-zero group")
+	}
+}
+
+func TestPosAfterDoesNotClampToPreEditBuffer(t *testing.T) {
+	t.Parallel()
+
+	buffer := New("")
+	if got := buffer.PosAfter(Pos{}, "a\nb"); got != (Pos{Line: 1, Rune: 1}) {
+		t.Errorf("PosAfter multiline = %v, want 1,1", got)
+	}
+	buffer.Lines = []string{"abc"}
+	if got := buffer.PosAfter(Pos{Line: 0, Rune: 3}, "d"); got != (Pos{Line: 0, Rune: 4}) {
+		t.Errorf("PosAfter EOL = %v, want 0,4", got)
+	}
+	buffer.Lines = []string{"x"}
+	if got := buffer.PosAfter(Pos{Line: 0, Rune: 1}, "\ny"); got != (Pos{Line: 1, Rune: 1}) {
+		t.Errorf("PosAfter newline = %v, want 1,1", got)
+	}
+}
+
+func TestInsertPreservesLoneCRBeforeCRLF(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("\n")
+	if _, err := editor.Insert("a\r\r\nb"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if got := editor.Buffer.Lines[0]; got != "a\r" {
+		t.Errorf("first line = %q, want the lone CR preserved", got)
+	}
+	if got := editor.Buffer.Lines[1]; got != "b" {
+		t.Errorf("second line = %q, want b", got)
+	}
+	if got := NormalizeNewlines("a\r\r\nb"); got != "a\r\nb" {
+		t.Errorf("NormalizeNewlines single pass = %q, want a\\r\\nb", got)
+	}
+}
+
 func TestInsertAndDeleteAcrossLines(t *testing.T) {
 	t.Parallel()
 
@@ -397,6 +610,67 @@ func TestDesiredCellAcrossLines(t *testing.T) {
 	}
 }
 
+func TestLineBoundaryMotionsWithWideGlyphs(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("a⬅️\nb⬅️c\n")
+	editor.SetCursor(Pos{Line: 0, Rune: 3})
+	editor.MoveRight(1)
+	if editor.Cursor.Pos != (Pos{Line: 1, Rune: 0}) {
+		t.Errorf("right at EOL = %v, want 1,0", editor.Cursor.Pos)
+	}
+	editor.MoveLeft(1)
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 3}) {
+		t.Errorf("left at line start = %v, want 0,3", editor.Cursor.Pos)
+	}
+	editor.MoveDown(1)
+	if editor.Cursor.Pos != (Pos{Line: 1, Rune: 3}) {
+		t.Errorf("down with wide glyph = %v, want 1,3", editor.Cursor.Pos)
+	}
+	editor.MoveUp(1)
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 3}) {
+		t.Errorf("up with wide glyph = %v, want 0,3", editor.Cursor.Pos)
+	}
+}
+
+func TestCursorPrimitives(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("  abc\nx\n")
+	editor.MoveLineEnd()
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 5}) {
+		t.Errorf("MoveLineEnd = %v, want 0,5", editor.Cursor.Pos)
+	}
+	editor.MoveFirstNonBlank()
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 2}) {
+		t.Errorf("MoveFirstNonBlank = %v, want 0,2", editor.Cursor.Pos)
+	}
+	editor.MoveLineStart()
+	if editor.Cursor.Pos != (Pos{Line: 0}) {
+		t.Errorf("MoveLineStart = %v, want origin", editor.Cursor.Pos)
+	}
+	editor.MoveToCell(1)
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 1}) {
+		t.Errorf("MoveToCell(1) = %v, want 0,1", editor.Cursor.Pos)
+	}
+	editor.MoveTo(1, 1)
+	if editor.Cursor.Pos != (Pos{Line: 1, Rune: 1}) {
+		t.Errorf("MoveTo(1,1) = %v, want 1,1", editor.Cursor.Pos)
+	}
+	editor.MovePageUp()
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 1}) {
+		t.Errorf("MovePageUp = %v, want 0,1", editor.Cursor.Pos)
+	}
+	editor.MovePageDown()
+	if editor.Cursor.Pos != (Pos{Line: 1, Rune: 1}) {
+		t.Errorf("MovePageDown = %v, want 1,1", editor.Cursor.Pos)
+	}
+	editor.SetPos(Pos{Line: 0, Rune: 1})
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 1}) {
+		t.Errorf("SetPos = %v, want 0,1", editor.Cursor.Pos)
+	}
+}
+
 func TestWordMotions(t *testing.T) {
 	t.Parallel()
 
@@ -426,6 +700,53 @@ func TestWordMotions(t *testing.T) {
 	editor.MoveBigWordBackward(1)
 	if editor.Cursor.Pos != (Pos{}) {
 		t.Errorf("B = %v, want origin", editor.Cursor.Pos)
+	}
+}
+
+func TestDeleteLinesEdges(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		text  string
+		first int
+		last  int
+		want  string
+	}{
+		{name: "middle", text: "a\nb\nc\n", first: 1, last: 1, want: "a\nc\n"},
+		{name: "last", text: "a\nb\nc\n", first: 2, last: 2, want: "a\nb\n"},
+		{name: "only", text: "a\n", first: 0, last: 0, want: "\n"},
+		{name: "all", text: "a\nb\nc\n", first: 0, last: 2, want: "\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			editor := editorFromText(test.text)
+			if _, err := editor.DeleteLines(test.first, test.last); err != nil {
+				t.Fatalf("DeleteLines: %v", err)
+			}
+			if got := editor.Buffer.Text(); got != test.want {
+				t.Errorf("text = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestLinewiseSelectedText(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("a\nb\nc\n")
+	editor.Selection = Selection{
+		Anchor: Pos{Line: 1},
+		Cursor: Pos{Line: 1},
+		Kind:   SelectionLine,
+	}
+	text, ok := editor.SelectedText()
+	if !ok {
+		t.Fatal("SelectedText returned false for a linewise selection")
+	}
+	if text != "b\n" {
+		t.Errorf("SelectedText = %q, want b\\n", text)
 	}
 }
 
@@ -481,6 +802,101 @@ func TestApplyNoopDoesNotVersion(t *testing.T) {
 	}
 	if editor.Buffer.Version != version {
 		t.Errorf("version = %d, want unchanged %d", editor.Buffer.Version, version)
+	}
+}
+
+func TestUndoGroupBreaksOnMotion(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("xy\n")
+	editor.BeginGroup()
+	if _, err := editor.Insert("a"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	editor.MoveRight(1)
+	if _, err := editor.Insert("b"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	editor.EndGroup()
+	if got := editor.Buffer.Text(); got != "axby\n" {
+		t.Fatalf("text = %q, want axby\\n", got)
+	}
+	if len(editor.History.Undo) != 2 {
+		t.Fatalf("undo entries = %d, want 2 after a motion boundary", len(editor.History.Undo))
+	}
+	editor.Undo()
+	if got := editor.Buffer.Text(); got != "axy\n" {
+		t.Errorf("first undo text = %q, want axy\\n", got)
+	}
+	editor.Undo()
+	if got := editor.Buffer.Text(); got != "xy\n" {
+		t.Errorf("second undo text = %q, want xy\\n", got)
+	}
+}
+
+func TestUndoGroupCoalescesMultilineInsert(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("\n")
+	editor.BeginGroup()
+	if _, err := editor.Insert("a\nb"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if _, err := editor.Insert("c"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	editor.EndGroup()
+	if got := editor.Buffer.Text(); got != "a\nbc\n" {
+		t.Fatalf("text = %q, want a\\nbc\\n", got)
+	}
+	if len(editor.History.Undo) != 1 {
+		t.Fatalf("undo entries = %d, want 1", len(editor.History.Undo))
+	}
+	editor.Undo()
+	if got := editor.Buffer.Text(); got != "\n" {
+		t.Errorf("undo text = %q, want a newline", got)
+	}
+	editor.Redo()
+	if got := editor.Buffer.Text(); got != "a\nbc\n" {
+		t.Errorf("redo text = %q, want a\\nbc\\n", got)
+	}
+}
+
+func TestUndoRedoRestoreCursor(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("abc\n")
+	editor.SetCursor(Pos{Line: 0, Rune: 3})
+	if _, err := editor.Insert("d"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 4}) {
+		t.Fatalf("cursor after insert = %v, want 0,4", editor.Cursor.Pos)
+	}
+	editor.Undo()
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 3}) {
+		t.Errorf("cursor after undo = %v, want Change.Before 0,3", editor.Cursor.Pos)
+	}
+	editor.Redo()
+	if editor.Cursor.Pos != (Pos{Line: 0, Rune: 4}) {
+		t.Errorf("cursor after redo = %v, want Change.After 0,4", editor.Cursor.Pos)
+	}
+}
+
+func TestSelectAllMovesCursor(t *testing.T) {
+	t.Parallel()
+
+	editor := editorFromText("abc\ndef\n")
+	editor.SelectAll()
+	if editor.Cursor.Pos != (Pos{Line: 1, Rune: 3}) {
+		t.Errorf("cursor after SelectAll = %v, want the buffer end", editor.Cursor.Pos)
+	}
+	if editor.Selection.Cursor != editor.Cursor.Pos {
+		t.Errorf("selection cursor %v diverges from editor cursor %v", editor.Selection.Cursor, editor.Cursor.Pos)
+	}
+	text, ok := editor.SelectedText()
+	if !ok || text != "abc\ndef" {
+		t.Errorf("SelectedText = %q, %t, want abc\\ndef", text, ok)
 	}
 }
 
@@ -555,6 +971,9 @@ func FuzzEditUndo(f *testing.F) {
 	f.Fuzz(func(t *testing.T, text string, operations []byte) {
 		if !utf8.ValidString(text) {
 			t.Skip()
+		}
+		if len(operations) > DefaultUndoLimit {
+			operations = operations[:DefaultUndoLimit]
 		}
 		editor := editorFromText(text)
 		initial := editor.Buffer.Text()

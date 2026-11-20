@@ -50,6 +50,7 @@ func TestRunRejectsBadFlags(t *testing.T) {
 		{name: "invalid log level", args: []string{"--log-level", "verbose"}},
 		{name: "too many files", args: []string{"a.lua", "b.lua"}},
 		{name: "charset with file", args: []string{"--debug-charset", "a.lua"}},
+		{name: "empty file", args: []string{""}},
 		{name: "empty log level", args: []string{"--log-level", ""}},
 	}
 

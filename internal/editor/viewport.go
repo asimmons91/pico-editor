@@ -46,6 +46,11 @@ func (v *Viewport) EnsureVisible(pos Pos, cell, cells, lineCount int) {
 	if cell+cells > v.LeftCell+v.Width-horizontalOffset {
 		v.LeftCell = cell + cells - v.Width + horizontalOffset
 	}
+	// A cluster wider than the viewport cannot be fully shown; keep its first
+	// cell visible instead of scrolling the cursor off the left edge.
+	if v.LeftCell > cell {
+		v.LeftCell = cell
+	}
 	v.LeftCell = max(v.LeftCell, 0)
 }
 

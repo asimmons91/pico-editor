@@ -116,16 +116,39 @@ func TestAtomicWriteDirectorySyncFailure(t *testing.T) {
 	operations.syncDir = func(string) error {
 		return errors.New("injected sync failure")
 	}
-	if err := atomicWrite(path, []byte("replacement"), 0o600, operations); err == nil {
-		t.Fatal("atomicWrite succeeded with an injected directory sync failure")
+	err := atomicWrite(path, []byte("replacement"), 0o600, operations)
+	var committed *CommitError
+	if !errors.As(err, &committed) {
+		t.Fatalf("atomicWrite error = %v, want *CommitError", err)
 	}
 	// The rename already happened; the data is complete even though durability
 	// could not be confirmed.
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read back: %v", err)
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("read back: %v", readErr)
 	}
 	if !bytes.Equal(data, []byte("replacement")) {
 		t.Errorf("contents = %q, want replacement", data)
+	}
+}
+
+func TestAtomicWritePreservesSpecialModeBits(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "file.lua")
+	mode := os.FileMode(0o750) | os.ModeSetgid
+	if err := AtomicWrite(path, []byte("data"), mode); err != nil {
+		t.Fatalf("AtomicWrite: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode()&os.ModeSetgid == 0 {
+		t.Skip("filesystem did not preserve the setgid bit")
+	}
+	if got := info.Mode().Perm(); got != 0o750 {
+		t.Errorf("permissions = %o, want 750", got)
 	}
 }

@@ -16,6 +16,8 @@ var (
 	ErrReadOnly        = errors.New("file is read-only")
 	ErrExternalChange  = errors.New("file changed on disk")
 	ErrMixedNewlines   = errors.New("file has mixed line endings")
+	ErrAmbiguousCR     = errors.New("line ending in CR would be indistinguishable from CRLF")
+	ErrNotRegularFile  = errors.New("not a regular file")
 	ErrUnsupportedFile = errors.New("unsupported file type until M4")
 	ErrNoPath          = errors.New("buffer has no path")
 	ErrOutsideRoot     = errors.New("symlink target is outside the workspace root")

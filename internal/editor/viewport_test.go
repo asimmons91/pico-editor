@@ -52,6 +52,16 @@ func TestViewportWideGlyphVisibility(t *testing.T) {
 	}
 }
 
+func TestViewportWidthOneKeepsWideGlyphStartVisible(t *testing.T) {
+	t.Parallel()
+
+	viewport := Viewport{Width: 1, Height: 1, ScrollOff: 0}
+	viewport.EnsureVisible(Pos{Line: 0}, 0, 2, 1)
+	if viewport.LeftCell != 0 {
+		t.Errorf("left cell = %d, want 0 for a glyph wider than the viewport", viewport.LeftCell)
+	}
+}
+
 func TestViewportVisibleLines(t *testing.T) {
 	t.Parallel()
 

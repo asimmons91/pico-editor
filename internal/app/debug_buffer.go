@@ -312,10 +312,11 @@ func (d *DebugBuffer) SetStatus(message string, isError bool) {
 	d.ErrorStatus = isError
 }
 
-// SetPaste inserts clipboard text through the normal insert path.
+// SetPaste inserts clipboard text through the normal insert path. File
+// normalization happens exactly once in Buffer.Apply.
 func (d *DebugBuffer) SetPaste(text string) {
 	if text == "" {
 		return
 	}
-	d.HandleText([]rune(input.NormalizeNewlines(text)))
+	d.HandleText([]rune(text))
 }

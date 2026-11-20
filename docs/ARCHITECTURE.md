@@ -137,8 +137,9 @@ Invariants:
 - The modified flag is derived from the undo save point, not from a separate
   heuristic. Undo after a save back to the save point clears it.
 - Saves are atomic: write a temporary file in the same directory, fsync it,
-  rename it, then fsync the directory. External modification detection and
-  conflict handling are defined in M4.
+  rename it, then fsync the directory. M2 checks mtime, size, content hash, and
+  mode before saving; M4 adds the conflict dialog, backups, and explicit
+  outside-root confirmation.
 
 ## 5. Cart tab model
 
@@ -371,9 +372,15 @@ Development rules:
   keeps the charset screen, and `.p8` files are rejected until M4.
 - M2 stores the save point as a SHA-256 of the canonical text, so undo/redo
   across the save point updates `Dirty()` without writing. It rejects files
-  mixing CRLF and LF, checks mtime/size/content hash before saving, and refuses
-  symlink targets outside the file's parent directory; M4 adds conflict UI,
-  backups, and explicit outside-root confirmation.
+  mixing CRLF and LF, rejects ambiguous CR-at-EOL saves, checks mtime, size,
+  mode, and content hash before saving, refuses symlink targets outside the
+  file's parent directory, and rejects cart paths even through symlinks; M4 adds
+  conflict UI, backups, and explicit outside-root confirmation. A
+  directory-fsync failure after the rename is reported as a
+  `fsutil.CommitError` after the save point is updated, so retries are not
+  blocked by a false external-change error.
+- M2's temporary debug screen saves synchronously; M3/M4 route saves through
+  the message/result path described in §2.
 - M3 will replace the debug screen's direct key map with `internal/vim`; the
   editor package stays free of modal or Vim-specific state.
 - Clipboard access uses `golang.design/x/clipboard` `v0.11.0` behind

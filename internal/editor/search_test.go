@@ -2,7 +2,10 @@ package editor
 
 import (
 	"errors"
+	"strings"
 	"testing"
+
+	"github.com/asimmons91/pico-lsp/pkg/p8scii"
 )
 
 func TestSearchLiteralSmartCase(t *testing.T) {
@@ -138,6 +141,36 @@ func TestSearchEmptyPatternAndMultiline(t *testing.T) {
 	}
 	if match.Start != (Pos{}) || match.End != (Pos{Line: 1, Rune: 1}) {
 		t.Errorf("multiline match = %v..%v", match.Start, match.End)
+	}
+}
+
+func TestSearchExpandsEveryVS16Glyph(t *testing.T) {
+	t.Parallel()
+
+	for _, glyph := range p8scii.Glyphs() {
+		if !strings.Contains(glyph.Text, "\ufe0f") {
+			continue
+		}
+		text := "a" + glyph.Text + "b\n"
+		base := strings.TrimSuffix(glyph.Text, "\ufe0f")
+
+		search := Search{Pattern: base, SmartCase: true, Forward: true}
+		match, ok, err := search.Find(text, Pos{})
+		if err != nil || !ok {
+			t.Fatalf("Find(%q) = %v, %t, %v", base, match, ok, err)
+		}
+		if match.Start != (Pos{Line: 0, Rune: 1}) || match.End != (Pos{Line: 0, Rune: 3}) {
+			t.Errorf("base match for %q = %v..%v, want the whole cluster", glyph.Text, match.Start, match.End)
+		}
+
+		search.Pattern = "\ufe0f"
+		match, ok, err = search.Find(text, Pos{})
+		if err != nil || !ok {
+			t.Fatalf("Find(VS16 for %q) = %v, %t, %v", glyph.Text, match, ok, err)
+		}
+		if match.Start != (Pos{Line: 0, Rune: 1}) || match.End != (Pos{Line: 0, Rune: 3}) {
+			t.Errorf("VS16 match for %q = %v..%v, want the whole cluster", glyph.Text, match.Start, match.End)
+		}
 	}
 }
 

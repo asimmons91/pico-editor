@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/asimmons91/pico-editor/internal/fsutil"
 )
 
 func writeTestFile(t *testing.T, dir, name string, data []byte, mode os.FileMode) string {
@@ -37,6 +40,7 @@ func TestOpenSaveRoundTrips(t *testing.T) {
 		{name: "only newline", data: []byte("\n")},
 		{name: "bom", data: append([]byte{0xef, 0xbb, 0xbf}, []byte("print(1)\r\n")...)},
 		{name: "lone cr", data: []byte("a\rb\n")},
+		{name: "crlf content cr", data: []byte("a\r\r\nb\r\n")},
 		{name: "p8scii", data: []byte("spr(♥,⬅️,😐️)\n")},
 	}
 
@@ -112,6 +116,53 @@ func TestOpenRejectsInvalidFiles(t *testing.T) {
 	})
 }
 
+func TestEditedCRLFAndBOMRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	tests := []struct {
+		name string
+		data []byte
+		want []byte
+	}{
+		{
+			name: "bom crlf trailing",
+			data: append([]byte{0xef, 0xbb, 0xbf}, []byte("one\r\ntwo\r\n")...),
+			want: append([]byte{0xef, 0xbb, 0xbf}, []byte("one\r\ntwo!\r\n")...),
+		},
+		{
+			name: "crlf no trailing newline",
+			data: []byte("one\r\ntwo"),
+			want: []byte("one\r\ntwo!"),
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			path := writeTestFile(t, dir, test.name+".lua", test.data, 0o644)
+			buffer, err := Open(path)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			editor := NewEditor(buffer)
+			editor.MoveBufferEnd()
+			if _, err := editor.Insert("!"); err != nil {
+				t.Fatalf("Insert: %v", err)
+			}
+			if err := buffer.Save(); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read back: %v", err)
+			}
+			if !bytes.Equal(got, test.want) {
+				t.Errorf("edited round-trip = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestSaveRejectsReadOnlyFile(t *testing.T) {
 	t.Parallel()
 
@@ -167,6 +218,357 @@ func TestSaveDetectsExternalChange(t *testing.T) {
 	}
 	if string(data) != "external change\n" {
 		t.Errorf("external contents were overwritten: %q", data)
+	}
+}
+
+func TestSaveDetectsExternalModeChange(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "mode.lua", []byte("print(1)\n"), 0o644)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("!"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	if err := buffer.Save(); !errors.Is(err, ErrExternalChange) {
+		t.Fatalf("Save error = %v, want ErrExternalChange after chmod", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(data) != "print(1)\n" {
+		t.Errorf("read-only file was overwritten: %q", data)
+	}
+}
+
+func TestSaveDetectsExternalTouch(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "touch.lua", []byte("print(1)\n"), 0o644)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("!"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	touched := time.Now().Add(2 * time.Hour)
+	if err := os.Chtimes(path, touched, touched); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	if err := buffer.Save(); !errors.Is(err, ErrExternalChange) {
+		t.Fatalf("Save error = %v, want ErrExternalChange after touch", err)
+	}
+}
+
+func TestSaveDetectsExternalSameSizeRewrite(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "rewrite.lua", []byte("aaaa\n"), 0o644)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("!"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("bbbb\n"), 0o644); err != nil {
+		t.Fatalf("external rewrite: %v", err)
+	}
+	if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatalf("restore mtime: %v", err)
+	}
+	if err := buffer.Save(); !errors.Is(err, ErrExternalChange) {
+		t.Fatalf("Save error = %v, want ErrExternalChange from the hash check", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(data) != "bbbb\n" {
+		t.Errorf("external rewrite was overwritten: %q", data)
+	}
+}
+
+func TestSaveDetectsDeletedFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "deleted.lua", []byte("print(1)\n"), 0o644)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("!"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := buffer.Save(); !errors.Is(err, ErrExternalChange) {
+		t.Fatalf("Save error = %v, want ErrExternalChange after deletion", err)
+	}
+}
+
+func TestSaveRejectsAmbiguousCR(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "cr.lua", []byte("a\rb\n"), 0o644)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.MoveLineEnd()
+	if _, err := editor.DeleteClusterBefore(); err != nil {
+		t.Fatalf("DeleteClusterBefore: %v", err)
+	}
+	if got := buffer.Lines[0]; got != "a\r" {
+		t.Fatalf("line = %q, want a trailing CR", got)
+	}
+	if err := buffer.Save(); !errors.Is(err, ErrAmbiguousCR) {
+		t.Fatalf("Save error = %v, want ErrAmbiguousCR", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(data) != "a\rb\n" {
+		t.Errorf("ambiguous save changed the file to %q", data)
+	}
+
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("x"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := buffer.Save(); err != nil {
+		t.Fatalf("Save after resolving ambiguity: %v", err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(data) != "a\rx\n" {
+		t.Errorf("resolved file = %q, want a\\rx\\n", data)
+	}
+}
+
+func TestOpenRejectsSymlinkToCart(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	cart := writeTestFile(t, dir, "cart.p8", []byte("__lua__\nprint(1)\n"), 0o644)
+	link := filepath.Join(dir, "link.lua")
+	if err := os.Symlink(cart, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if _, err := Open(link); !errors.Is(err, ErrUnsupportedFile) {
+		t.Fatalf("Open(.lua -> cart.p8) error = %v, want ErrUnsupportedFile", err)
+	}
+}
+
+func TestSaveRejectsCartPath(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "new.p8")
+	buffer := New(path)
+	editor := NewEditor(buffer)
+	if _, err := editor.Insert("print(1)\n"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := buffer.Save(); !errors.Is(err, ErrUnsupportedFile) {
+		t.Fatalf("Save(.p8) error = %v, want ErrUnsupportedFile", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("cart file was created: %v", err)
+	}
+}
+
+func TestOpenRejectsNonRegularFile(t *testing.T) {
+	t.Parallel()
+
+	if _, err := os.Stat("/dev/null"); err != nil {
+		t.Skip("/dev/null is unavailable")
+	}
+	if _, err := Open("/dev/null"); !errors.Is(err, ErrNotRegularFile) {
+		t.Fatalf("Open(/dev/null) error = %v, want ErrNotRegularFile", err)
+	}
+}
+
+func TestSaveThroughSymlinkedParent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "real")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	realPath := writeTestFile(t, realDir, "file.lua", []byte("print(1)\n"), 0o644)
+	linkDir := filepath.Join(dir, "link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("symlink dir: %v", err)
+	}
+	path := filepath.Join(linkDir, "file.lua")
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open through symlinked parent: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("!"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := buffer.Save(); err != nil {
+		t.Fatalf("Save through symlinked parent: %v", err)
+	}
+	data, err := os.ReadFile(realPath)
+	if err != nil {
+		t.Fatalf("read real file: %v", err)
+	}
+	if string(data) != "print(1)!\n" {
+		t.Errorf("real file = %q, want the saved edit", data)
+	}
+}
+
+func TestFinishWriteAfterCommitError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "commit.lua", []byte("one\n"), 0o644)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("two"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	data := buffer.encode()
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("simulate committed write: %v", err)
+	}
+	err = buffer.finishWrite(path, data, &fsutil.CommitError{Err: errors.New("sync failed")})
+	if err == nil {
+		t.Fatal("finishWrite accepted a commit error without reporting it")
+	}
+	if buffer.Dirty() {
+		t.Error("committed bytes left the buffer dirty")
+	}
+	if !buffer.disk.known {
+		t.Error("committed bytes left the disk state unknown")
+	}
+	if err := buffer.Save(); err != nil {
+		t.Fatalf("retry after commit error: %v", err)
+	}
+}
+
+func TestMarkSavedAfterDirectLinesAssignment(t *testing.T) {
+	t.Parallel()
+
+	buffer := New("")
+	buffer.Lines = []string{"one", "two"}
+	buffer.TrailingNewline = true
+	buffer.MarkSaved()
+	if buffer.Dirty() {
+		t.Fatal("MarkSaved did not adopt directly assigned lines")
+	}
+	editor := NewEditor(buffer)
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("!"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if !buffer.Dirty() {
+		t.Fatal("buffer is not dirty after an edit")
+	}
+	editor.Undo()
+	if buffer.Dirty() {
+		t.Error("undo to the adopted save point left the buffer dirty")
+	}
+}
+
+func TestEditorReloadClearsHistoryAndClampsCursor(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "reload_editor.lua", []byte("one\ntwo\nthree\nfour\nfive\n"), 0o644)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.SetCursor(Pos{Line: 4, Rune: 2})
+	if _, err := editor.Insert("!"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("alpha\n"), 0o644); err != nil {
+		t.Fatalf("external write: %v", err)
+	}
+	if err := editor.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if editor.CanUndo() || editor.CanRedo() {
+		t.Error("Reload kept undo history")
+	}
+	if got := buffer.Text(); got != "alpha\n" {
+		t.Errorf("reloaded text = %q", got)
+	}
+	editor.MoveLineEnd()
+	if editor.Cursor.Pos.Line != 0 {
+		t.Errorf("cursor line = %d, want 0", editor.Cursor.Pos.Line)
+	}
+	if buffer.Dirty() {
+		t.Error("Reload left the buffer dirty")
+	}
+}
+
+func TestEditorReloadDiscardsStaleUndo(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "reload_undo.lua", []byte("aaaa\n"), 0o644)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	editor := NewEditor(buffer)
+	editor.MoveBufferEnd()
+	if _, err := editor.Insert("b"); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("abcdef\n"), 0o644); err != nil {
+		t.Fatalf("external write: %v", err)
+	}
+	if err := editor.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if _, ok := editor.Undo(); ok {
+		t.Fatal("Undo after Reload applied a pre-reload change")
+	}
+	if got := buffer.Text(); got != "abcdef\n" {
+		t.Errorf("text after rejected undo = %q", got)
 	}
 }
 

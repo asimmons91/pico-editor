@@ -93,6 +93,14 @@ func (e *Editor) record(change Change) {
 		}
 		if e.group.merge && len(e.History.Undo) > 0 {
 			if merged, ok := mergeChange(e.History.Undo[len(e.History.Undo)-1], change); ok {
+				if merged.Empty() {
+					// An insert followed by a backspace can net to nothing;
+					// drop the group entry instead of keeping a no-op undo.
+					e.History.Undo = e.History.Undo[:len(e.History.Undo)-1]
+					e.group.merge = false
+					e.group.last = now
+					return
+				}
 				e.History.ReplaceLast(merged)
 				e.group.last = now
 				return
@@ -138,18 +146,23 @@ func (e *Editor) EnsureVisible() {
 }
 
 func (e *Editor) applyEdit(edit Edit) (Change, error) {
-	after := posAfterText(edit.Start, NormalizeNewlines(edit.Text))
-	return e.applyEditAt(edit, after)
+	return e.apply(edit, func(change Change) Pos {
+		return posAfterText(change.Start, change.NewText)
+	})
 }
 
 func (e *Editor) applyEditAt(edit Edit, after Pos) (Change, error) {
+	return e.apply(edit, func(Change) Pos { return after })
+}
+
+func (e *Editor) apply(edit Edit, after func(Change) Pos) (Change, error) {
 	before := e.Cursor.Pos
 	change, err := e.Buffer.Apply(edit)
 	if err != nil || change.Empty() {
 		return change, err
 	}
 	change.Before = before
-	e.setCursor(after, true)
+	e.setCursor(after(change), true)
 	change.After = e.Cursor.Pos
 	e.record(change)
 	e.EnsureVisible()
@@ -157,12 +170,15 @@ func (e *Editor) applyEditAt(edit Edit, after Pos) (Change, error) {
 }
 
 // Apply applies a generic edit at the given range and records one undo entry.
-// The cursor moves to the end of the inserted text.
+// The edit text must use canonical LF newlines; input-bearing callers normalize
+// CRLF exactly once before calling. The cursor moves to the end of the inserted
+// text.
 func (e *Editor) Apply(edit Edit) (Change, error) {
 	return e.applyEdit(edit)
 }
 
-// Insert inserts text at the cursor and moves the cursor after it.
+// Insert inserts text at the cursor and moves the cursor after it. CRLF is
+// normalized exactly once here; Buffer.Apply expects canonical text.
 func (e *Editor) Insert(text string) (Change, error) {
 	text = NormalizeNewlines(text)
 	if text == "" {
@@ -411,7 +427,7 @@ func (e *Editor) Undo() (Change, bool) {
 		End:   posAfterText(change.Start, change.NewText),
 		Text:  change.OldText,
 	}
-	if _, err := e.Buffer.Apply(inverse); err != nil {
+	if _, err := e.Buffer.applyRaw(inverse); err != nil {
 		e.History.PushUndo(change)
 		return Change{}, false
 	}
@@ -434,7 +450,7 @@ func (e *Editor) Redo() (Change, bool) {
 		End:   posAfterText(change.Start, change.OldText),
 		Text:  change.NewText,
 	}
-	if _, err := e.Buffer.Apply(forward); err != nil {
+	if _, err := e.Buffer.applyRaw(forward); err != nil {
 		e.History.PushRedo(change)
 		return Change{}, false
 	}
@@ -459,4 +475,20 @@ func (e *Editor) CanRedo() bool {
 func (e *Editor) Save() error {
 	e.EndGroup()
 	return e.Buffer.Save()
+}
+
+// Reload re-reads the file, discards undo history and selection, and keeps the
+// cursor within the reloaded text. Use this instead of Buffer.Reload when an
+// Editor owns the buffer.
+func (e *Editor) Reload() error {
+	e.EndGroup()
+	if err := e.Buffer.Reload(); err != nil {
+		return err
+	}
+	e.History.Undo = nil
+	e.History.Redo = nil
+	e.Selection = Selection{}
+	e.setCursor(e.Cursor.Pos, true)
+	e.EnsureVisible()
+	return nil
 }

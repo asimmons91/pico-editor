@@ -132,6 +132,11 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	}
 	if flags.NArg() == 1 {
 		opts.file = flags.Arg(0)
+		if opts.file == "" {
+			fmt.Fprintln(stderr, "pico-editor: file argument must not be empty")
+			flags.Usage()
+			return options{}, errors.New("empty file argument")
+		}
 	}
 	if opts.file != "" && opts.debugCharset {
 		fmt.Fprintln(stderr, "pico-editor: cannot combine --debug-charset with a file argument")

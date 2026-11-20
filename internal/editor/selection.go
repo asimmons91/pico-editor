@@ -67,14 +67,19 @@ func (e *Editor) ClearSelection() {
 	e.Selection = Selection{}
 }
 
-// SelectAll selects the whole buffer characterwise.
+// SelectAll selects the whole buffer characterwise and moves the cursor to the
+// selection end, keeping Cursor and Selection.Cursor consistent.
 func (e *Editor) SelectAll() {
+	e.BreakGroup()
 	last := len(e.Buffer.Lines) - 1
+	end := Pos{Line: last, Rune: utf8.RuneCountInString(e.Buffer.Lines[last])}
 	e.Selection = Selection{
 		Anchor: Pos{},
-		Cursor: Pos{Line: last, Rune: utf8.RuneCountInString(e.Buffer.Lines[last])},
+		Cursor: end,
 		Kind:   SelectionChar,
 	}
+	e.setCursor(end, true)
+	e.EnsureVisible()
 }
 
 // SelectedText returns the selected text. Linewise selections include a

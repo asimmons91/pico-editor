@@ -14,7 +14,9 @@ type Edit struct {
 }
 
 // NormalizeNewlines converts CRLF to LF. A lone CR is a P8SCII character, not a
-// newline, and is preserved.
+// newline, and is preserved. Apply this exactly once at an input boundary: a
+// second pass would treat a preserved lone CR that is now adjacent to the
+// inserted LF as another CRLF. Buffer.Apply itself expects canonical text.
 func NormalizeNewlines(text string) string {
 	if !strings.Contains(text, "\r\n") {
 		return text
@@ -22,18 +24,41 @@ func NormalizeNewlines(text string) string {
 	return strings.ReplaceAll(text, "\r\n", "\n")
 }
 
-// Apply replaces a range and returns the recorded change. It does not move a
-// cursor; Editor wraps it for cursor-aware operations.
+// Apply replaces a range and returns the recorded change. Text must use
+// canonical LF newlines; input layers normalize CRLF exactly once before
+// calling. A lone CR is a P8SCII character and is preserved. Apply does not
+// move a cursor; Editor wraps it for cursor-aware operations.
 func (b *Buffer) Apply(edit Edit) (Change, error) {
-	text := NormalizeNewlines(edit.Text)
+	return b.apply(edit, true)
+}
+
+// applyRaw is the undo/redo path. It allows range endpoints inside a cluster so
+// that reversing an insertion which merged with an adjacent VS16 can restore
+// the original text. The endpoints still must be valid rune offsets, and the
+// resulting buffer remains valid UTF-8.
+func (b *Buffer) applyRaw(edit Edit) (Change, error) {
+	return b.apply(edit, false)
+}
+
+func (b *Buffer) apply(edit Edit, requireBoundaries bool) (Change, error) {
+	text := edit.Text
 	if !utf8.ValidString(text) {
 		return Change{}, ErrInvalidText
 	}
-	if err := b.validatePos(edit.Start); err != nil {
-		return Change{}, err
-	}
-	if err := b.validatePos(edit.End); err != nil {
-		return Change{}, err
+	if requireBoundaries {
+		if err := b.validatePos(edit.Start); err != nil {
+			return Change{}, err
+		}
+		if err := b.validatePos(edit.End); err != nil {
+			return Change{}, err
+		}
+	} else {
+		if err := b.validateRunePos(edit.Start); err != nil {
+			return Change{}, err
+		}
+		if err := b.validateRunePos(edit.End); err != nil {
+			return Change{}, err
+		}
 	}
 	if edit.End.Before(edit.Start) {
 		return Change{}, ErrInvalidRange
@@ -42,7 +67,7 @@ func (b *Buffer) Apply(edit Edit) (Change, error) {
 		return Change{}, nil
 	}
 
-	oldText, err := b.TextInRange(edit.Start, edit.End)
+	oldText, err := b.textInRange(edit.Start, edit.End, requireBoundaries)
 	if err != nil {
 		return Change{}, err
 	}

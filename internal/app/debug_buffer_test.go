@@ -14,6 +14,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/asimmons91/pico-editor/internal/editor"
+	"github.com/asimmons91/pico-editor/internal/font"
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/render"
 )
@@ -238,5 +239,159 @@ func TestDebugStatusIncludesError(t *testing.T) {
 	game.debug.SetStatus("save failed", true)
 	if !strings.Contains(game.debug.Status, "save failed") || !game.debug.ErrorStatus {
 		t.Errorf("status = %q error=%t", game.debug.Status, game.debug.ErrorStatus)
+	}
+}
+
+func TestDebugEditingKeys(t *testing.T) {
+	t.Parallel()
+
+	key := func(k input.Key) input.Event {
+		return input.Event{Kind: input.KindKeyDown, Key: k}
+	}
+	shiftKey := func(k input.Key) input.Event {
+		return input.Event{Kind: input.KindKeyDown, Key: k, Mods: input.ModShift}
+	}
+
+	tests := []struct {
+		name    string
+		content string
+		events  []input.Event
+		want    string
+		cursor  editor.Pos
+	}{
+		{
+			name:    "backspace",
+			content: "abc\n",
+			events:  []input.Event{key(input.KeyEnd), key(input.KeyBackspace)},
+			want:    "ab\n",
+			cursor:  editor.Pos{Line: 0, Rune: 2},
+		},
+		{
+			name:    "delete",
+			content: "abc\n",
+			events:  []input.Event{key(input.KeyRight), key(input.KeyDelete)},
+			want:    "ac\n",
+			cursor:  editor.Pos{Line: 0, Rune: 1},
+		},
+		{
+			name:    "enter",
+			content: "ab\n",
+			events:  []input.Event{key(input.KeyEnd), key(input.KeyEnter)},
+			want:    "ab\n\n",
+			cursor:  editor.Pos{Line: 1, Rune: 0},
+		},
+		{
+			name:    "tab",
+			content: "a\n",
+			events:  []input.Event{key(input.KeyEnd), key(input.KeyTab)},
+			want:    "a \n",
+			cursor:  editor.Pos{Line: 0, Rune: 2},
+		},
+		{
+			name:    "backspace replaces selection",
+			content: "abc\n",
+			events:  []input.Event{shiftKey(input.KeyRight), key(input.KeyBackspace)},
+			want:    "c\n",
+			cursor:  editor.Pos{Line: 0, Rune: 0},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			game, _ := newDebugGame(t, test.content)
+			source := game.source.(*fakeSource)
+			source.events = test.events
+			if err := game.Update(); err != nil {
+				t.Fatalf("Update: %v", err)
+			}
+			if got := game.debug.Editor.Buffer.Text(); got != test.want {
+				t.Errorf("text = %q, want %q", got, test.want)
+			}
+			if got := game.debug.Editor.Cursor.Pos; got != test.cursor {
+				t.Errorf("cursor = %v, want %v", got, test.cursor)
+			}
+		})
+	}
+}
+
+func TestDebugNavigationAndSelectAll(t *testing.T) {
+	t.Parallel()
+
+	game, _ := newDebugGame(t, "one\ntwo\nthree\n")
+	source := game.source.(*fakeSource)
+	handle := func(event input.Event) {
+		t.Helper()
+		source.events = []input.Event{event}
+		if err := game.Update(); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+	}
+	key := func(k input.Key) input.Event {
+		return input.Event{Kind: input.KindKeyDown, Key: k}
+	}
+
+	handle(key(input.KeyEnd))
+	if got := game.debug.Editor.Cursor.Pos; got != (editor.Pos{Line: 0, Rune: 3}) {
+		t.Fatalf("End cursor = %v, want 0,3", got)
+	}
+	handle(key(input.KeyDown))
+	if got := game.debug.Editor.Cursor.Pos; got != (editor.Pos{Line: 1, Rune: 3}) {
+		t.Fatalf("Down cursor = %v, want 1,3", got)
+	}
+	handle(key(input.KeyHome))
+	if got := game.debug.Editor.Cursor.Pos; got != (editor.Pos{Line: 1, Rune: 0}) {
+		t.Fatalf("Home cursor = %v, want 1,0", got)
+	}
+	handle(key(input.KeyPageDown))
+	if got := game.debug.Editor.Cursor.Pos; got != (editor.Pos{Line: 2, Rune: 0}) {
+		t.Fatalf("PageDown cursor = %v, want the last line", got)
+	}
+	handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyA, Mods: input.ModCtrl})
+	if got := game.debug.Editor.Cursor.Pos; got != (editor.Pos{Line: 2, Rune: 5}) {
+		t.Fatalf("Ctrl+A cursor = %v, want the buffer end", got)
+	}
+	if game.debug.Editor.Selection.Cursor != game.debug.Editor.Cursor.Pos {
+		t.Fatal("Ctrl+A left the selection cursor and editor cursor out of sync")
+	}
+	handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyLeft, Mods: input.ModShift})
+	if got := game.debug.Editor.Selection.Cursor; got != (editor.Pos{Line: 2, Rune: 4}) {
+		t.Errorf("Shift+Left selection cursor = %v, want 2,4", got)
+	}
+	handle(key(input.KeyEsc))
+	if got := game.debug.Editor.Selection.Kind; got != editor.SelectionNone {
+		t.Errorf("Esc selection kind = %v, want none", got)
+	}
+}
+
+func TestDebugScrolledRender(t *testing.T) {
+	t.Parallel()
+
+	var content strings.Builder
+	for i := 0; i < 100; i++ {
+		content.WriteString("line\n")
+	}
+	game, _ := newDebugGame(t, content.String())
+	game.debug.Editor.MoveBufferEnd()
+	surface := render.NewSurface(CanvasWidth, CanvasHeight)
+	game.debug.Draw(surface, true)
+	if game.debug.Editor.Viewport.TopLine == 0 {
+		t.Fatal("debug viewport did not scroll to the buffer end")
+	}
+	ink := func(y0, y1 int) int {
+		count := 0
+		for y := y0; y < y1; y++ {
+			for x := 0; x < surface.Width; x++ {
+				if surface.At(x, y) != 0 {
+					count++
+				}
+			}
+		}
+		return count
+	}
+	if ink(0, font.CellHeight) == 0 {
+		t.Error("first visible row is blank after scrolling")
+	}
+	if ink(debugStatusRow*font.CellHeight, CanvasHeight) == 0 {
+		t.Error("status row is blank after scrolling")
 	}
 }

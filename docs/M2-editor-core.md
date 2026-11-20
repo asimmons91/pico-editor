@@ -181,8 +181,10 @@ Required operations, all built on `Apply`:
 
 Rules:
 
-- Every edit is rejected if `Start`/`End` are not cluster boundaries, or if the
-  inserted text is not valid UTF-8.
+- Every public edit is rejected if `Start`/`End` are not cluster boundaries, or
+  if the inserted text is not valid UTF-8. Undo/redo use an internal raw range
+  that may end inside a cluster, because reversing an insertion that merged
+  with an adjacent VS16 cannot otherwise restore the original text.
 - An edit never produces invalid UTF-8.
 - `Change` contains enough information for undo without re-reading the file.
 - After a successful edit, increment `Version` and normalize the cursor.
@@ -268,11 +270,16 @@ func (s Search) Find(text string, from Pos) (Match, bool, error)
 ### 8. File IO
 
 - Open:
-  - reject directories, missing files, and files larger than 2MB with a typed
-    error,
+  - reject directories, non-regular files (FIFOs, devices), missing files, and
+    files larger than 2MB with a typed error,
+  - resolve symlinks and reject `.p8`/`.p8.png` targets, not just literal cart
+    paths,
   - read bytes, validate UTF-8, strip BOM, detect newline, split lines,
   - initialize `Version = 1`, `SavedVersion = 1`.
 - Save:
+  - reject an LF buffer with a line whose content ends in CR when a newline
+    follows, returning `ErrAmbiguousCR` instead of writing bytes that would
+    reopen as CRLF,
   - join lines with `Newline`,
   - append a trailing newline only if `TrailingNewline`,
   - prepend BOM if `HadBOM`,
@@ -280,12 +287,19 @@ func (s Search) Find(text string, from Pos) (Match, bool, error)
   - update `SavedVersion`, `Version`, and the saved-text hash.
 - Atomic write:
   - create a temp file in the same directory with mode `0600`,
-  - write all bytes, `Sync`, `Chmod` to the original mode, `Close`,
+  - write all bytes, `Sync`, `Chmod` to the original mode (including setuid,
+    setgid, and sticky bits), `Close`,
   - `Rename` over the target,
   - open and `Sync` the directory,
   - remove the temp file on any failure.
+  - A directory-sync failure after the rename returns `fsutil.CommitError`; the
+    editor records the committed bytes and save point before reporting the
+    durability error, so a retry is not blocked by a false
+    `ErrExternalChange`.
 - Saving a read-only file returns a typed permission error and leaves the
-  original untouched.
+  original untouched. `checkExternal` also compares the current mode so an
+  external `chmod` is treated as an external change rather than silently
+  ignored.
 - Saving a symlink writes through to the resolved target and preserves the
   symlink. Refuse if the resolved target escapes the workspace root without an
   explicit confirmation (M4 adds the dialog; M2 returns an error).
@@ -363,12 +377,39 @@ These were settled while implementing M2.
 - `Editor` exposes the undo stack as `History` because Go cannot declare both a
   `Undo` field and an `Undo()` method. `Buffer` carries `TabWidth` so cell
   conversion has one tab-stop source.
+- `Selection.Cursor`/`Anchor` endpoints are inclusive; `Match` ranges are
+  half-open. `Search.Find` includes a forward match starting at `from` and
+  excludes a backward match starting at `from`, and `Match.Wrapped` reports a
+  wrap. M3 can map visual and `n`/`N` semantics directly.
+- `NormalizeNewlines` must be applied exactly once per input boundary.
+  `Editor.Insert` and `Editor.ReplaceCluster` do that; `Buffer.Apply` and
+  `Editor.Apply` expect canonical LF text, so undo/redo and indentation replay
+  do not normalize a lone CR that sits next to a line separator.
+- Undo/redo apply recorded changes with a raw range path that permits endpoints
+  inside a cluster. This is required to reverse an insertion that merged with a
+  following standalone VS16; the resulting buffer is still validated as UTF-8
+  and the endpoints remain valid rune offsets.
+- LF files cannot represent line content ending in CR when a newline follows;
+  save returns `ErrAmbiguousCR` rather than creating a file that reopens as
+  CRLF. CRLF files round-trip such content as `\r\r\n`.
+- `Buffer.Open` rejects non-regular files and resolves symlinks before the
+  `.p8` extension check. Save also rejects cart targets, including symlink
+  targets.
+- `MarkSaved` invalidates cached text data first, so the M4 cart adapter can
+  load `Lines` directly and then establish a correct save point.
+- `Editor.Reload` is the editor-aware reload path: it clears undo/redo, drops
+  the selection, and clamps the cursor. `Buffer.Reload` alone is low-level and
+  must not be used while an `Editor` owns the buffer.
+- The temporary M2 debug screen saves synchronously on the Update goroutine.
+  M3/M4 must route `:w` and the save pipeline through the architecture's
+  message/result path rather than copying this scaffolding.
 
 ## Error handling
 
 - Open/save errors are typed (`ErrNotUTF8`, `ErrTooLarge`, `ErrReadOnly`,
-  `ErrExternalChange`, `ErrMixedNewlines`, `ErrUnsupportedFile`,
-  `ErrOutsideRoot`) and carry the path.
+  `ErrExternalChange`, `ErrMixedNewlines`, `ErrAmbiguousCR`,
+  `ErrNotRegularFile`, `ErrUnsupportedFile`, `ErrOutsideRoot`) and carry the
+  path.
 - Editing errors (invalid position, invalid range, invalid UTF-8 text) leave
   the buffer unchanged.
 - Search errors preserve the previous pattern.
@@ -380,12 +421,23 @@ These were settled while implementing M2.
 
 ### Unit and property tests
 
-- Position round-trips: byte ↔ rune ↔ cell ↔ UTF-16 for ASCII, P8SCII glyphs,
-  VS16 sequences, tabs, and empty lines.
+- Position round-trips: byte ↔ rune ↔ cell ↔ UTF-16 for ASCII, all P8SCII
+  glyphs, all VS16 sequences, tabs, and empty lines.
 - Cursor motion across narrow/wide glyphs and line boundaries.
 - Edit, undo, redo, and redo invalidation.
 - Save-point dirty tracking after undo/redo cycles.
-- CRLF, lone CR, BOM, missing trailing newline, and empty file round-trips.
+- CRLF, lone CR, BOM, missing trailing newline, and empty file round-trips,
+  including editing a CRLF/BOM file before saving.
+- Lone CR before CRLF insertion, ambiguous CR-at-EOL save rejection, and
+  external touch/hash/mode/delete detection.
+- Undo/redo of CR-ending edits, VS16-merging insertions, and net-zero
+  insert/backspace groups that must not consume history.
+- Cart-path rejection through a symlink and saves through symlinked parent
+  directories.
+- Post-rename directory-sync error bookkeeping and atomic failure cleanup.
+- Editor reload clears stale undo history and clamps the cursor.
+- Debug-screen editing keys, navigation, select-all consistency, and a scrolled
+  render with a nonzero top line.
 - Join/split line edge cases and indentation.
 - Search literal/regex, smartcase, wrapping, and cluster expansion.
 

@@ -177,6 +177,44 @@ func TestPositionRoundTripAllP8SCIIGlyphs(t *testing.T) {
 	}
 }
 
+func TestCellAndUTF16RoundTripAllP8SCIIGlyphs(t *testing.T) {
+	t.Parallel()
+
+	var line strings.Builder
+	for i := 0; i < 256; i++ {
+		text := p8scii.Lookup(byte(i)).Text
+		if text == "\n" {
+			continue
+		}
+		line.WriteString(text)
+	}
+	buffer := New("")
+	buffer.Lines = []string{line.String()}
+
+	for cluster := range LineClusters(buffer.Lines[0], buffer.TabWidth) {
+		position := Pos{Line: 0, Rune: cluster.Rune}
+		info := buffer.Info(position)
+		if got := buffer.PosFromUTF16(0, info.UTF16); got != position {
+			t.Fatalf("UTF-16 round-trip %v -> %d -> %v", position, info.UTF16, got)
+		}
+		if cluster.Cells == 0 {
+			continue // a zero-width control shares its cell with the next cluster
+		}
+		if got := buffer.PosFromCell(0, info.Cell); got != position {
+			t.Fatalf("cell round-trip %v -> %d -> %v", position, info.Cell, got)
+		}
+	}
+
+	empty := New("")
+	empty.Lines = []string{""}
+	if got := empty.PosFromCell(0, 0); got != (Pos{}) {
+		t.Errorf("empty line PosFromCell = %v, want origin", got)
+	}
+	if got := empty.PosFromUTF16(0, 0); got != (Pos{}) {
+		t.Errorf("empty line PosFromUTF16 = %v, want origin", got)
+	}
+}
+
 func TestCellAndUTF16Columns(t *testing.T) {
 	t.Parallel()
 
