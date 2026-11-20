@@ -141,6 +141,9 @@ func (s *Session) OpenGlyphPicker() bool {
 		return true
 	}
 	s.clearLSPTransients()
+	s.Help = nil
+	s.DiagList = nil
+	s.Tree.Focused = false
 	s.GlyphPicker = NewGlyphPicker(s.LSPGlyphs)
 	return true
 }
