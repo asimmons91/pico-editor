@@ -236,21 +236,10 @@ func (s *Session) bufferName(buffer *SessionBuffer) string {
 	return filepath.Base(buffer.Editor.Buffer.Path)
 }
 
-func (s *Session) reloadBufferAt(buffer *SessionBuffer, index int) error {
-	fresh, err := s.openSessionBuffer(buffer.Editor.Buffer.Path)
-	if err != nil {
-		return err
-	}
-	s.Buffers[index] = fresh
-	if index == s.Current {
-		s.prepareBuffer(fresh)
-	}
-	return nil
-}
-
 // reloadBufferAtPreserving keeps the active cart tab and its cursor/scroll
 // state when an external change reloads a clean buffer.
 func (s *Session) reloadBufferAtPreserving(buffer *SessionBuffer, index int) error {
+	s.saveActiveView(buffer)
 	active := buffer.ActiveTab
 	view := cart.ViewState{}
 	if active >= 0 && active < len(buffer.TabViews) {
@@ -270,13 +259,14 @@ func (s *Session) reloadBufferAtPreserving(buffer *SessionBuffer, index int) err
 		}
 	}
 	s.Buffers[index] = fresh
-	if index == s.Current {
-		s.prepareBuffer(fresh)
-		if fresh.Cart != nil && fresh.ActiveTab < len(fresh.TabViews) {
-			tab := fresh.Cart.Tabs[fresh.ActiveTab]
-			fresh.Editor.SetLineRange(tab.StartLine, tab.EndLine)
-			restoreView(fresh.Editor, fresh.TabViews[fresh.ActiveTab])
+	s.prepareBuffer(fresh)
+	if fresh.Cart != nil && len(fresh.Cart.Tabs) > 0 {
+		if fresh.ActiveTab < len(fresh.TabViews) {
+			fresh.TabViews[fresh.ActiveTab] = view
 		}
+		tab := fresh.Cart.Tabs[fresh.ActiveTab]
+		fresh.Editor.SetLineRange(tab.StartLine, tab.EndLine)
+		restoreView(fresh.Editor, fresh.TabViews[fresh.ActiveTab])
 	}
 	return nil
 }

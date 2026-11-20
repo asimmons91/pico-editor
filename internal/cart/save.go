@@ -28,8 +28,8 @@ type SaveSnapshot struct {
 	Data     []byte
 	Mode     os.FileMode
 	CodeText string
+	Version  int
 
-	codeHash [sha256.Size]byte
 	diskHash [sha256.Size]byte
 	parsed   *p8cart.Document
 }
@@ -65,7 +65,7 @@ func (d *Document) PrepareSave(options SaveOptions) (SaveSnapshot, error) {
 		Data:     data,
 		Mode:     d.Code.Mode,
 		CodeText: d.Code.Text(),
-		codeHash: sha256.Sum256([]byte(d.Code.Text())),
+		Version:  d.Code.Version,
 		diskHash: sha256.Sum256(data),
 		parsed:   parsed,
 	}, nil
@@ -95,7 +95,7 @@ func (d *Document) CommitSave(snapshot SaveSnapshot, writeErr error) error {
 	d.Raw = append([]byte(nil), snapshot.Data...)
 	d.Parsed = snapshot.parsed
 	d.BaseLine = d.Parsed.CodeStartLine()
-	d.Code.MarkSavedText(snapshot.CodeText)
+	d.Code.MarkSavedTextVersion(snapshot.CodeText, snapshot.Version)
 	if info, err := os.Stat(snapshot.Target); err == nil {
 		d.Code.Mode = info.Mode() & modeBits
 		d.disk = diskState{
@@ -131,6 +131,9 @@ func saveTarget(path, root string, allowOutsideRoot bool) (string, error) {
 	}
 	info, err := os.Lstat(absolute)
 	if errors.Is(err, fs.ErrNotExist) {
+		if directory, dirErr := filepath.EvalSymlinks(filepath.Dir(absolute)); dirErr == nil {
+			return filepath.Join(directory, filepath.Base(absolute)), nil
+		}
 		return absolute, nil
 	}
 	if err != nil {

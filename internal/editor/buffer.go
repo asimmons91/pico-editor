@@ -240,10 +240,17 @@ func (b *Buffer) MarkSaved() {
 // current text to match it. The cart adapter uses it when a background save
 // commits a snapshot while newer edits are already in the buffer.
 func (b *Buffer) MarkSavedText(text string) {
+	b.MarkSavedTextVersion(text, b.Version)
+}
+
+// MarkSavedTextVersion records text as the save point and an explicit saved
+// version. Cart saves use it when a background snapshot commits after newer
+// edits have already advanced the buffer version.
+func (b *Buffer) MarkSavedTextVersion(text string, version int) {
 	b.hashValid = false
 	b.indexValid = false
 	b.savedHash = sha256.Sum256([]byte(text))
-	b.SavedVersion = b.Version
+	b.SavedVersion = version
 }
 
 // SetWorkspaceRoot narrows or widens the directory used for the save-time
@@ -480,6 +487,9 @@ func (b *Buffer) saveTarget(allowOutsideRoot bool) (string, error) {
 	}
 	info, err := os.Lstat(absolute)
 	if errors.Is(err, fs.ErrNotExist) {
+		if directory, dirErr := filepath.EvalSymlinks(filepath.Dir(absolute)); dirErr == nil {
+			return filepath.Join(directory, filepath.Base(absolute)), nil
+		}
 		return absolute, nil
 	}
 	if err != nil {
@@ -534,7 +544,9 @@ func (b *Buffer) Reload() error {
 	b.Mode = fresh.Mode
 	b.TabWidth = fresh.TabWidth
 	b.disk = fresh.disk
-	b.workspaceRoot = fresh.workspaceRoot
+	if b.workspaceRoot == "" {
+		b.workspaceRoot = fresh.workspaceRoot
+	}
 	b.Version++
 	b.SavedVersion = b.Version
 	b.hashValid = false

@@ -20,6 +20,13 @@ type matchedBracket struct {
 // comments.
 func matchBracket(ed *editor.Editor, from editor.Pos) (editor.Pos, bool) {
 	tokens := scanBrackets(ed)
+	within := tokens[:0]
+	for _, token := range tokens {
+		if ed.HasLine(token.pos.Line) {
+			within = append(within, token)
+		}
+	}
+	tokens = within
 	if len(tokens) == 0 {
 		return editor.Pos{}, false
 	}

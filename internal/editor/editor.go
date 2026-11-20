@@ -182,6 +182,9 @@ func (e *Editor) applyEditAt(edit Edit, after Pos) (Change, error) {
 
 func (e *Editor) apply(edit Edit, after func(Change) Pos) (Change, error) {
 	before := e.Cursor.Pos
+	if edit.Start == edit.End && edit.Text == "" {
+		return Change{}, nil
+	}
 	if e.lineWindow.active && e.WindowEmpty() {
 		adjusted, skip, materialized, err := e.materializeEmptyWindow(edit)
 		if err != nil {

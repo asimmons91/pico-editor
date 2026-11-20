@@ -156,6 +156,10 @@ func (v *Vim) moveForKey(ed *editor.Editor, key rune, count int, countGiven, for
 		setFirstNonBlank(ed, line)
 		outcome.linewise = true
 	case '%':
+		if ed.WindowEmpty() {
+			outcome.failed = true
+			return outcome
+		}
 		target, ok := matchBracket(ed, start)
 		if !ok {
 			outcome.failed = true
@@ -165,11 +169,11 @@ func (v *Vim) moveForKey(ed *editor.Editor, key rune, count int, countGiven, for
 		ed.SetCursor(target)
 		outcome.inclusive = true
 	case '{':
-		line := paragraphBackward(ed.Buffer.Lines, start.Line, count)
+		line := paragraphBackward(ed.Buffer.Lines, start.Line, count, ed.WindowFirst())
 		ed.SetCursor(editor.Pos{Line: line})
 		outcome.inclusive = false
 	case '}':
-		line := paragraphForward(ed.Buffer.Lines, start.Line, count)
+		line := paragraphForward(ed.Buffer.Lines, start.Line, count, ed.WindowLast())
 		ed.SetCursor(editor.Pos{Line: line})
 		outcome.inclusive = false
 	case 'H':
@@ -433,27 +437,28 @@ func clusterMatches(line string, runeIndex int, target rune) bool {
 	return r == target
 }
 
-func paragraphBackward(lines []string, line, count int) int {
+func paragraphBackward(lines []string, line, count, first int) int {
 	for i := 0; i < count; i++ {
-		if line == 0 {
+		if line <= first {
+			line = first
 			break
 		}
 		line--
-		for line > 0 && !isBlankLine(lines[line]) {
+		for line > first && !isBlankLine(lines[line]) {
 			line--
 		}
 	}
 	return line
 }
 
-func paragraphForward(lines []string, line, count int) int {
+func paragraphForward(lines []string, line, count, last int) int {
 	for i := 0; i < count; i++ {
-		if line >= len(lines)-1 {
-			line = len(lines) - 1
+		if line >= last {
+			line = last
 			break
 		}
 		line++
-		for line < len(lines)-1 && !isBlankLine(lines[line]) {
+		for line < last && !isBlankLine(lines[line]) {
 			line++
 		}
 	}

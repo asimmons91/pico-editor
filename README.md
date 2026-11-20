@@ -51,7 +51,7 @@ unsupported.
 ```sh
 mise install
 mise run build     # bin/pico-editor
-mise run run       # opens an empty Vim buffer
+mise run run       # opens the current directory workspace
 mise exec -- go run ./cmd/pico-editor path/to/file.lua
 ```
 

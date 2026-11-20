@@ -768,4 +768,9 @@ func (v *Vim) scrollCursor(ed *editor.Editor, r rune) {
 		return
 	}
 	ed.Viewport.TopLine = min(max(ed.Viewport.TopLine, 0), max(0, len(ed.Buffer.Lines)-height))
+	if ed.WindowEmpty() {
+		ed.Viewport.TopLine = ed.WindowFirst()
+	} else if first, end, active := ed.LineRange(); active {
+		ed.Viewport.TopLine = min(max(ed.Viewport.TopLine, first), max(first, end-height))
+	}
 }

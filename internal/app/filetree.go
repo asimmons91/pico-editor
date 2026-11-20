@@ -199,6 +199,9 @@ func (s *Session) handleTree(ev input.Event) bool {
 func (s *Session) handleTreeFilter(ev input.Event) bool {
 	switch ev.Kind {
 	case input.KindText:
+		if ev.Mods&(input.ModCtrl|input.ModAlt|input.ModMeta) != 0 {
+			return true
+		}
 		if s.Tree.pendingSlash {
 			s.Tree.pendingSlash = false
 			if string(ev.Runes) == "/" {

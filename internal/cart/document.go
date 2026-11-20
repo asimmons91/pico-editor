@@ -90,7 +90,7 @@ func Open(path string) (*Document, error) {
 	}
 	parsed, err := p8cart.Parse(absolute, data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", absolute, err)
 	}
 	if !parsed.HasCode() {
 		return nil, fmt.Errorf("%w: %s", ErrNoCode, absolute)

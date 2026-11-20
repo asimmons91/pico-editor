@@ -246,12 +246,12 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 		if !event.Focused {
 			return false, false
 		}
-		if g.session.DialogOpen() {
+		if g.session.DialogOpen() || g.saveBusy {
 			return false, false
 		}
 		conflict := g.session.RefreshFromDisk()
 		changed = true
-		if conflict != nil {
+		if conflict != nil && !g.session.DialogOpen() {
 			g.showExternalConflict(conflict)
 		}
 		return false, changed
@@ -539,11 +539,15 @@ func (g *Game) handleDialogResult() bool {
 			options.Backup = true
 			g.startSaveFor(pending.buffer, pending.action, options)
 		case 1:
-			g.reloadSessionBuffer(pending.buffer)
+			reloaded, ok := g.reloadSessionBuffer(pending.buffer)
+			if !ok {
+				g.cancelSaveAll()
+				return true
+			}
 			if pending.saveAll {
 				g.nextSaveAll()
 			} else if pending.action.QuitAfter {
-				if quit, _ := g.session.CloseBuffer(pending.buffer.Editor.Buffer, true); quit {
+				if quit, _ := g.session.CloseBuffer(reloaded.Editor.Buffer, true); quit {
 					g.pendingQuit = true
 				}
 			}
@@ -582,17 +586,19 @@ func (g *Game) handleDialogResult() bool {
 	return true
 }
 
-func (g *Game) reloadSessionBuffer(buffer *SessionBuffer) {
+func (g *Game) reloadSessionBuffer(buffer *SessionBuffer) (*SessionBuffer, bool) {
 	if buffer == nil {
-		return
+		return nil, false
 	}
 	index := g.session.bufferIndex(buffer)
 	if index < 0 {
-		return
+		return nil, false
 	}
-	if err := g.session.reloadBufferAt(buffer, index); err != nil {
+	if err := g.session.reloadBufferAtPreserving(buffer, index); err != nil {
 		g.session.ShowError("Reload failed", err)
+		return nil, false
 	}
+	return g.session.Buffers[index], true
 }
 
 func (g *Game) requestQuitAll() (quit, changed bool) {

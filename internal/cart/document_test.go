@@ -271,6 +271,33 @@ func TestDeletedCartReportsDeleted(t *testing.T) {
 	}
 }
 
+func TestCartSymlinkOutsideRootNeedsPermission(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "game.p8")
+	if err := os.WriteFile(target, fixture(t, "all_sections.p8"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link.p8")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	doc, err := Open(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc.SetWorkspaceRoot(root)
+	if _, err := doc.PrepareSave(SaveOptions{}); !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("PrepareSave err = %v, want ErrOutsideRoot", err)
+	}
+	if _, err := doc.PrepareSave(SaveOptions{AllowOutsideRoot: true}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("symlink was replaced: %v %v", info, err)
+	}
+}
+
 func TestReadOnlyCartRefusesSave(t *testing.T) {
 	path := copyFixture(t, "all_sections.p8")
 	if err := os.Chmod(path, 0o444); err != nil {

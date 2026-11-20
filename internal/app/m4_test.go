@@ -384,6 +384,35 @@ func TestExternalFocusReloadsCleanAndReportsDirty(t *testing.T) {
 	}
 }
 
+func TestForceEditAnotherPathDiscardsCurrentChanges(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "a.lua")
+	second := filepath.Join(root, "b.lua")
+	if err := os.WriteFile(first, []byte("a=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("b=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	game := New(Config{Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return testClock }, File: first})
+	if err := game.StartupError(); err != nil {
+		t.Fatal(err)
+	}
+	game.source = &fakeSource{}
+	if err := sendKeys(t, game, "iX<esc>:e! b.lua<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	if len(game.session.Buffers) != 1 {
+		t.Fatalf("buffers = %d, want 1 after :e!", len(game.session.Buffers))
+	}
+	if got := game.session.CurrentEditor().Buffer.Path; got != second {
+		t.Fatalf("current = %q, want %q", got, second)
+	}
+	if !game.session.CanQuitAll() {
+		t.Fatal("discarded buffer remained dirty")
+	}
+}
+
 func TestReadOnlySaveShowsErrorDialog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "readonly.lua")
 	if err := os.WriteFile(path, []byte("a=1\n"), 0o644); err != nil {
@@ -406,6 +435,33 @@ func TestReadOnlySaveShowsErrorDialog(t *testing.T) {
 	}
 	if !game.session.CurrentEditor().Buffer.Dirty() {
 		t.Fatal("read-only save cleared the dirty flag")
+	}
+}
+
+func TestConflictReloadThenWriteQuit(t *testing.T) {
+	game, path := newCartGame(t, fullCart)
+	if err := sendKeys(t, game, "iX<esc>"); err != nil {
+		t.Fatal(err)
+	}
+	external := strings.Replace(fullCart, "a=1", "a=5", 1)
+	if err := os.WriteFile(path, []byte(external), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := sendKeys(t, game, ":wq<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	if game.session.Dialog == nil || game.session.Dialog.Kind != DialogConflict {
+		t.Fatalf("dialog = %+v, want conflict", game.session.Dialog)
+	}
+	if err := sendKeys(t, game, "r"); err != ebiten.Termination {
+		t.Fatalf("reload then quit = %v, want Termination", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != external {
+		t.Fatalf("reload wrote the file: %q", data)
 	}
 }
 

@@ -173,7 +173,9 @@ func (d *Document) Save() error
   re-encoded.
 - `BaseLine` is `Parsed.CodeStartLine()`, the full-cart line of code line 0. It
   is constant for the lifetime of the document because the header is not
-  editable.
+  editable. The adapter converts `Parsed.Tabs()` to local code-body ranges once
+  and stores them in `Tabs`; `Tab.StartLine`/`EndLine`/`MarkerLine` are
+  code-buffer lines, not full-cart lines.
 - The editor buffer is LF-normalized. `FullText` calls
   `Parsed.ReplaceCode(Code.Text())`; `ReplaceCode` restores the original code
   newline style, so CRLF carts round-trip. A lone `\r` is P8SCII glyph 13 data,

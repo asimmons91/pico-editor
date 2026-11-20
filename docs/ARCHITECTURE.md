@@ -45,7 +45,7 @@ internal/vim      -> internal/{input,editor}
 internal/input    -> pico-lsp pkg/p8scii
 internal/editor   -> pico-lsp pkg/p8scii, internal/fsutil
 internal/render   -> internal/font, pico-lsp pkg/p8scii
-internal/cart     -> pico-lsp pkg/cart
+internal/cart     -> internal/{editor,fsutil}, pico-lsp pkg/cart
 internal/workspace-> pico-lsp pkg/cart
 internal/lsp      -> pico-lsp pkg/lsp, pkg/cart, pkg/p8scii
 internal/config   -> TOML parser (selected in M7), standard library

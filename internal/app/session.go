@@ -237,7 +237,9 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 				s.SetStatus(shortError(err), true)
 				return false
 			}
+			ed.Buffer.SetWorkspaceRoot(s.Workspace.Root)
 			s.prepareBuffer(s.CurrentBuffer())
+			s.refreshOwner(s.CurrentBuffer())
 		}
 		s.SetStatus("reloaded", false)
 		return true
@@ -282,6 +284,10 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 	}
 	if ed.Buffer.Path == "" && !ed.Buffer.Dirty() {
 		// Reuse an empty unnamed buffer instead of leaving it in the list.
+		s.Buffers[s.Current] = opened
+	} else if force && ed.Buffer.Dirty() {
+		// :e! abandons the current buffer's changes rather than leaving a
+		// second dirty buffer behind.
 		s.Buffers[s.Current] = opened
 	} else {
 		s.Buffers = append(s.Buffers, opened)
