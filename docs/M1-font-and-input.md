@@ -498,7 +498,9 @@ image.
 - `Config.Now` is injectable for deterministic blink tests. Mouse positions
   are mapped by the app from Ebitengine's default letterbox transform into the
   exact integer canvas rectangle, using the last final-screen bounds and
-  `CursorPositionF`, before they become input events.
+  `CursorPositionF`, before they become input events. The mapper can lag by one
+  frame immediately after a resize or monitor-DPI change; M1 does not consume
+  clicks, and M4 must refresh the bounds before hit testing.
 - The CI workflow now includes the deferred `xvfb` smoke job, which builds with
   `CGO_ENABLED=0`, opens a real X11 window under Xvfb, and requires a
   `first-frame` log record after the final-screen pass.

@@ -187,7 +187,7 @@ app state -> render.Surface (256x256, palette indices)
   device scale factor manually.
 - `DrawFinalScreen` replaces Ebitengine's default final-screen transform.
   Ebitengine APIs that use that default transform (for example
-  `ebiten.CursorPosition` and IME candidate placement) must be mapped through
+  `ebiten.CursorPositionF` and IME candidate placement) must be mapped through
   the same canvas rectangle before use. M1 owns the mouse/IME spike; do not
   assume the default letterbox mapping matches the drawn canvas.
 - Golden tests assert palette-index surfaces headlessly; they do not compare
@@ -351,8 +351,9 @@ Development rules:
   recover frame panics themselves. `Update` returns the logged fatal error to
   stop `RunGame`; `Draw` and `DrawFinalScreen` record it for the next `Update`.
   `main` keeps a top-level recover for startup panics. Both paths exit 1.
-- `internal/app/window.go` contains the pure scale and rectangle math; tests
-  cover non-integer device scale inputs and letterboxing.
+- `internal/app/window.go` contains the pure scale, rectangle, and cursor
+  mapping math; tests cover non-integer device-scale windows, odd dimensions,
+  and letterboxing.
 - `internal/version` supplies `Version`, `Commit`, and `BuildDate` for
   `-ldflags` injection. Development builds report `dev`/`unknown`.
 - Linux backends: Ebitengine selects Wayland or X11 automatically. If a backend
@@ -372,7 +373,7 @@ Development rules:
 - Ebitengine 2.10.6's experimental `exp/textinput` package is not used. V1
   accepts committed text only and does not promise preedit or candidate-window
   rendering.
-- `internal/app` owns `CanvasPosition`/`mapCursor`: it inverts Ebitengine's
+- `internal/app` owns `canvasPosition`/`mapCursor`: it inverts Ebitengine's
   default letterbox transform with the last final-screen bounds and applies
   the same integer `CanvasRect` used for drawing. `internal/input` receives the
   mapper as a function so it does not duplicate window geometry.

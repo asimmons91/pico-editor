@@ -129,10 +129,13 @@ the paste call site; a lone CR is preserved because it is a P8SCII byte.
   integer physical scale, so the grid stays sharp.
 - Ebitengine's cursor position is read with `CursorPositionF`; the app inverts
   Ebitengine's default letterbox transform and applies its exact integer
-  `CanvasRect`, using the last final-screen bounds. Table tests round-trip
-  points through integer, letterboxed, wide, odd-sized, and fractional/HiDPI
-  rectangles. M4 should still add a click-level integration test before
-  tree/tab hit testing.
+  `CanvasRect`, using the last completed final-screen bounds. Table tests
+  round-trip points through integer, letterboxed, wide, odd-sized, and
+  fractional/HiDPI rectangles, and `drawFinalScreen` records those bounds in a
+  headless test. The mapper can lag by one frame immediately after a resize or
+  monitor-DPI change, because Ebitengine updates input before the next
+  final-screen pass. M1 does not consume mouse clicks; M4 should refresh the
+  bounds at the start of hit testing and add a click-level integration test.
 - The CI `xvfb` smoke job builds with `CGO_ENABLED=0`, opens the editor under
   Xvfb, and requires the `first-frame` log record emitted after the
   final-screen pass. It therefore fails if window/GL initialization hangs or

@@ -98,3 +98,15 @@ func TestEbitenSourceCursorMapper(t *testing.T) {
 		t.Errorf("raw cursorPosition() = (%d, %d), want (10, 20)", x, y)
 	}
 }
+
+func TestEbitenSourcePollUsesMapper(t *testing.T) {
+	called := false
+	source := NewEbitenSource(func(x, y float64) (int, int) {
+		called = true
+		return 7, 9
+	})
+	source.Poll()
+	if !called {
+		t.Error("Poll did not call the cursor mapper")
+	}
+}

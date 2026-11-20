@@ -3,6 +3,8 @@ package app
 import (
 	"image"
 	"testing"
+
+	"github.com/hajimehoshi/ebiten/v2"
 )
 
 func TestGridGeometry(t *testing.T) {
@@ -236,5 +238,15 @@ func TestMapCursorBeforeFirstFrame(t *testing.T) {
 	game := &Game{}
 	if x, y := game.mapCursor(10.5, 20.5); x != 10 || y != 20 {
 		t.Errorf("mapCursor() = (%d, %d), want (10, 20)", x, y)
+	}
+}
+
+func TestDrawFinalScreenRecordsBounds(t *testing.T) {
+	game := newTestGame(t)
+	screen := ebiten.NewImage(1920, 1080)
+	offscreen := ebiten.NewImage(CanvasWidth, CanvasHeight)
+	game.drawFinalScreen(screen, offscreen)
+	if game.screenWidth != 1920 || game.screenHeight != 1080 {
+		t.Errorf("screen bounds = %dx%d, want 1920x1080", game.screenWidth, game.screenHeight)
 	}
 }
