@@ -231,6 +231,9 @@ func (d *Document) codeText() string {
 		return ""
 	}
 	if len(lines) == 1 && lines[0] == "" {
+		if d.Code.TrailingNewline {
+			return "\n"
+		}
 		return ""
 	}
 	text := strings.Join(lines, "\n")

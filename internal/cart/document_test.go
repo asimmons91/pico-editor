@@ -434,6 +434,31 @@ func TestCodeSectionHeaderIsRejected(t *testing.T) {
 	}
 }
 
+func TestBlankCodeBodyRoundTrips(t *testing.T) {
+	const original = "pico-8 cartridge // pico-8.com\nversion 42\n__lua__\n\n__gfx__\n0000\n"
+	path := filepath.Join(t.TempDir(), "blank.p8")
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := doc.Code.Text(); got != "\n" {
+		t.Fatalf("code = %q, want a blank line", got)
+	}
+	if err := doc.Save(); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != original {
+		t.Fatalf("blank-code round-trip = %q, want %q", after, original)
+	}
+}
+
 func TestParseErrorIncludesPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.p8")
 	if err := os.WriteFile(path, []byte("pico-8 cartridge // pico-8.com\nversion 42\n__lua__\n____\n"), 0o644); err != nil {
