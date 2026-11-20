@@ -7,20 +7,21 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 > PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
 > with, sponsored by, or endorsed by Lexaloffle Games.
 
-**Status:** M3 implemented. Automated checks pass; interactive X11/Wayland
+**Status:** M4 implemented. Automated checks pass; interactive X11/Wayland
 spot checks from M1 are tracked in
-[docs/spikes/M1-input.md](docs/spikes/M1-input.md), and the M3 manual checklist
-is in [docs/spikes/M3-vim.md](docs/spikes/M3-vim.md). The editor now has the
-curated Vim core from [docs/VIM.md](docs/VIM.md): normal, insert, visual
-character/line/block, motions, operators, text objects, registers, search,
-undo/redo, dot repeat, and ex commands including `:s`. See
-[docs/ROADMAP.md](docs/ROADMAP.md) for the next milestone (M4: carts and the
-file tree).
+[docs/spikes/M1-input.md](docs/spikes/M1-input.md), the M3 manual checklist is
+in [docs/spikes/M3-vim.md](docs/spikes/M3-vim.md), and the M4 cart/tree
+checklist is in [docs/spikes/M4-cart.md](docs/spikes/M4-cart.md). The editor now
+opens `.p8` carts as code-only tabs and browses a project folder with the file
+tree, in addition to the curated Vim core from [docs/VIM.md](docs/VIM.md). See
+[docs/ROADMAP.md](docs/ROADMAP.md) for M5 (in-process pico-lsp).
 
-With no argument an empty Vim buffer opens. Pass a `.lua` file to edit it:
+With no argument the current directory opens as a workspace with the file tree
+focused. Pass a `.p8` cart, `.lua` include, or directory to start there:
 
 ```sh
-mise exec -- go run ./cmd/pico-editor path/to/file.lua
+mise exec -- go run ./cmd/pico-editor path/to/game.p8
+mise exec -- go run ./cmd/pico-editor path/to/project
 ```
 
 The M1 charset demo is still available with `--debug-charset`: `1`–`4` change
@@ -29,9 +30,12 @@ palette, and the arrow keys move the selection.
 
 In the editor, `:help` lists the core keys. Use `i`/`a` to insert, `Esc` to
 return to normal mode, `:w` to save, `:q` to close (or `:q!` to discard), and
-`:wq`/`:x` to write and close. `Ctrl+Q` and the window close button also refuse
-to discard unsaved changes. `.p8` carts are rejected until M4 can preserve
-non-code sections.
+`:wq`/`:x` to write and close. `Ctrl+S` saves the current buffer. `Ctrl+Tab` and
+`Ctrl+Shift+Tab` move between cart code tabs; `Ctrl+Shift+B` toggles the file
+tree. `Ctrl+Q` and the window close button offer Save all / Discard all /
+Cancel when buffers are dirty. Carts save only the `__lua__` body; the header
+and every other section are preserved byte-for-byte. `.p8.png` remains
+unsupported.
 
 ## Requirements
 
@@ -78,6 +82,7 @@ inject the version, commit, and build date into
 - [Notices and attributions](NOTICE)
 - [M1 input and rendering spike results](docs/spikes/M1-input.md)
 - [M3 Vim manual checklist](docs/spikes/M3-vim.md)
+- [M4 cart and file tree checklist](docs/spikes/M4-cart.md)
 - [License](LICENSE)
 
 ## Contributing

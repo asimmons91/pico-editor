@@ -129,14 +129,14 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 		return options{}, err
 	}
 	if flags.NArg() > 1 {
-		fmt.Fprintf(stderr, "pico-editor: expected at most one file, got %s\n", strings.Join(flags.Args(), " "))
+		fmt.Fprintf(stderr, "pico-editor: expected at most one file or directory, got %s\n", strings.Join(flags.Args(), " "))
 		flags.Usage()
 		return options{}, errors.New("too many file arguments")
 	}
 	if flags.NArg() == 1 {
 		opts.file = flags.Arg(0)
 		if opts.file == "" {
-			fmt.Fprintln(stderr, "pico-editor: file argument must not be empty")
+			fmt.Fprintln(stderr, "pico-editor: path argument must not be empty")
 			flags.Usage()
 			return options{}, errors.New("empty file argument")
 		}
@@ -158,7 +158,7 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 }
 
 func printUsage(w io.Writer, flags *flag.FlagSet) {
-	fmt.Fprintln(w, "usage: pico-editor [flags] [file]")
+	fmt.Fprintln(w, "usage: pico-editor [flags] [file|directory]")
 	fmt.Fprintln(w)
 	flags.PrintDefaults()
 }

@@ -234,6 +234,10 @@ func (v *Vim) deleteToLineStart(ed *editor.Editor) {
 
 func (v *Vim) deleteClusters(ed *editor.Editor, forward, change bool) {
 	count := v.takeCount()
+	if ed.WindowEmpty() {
+		v.ringBell()
+		return
+	}
 	start := ed.Cursor.Pos
 	line := ed.Buffer.Lines[start.Line]
 	rangeStart := start
@@ -292,12 +296,16 @@ func (v *Vim) deleteClusters(ed *editor.Editor, forward, change bool) {
 func (v *Vim) changeWholeLines(ed *editor.Editor) {
 	count := v.takeCount()
 	first := ed.Cursor.Pos.Line
-	last := min(first+count-1, len(ed.Buffer.Lines)-1)
+	last := min(first+count-1, ed.WindowLast())
 	start := ed.Cursor.Pos
 	v.applyOperatorLines(ed, OpChange, first, last, 0, count, start)
 }
 
 func (v *Vim) replaceClusters(ed *editor.Editor, replacement rune, count int) {
+	if ed.WindowEmpty() {
+		v.ringBell()
+		return
+	}
 	start := ed.Cursor.Pos
 	line := ed.Buffer.Lines[start.Line]
 	position := start.Rune
@@ -335,8 +343,12 @@ func (v *Vim) joinLines(ed *editor.Editor) {
 	if count < 2 {
 		count = 2
 	}
+	if ed.WindowEmpty() {
+		v.ringBell()
+		return
+	}
 	first := ed.Cursor.Pos.Line
-	last := min(first+count-1, len(ed.Buffer.Lines)-1)
+	last := min(first+count-1, ed.WindowLast())
 	if last <= first {
 		v.ringBell()
 		return
@@ -374,6 +386,10 @@ func (v *Vim) joinLines(ed *editor.Editor) {
 
 func (v *Vim) toggleCase(ed *editor.Editor) {
 	count := v.takeCount()
+	if ed.WindowEmpty() {
+		v.ringBell()
+		return
+	}
 	start := ed.Cursor.Pos
 	line := ed.Buffer.Lines[start.Line]
 	position := start.Rune

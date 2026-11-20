@@ -1,8 +1,9 @@
 # pico-editor V1 Roadmap
 
-Status: M3 — Vim curated core implemented; M4 (cart model and file tree) next.
-Interactive M1 spot checks remain tracked in `docs/spikes/M1-input.md`, and the
-M3 manual checklist lives in `docs/spikes/M3-vim.md`.
+Status: M4 — cart model and file tree implemented; M5 (in-process pico-lsp)
+next. Interactive M1 spot checks remain tracked in `docs/spikes/M1-input.md`,
+the M3 manual checklist lives in `docs/spikes/M3-vim.md`, and the M4 manual
+checklist is in `docs/spikes/M4-cart.md`.
 Date: 2026-11-20
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise
@@ -235,7 +236,7 @@ Goal: open real PICO-8 carts without exposing or damaging non-code sections.
 Deliverables:
 
 - pico-lsp `pkg/cart` public parser plus byte-preserving `ReplaceCode`
-  save/splice API.
+  save/splice API (pinned `v1.6.0`).
 - Code-only view with `-->8` tab bar and inactive-tab folding.
 - Save reconstruction that preserves all non-code sections byte-for-byte.
 - Atomic writes and safe handling of read-only or externally changed files.
@@ -249,7 +250,7 @@ Exit criteria:
 - Code tabs switch cleanly and preserve cursor/scroll state per tab.
 - The file tree opens carts and includes without losing unsaved changes.
 - Save failures surface a useful error and do not corrupt the cart.
-- pico-lsp tags `pkg/cart`, and the editor pins the release.
+- pico-lsp `v1.6.0` includes `pkg/cart`, and the editor pins the release.
 
 ### M5 — In-process pico-lsp
 
@@ -428,6 +429,10 @@ normative.
 | Font source | Checked-in CC-0 atlas verified against PICO-8 screenshots | M1 |
 | pico-lsp public API | Thin `pkg/*` facades; `pkg/p8scii` before M1, `pkg/cart` before M4, `pkg/lsp` before M5 | M0/M4/M5 |
 | `.lua` include attachment | Workspace scan plus `pkg/cart` resolver | M4 |
+| pico-lsp `pkg/cart` pin | `v1.6.0` (M18 shipped in that release) | M4 |
+| Cart tab editing | Strict active-tab line window; cursor, operators, paste, search, and `:s` stay inside the tab | M4 |
+| Cart/file tree startup | Directory or no argument opens and focuses the tree; a file opens hidden with editor focus | M4 |
+| M4 dialogs | Arrow/Tab plus Enter, with O/R/C, S/D/C accelerators and Esc cancel | M4 |
 | File watching | Refresh-on-focus in M7; full watcher post-V1 | M7 |
 | `.lua` mixed line endings | Reject with `ErrMixedNewlines`; LF and CRLF files round-trip byte-for-byte | M2 |
 | External changes | M2 checks mtime, size, and content hash on save; M4 adds the conflict dialog and backups | M2/M4 |

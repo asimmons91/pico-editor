@@ -60,7 +60,7 @@ window resizes with integer scaling and never blurs.
 10. `.gitignore` for build outputs, editor state, and local recovery files.
 11. A written pico-lsp dependency plan:
     - `pkg/p8scii` in pico-lsp `v1.6.0`, required before M1.
-    - `pkg/cart` in pico-lsp `v1.7.0`, required before M4.
+    - `pkg/cart` in pico-lsp `v1.6.0`, required before M4.
     - `pkg/lsp` and `pkg/glyphs` in pico-lsp `v1.8.0`, required before M5.
     - Local `replace` during development; released version pinned before each
       milestone exits.
@@ -210,7 +210,7 @@ The document is normative for later milestones. It must contain:
   `replace github.com/asimmons91/pico-lsp => ../pico-lsp`.
 - Before M1 starts: pico-lsp publishes `pkg/p8scii` in `v1.6.0` and the editor
   pins that release. The temporary `replace` is removed.
-- Before M4 starts: `pkg/cart` in pico-lsp `v1.7.0` exposes byte-preserving
+- Before M4 starts: `pkg/cart` in pico-lsp `v1.6.0` exposes byte-preserving
   save/splice; the editor pins it.
 - Before M5 starts: pico-lsp `v1.8.0` publishes `pkg/lsp` and `pkg/glyphs`; the
   editor pins that release.

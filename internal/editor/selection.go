@@ -124,10 +124,17 @@ func (e *Editor) ClearSelection() {
 // selection end, keeping Cursor and Selection.Cursor consistent.
 func (e *Editor) SelectAll() {
 	e.BreakGroup()
-	last := len(e.Buffer.Lines) - 1
+	first := e.WindowFirst()
+	last := e.WindowLast()
+	if e.lineWindow.active && e.WindowEmpty() {
+		e.Selection = Selection{Anchor: Pos{Line: first}, Cursor: Pos{Line: first}, Kind: SelectionChar}
+		e.setCursor(Pos{Line: first}, true)
+		e.EnsureVisible()
+		return
+	}
 	end := Pos{Line: last, Rune: utf8.RuneCountInString(e.Buffer.Lines[last])}
 	e.Selection = Selection{
-		Anchor: Pos{},
+		Anchor: Pos{Line: first},
 		Cursor: end,
 		Kind:   SelectionChar,
 	}
@@ -184,6 +191,13 @@ func (e *Editor) SelectedText() (string, bool) {
 // characterwiseRange converts an inclusive selection to a half-open edit range.
 func (e *Editor) characterwiseRange() (start, end Pos, ok bool) {
 	start, inclusiveEnd := e.Selection.Normalized()
+	if e.lineWindow.active {
+		if e.WindowEmpty() {
+			return Pos{}, Pos{}, false
+		}
+		start = e.clampToWindow(start)
+		inclusiveEnd = e.clampToWindow(inclusiveEnd)
+	}
 	if start.Line < 0 || start.Line >= len(e.Buffer.Lines) {
 		return Pos{}, Pos{}, false
 	}

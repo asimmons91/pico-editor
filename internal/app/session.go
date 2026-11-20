@@ -6,15 +6,19 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/asimmons91/pico-editor/internal/cart"
 	"github.com/asimmons91/pico-editor/internal/editor"
+	"github.com/asimmons91/pico-editor/internal/fsutil"
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/render"
 	"github.com/asimmons91/pico-editor/internal/vim"
+	"github.com/asimmons91/pico-editor/internal/workspace"
 )
 
 const (
 	statusRow           = GridRows - 1
-	editorRows          = GridRows - 1
+	fileTabRow          = 0
+	cartTabRow          = 1
 	statusForeground    = 6
 	statusErrorColor    = 8
 	searchBackground    = 1
@@ -22,13 +26,17 @@ const (
 	cursorInsertColor   = 10
 )
 
-// Session is the Vim-backed editor screen. It owns a list of file buffers, the
-// modal state shared by them, and the help overlay.
+// Session is the Vim-backed editor screen. It owns open buffers, the file
+// tree, dialogs, the modal state shared by buffers, and the help overlay.
 type Session struct {
 	Buffers []*SessionBuffer
 	Current int
 	Vim     *vim.Vim
 	Help    *HelpOverlay
+	Tree    TreeState
+	Dialog  *Dialog
+
+	Workspace *workspace.Workspace
 
 	Status      string
 	StatusError bool
@@ -37,39 +45,40 @@ type Session struct {
 	quit   bool
 }
 
-// SessionBuffer is one open file. M4 extends this with cart code tabs.
+// SessionBuffer is one open file. Cart is non-nil for .p8 buffers; its Code
+// buffer is Editor.Buffer.
 type SessionBuffer struct {
-	Editor *editor.Editor
+	Editor        *editor.Editor
+	Cart          *cart.Document
+	ActiveTab     int
+	TabViews      []cart.ViewState
+	Owner         string
+	SyncedVersion int
 }
 
-// NewSession opens path or creates an empty unnamed buffer.
+// NewSession opens path or creates an empty unnamed buffer. The workspace root
+// is the file's parent, or the current directory when path is empty.
 func NewSession(path string, logger *slog.Logger) (*Session, error) {
-	if logger == nil {
-		logger = slog.New(slog.DiscardHandler)
+	root, err := os.Getwd()
+	if err != nil {
+		root = "."
 	}
-	var ed *editor.Editor
-	if path == "" {
-		ed = editor.NewEditor(editor.New(""))
-	} else {
-		buffer, err := editor.Open(path)
-		if err != nil {
-			return nil, err
+	if path != "" {
+		absolute, absErr := filepath.Abs(path)
+		if absErr != nil {
+			return nil, absErr
 		}
-		ed = editor.NewEditor(buffer)
+		root = filepath.Dir(absolute)
 	}
-	prepareEditor(ed)
-	return &Session{
-		Buffers: []*SessionBuffer{{Editor: ed}},
-		Vim:     vim.New(),
-		logger:  logger,
-	}, nil
+	return NewSessionAt(root, path, logger)
 }
 
-func prepareEditor(ed *editor.Editor) {
-	ed.Viewport.Width = GridColumns
-	ed.Viewport.Height = editorRows
-	ed.Viewport.ScrollOff = 2
-	ed.EnsureVisible()
+// CurrentBuffer returns the active session buffer, or nil if there is none.
+func (s *Session) CurrentBuffer() *SessionBuffer {
+	if s.Current < 0 || s.Current >= len(s.Buffers) {
+		return nil
+	}
+	return s.Buffers[s.Current]
 }
 
 // EndBatch resets frame-local input suppression after one Poll batch.
@@ -85,8 +94,15 @@ func (s *Session) CurrentEditor() *editor.Editor {
 	return s.Buffers[s.Current].Editor
 }
 
-// HandleEvent routes one input event to the help overlay or Vim.
+// HandleEvent routes one input event to a dialog, the file tree, the help
+// overlay, or Vim.
 func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim.Action) {
+	if s.Dialog != nil {
+		return false, s.handleDialog(ev), nil
+	}
+	if s.Tree.Visible && s.Tree.Focused {
+		return false, s.handleTree(ev), nil
+	}
 	if s.Help != nil {
 		return false, s.handleHelp(ev), nil
 	}
@@ -96,6 +112,7 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 	}
 	result := s.Vim.Handle(ev, ed)
 	s.applyVimResult(result)
+	s.syncCurrentCart()
 	return false, true, result.Actions
 }
 
@@ -115,6 +132,7 @@ func (s *Session) CompleteClipboardRead(text string, err error) (changed bool, a
 	}
 	result := s.Vim.CompleteClipboardRead(text, err, ed)
 	s.applyVimResult(result)
+	s.syncCurrentCart()
 	return true, result.Actions
 }
 
@@ -170,7 +188,7 @@ func (s *Session) CloseBuffer(buffer *editor.Buffer, force bool) (quit, changed 
 	if s.Current >= len(s.Buffers) {
 		s.Current = len(s.Buffers) - 1
 	}
-	prepareEditor(s.CurrentEditor())
+	s.prepareBuffer(s.CurrentBuffer())
 	return false, true
 }
 
@@ -200,22 +218,34 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 			s.SetStatus("E37: No write since last change (add ! to override)", true)
 			return false
 		}
-		ed.EndGroup()
-		if err := ed.Reload(); err != nil {
-			s.SetStatus(shortError(err), true)
-			return false
+		current := s.CurrentBuffer()
+		if current != nil && current.Cart != nil {
+			active := current.ActiveTab
+			fresh, err := s.openSessionBuffer(current.Cart.Path)
+			if err != nil {
+				s.ShowError("Reload failed", err)
+				return false
+			}
+			if active < len(fresh.Cart.Tabs) {
+				fresh.ActiveTab = active
+			}
+			s.Buffers[s.Current] = fresh
+			s.prepareBuffer(fresh)
+		} else {
+			ed.EndGroup()
+			if err := ed.Reload(); err != nil {
+				s.SetStatus(shortError(err), true)
+				return false
+			}
+			s.prepareBuffer(s.CurrentBuffer())
 		}
-		prepareEditor(ed)
 		s.SetStatus("reloaded", false)
 		return true
 	}
 
-	root, err := os.Getwd()
-	if err != nil {
-		root = "."
-	}
-	if ed.Buffer.Path != "" {
-		root = filepath.Dir(ed.Buffer.Path)
+	root := s.Workspace.Root
+	if root == "" {
+		root, _ = os.Getwd()
 	}
 	target := path
 	if !filepath.IsAbs(target) {
@@ -226,35 +256,38 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 		s.SetStatus(shortError(err), true)
 		return false
 	}
+	absolute = filepath.Clean(absolute)
 	for index, buffer := range s.Buffers {
 		bufferPath, err := filepath.Abs(buffer.Editor.Buffer.Path)
-		if err == nil && bufferPath == absolute {
-			if force {
-				if err := buffer.Editor.Reload(); err != nil {
-					s.SetStatus(shortError(err), true)
-					return false
-				}
-				prepareEditor(buffer.Editor)
-			}
-			s.Current = index
-			prepareEditor(buffer.Editor)
-			return true
+		if err != nil || bufferPath != absolute {
+			continue
 		}
+		if force {
+			fresh, err := s.openSessionBuffer(absolute)
+			if err != nil {
+				s.ShowError("Open failed", err)
+				return false
+			}
+			s.Buffers[index] = fresh
+		}
+		s.Current = index
+		s.prepareBuffer(s.CurrentBuffer())
+		return true
 	}
-	buffer, err := editor.Open(absolute)
+	opened, err := s.openSessionBuffer(absolute)
 	if err != nil {
-		s.SetStatus("E484: Can't open file: "+shortError(err), true)
+		s.logger.Error("open", "path", absolute, "error", err)
+		s.ShowError("Open failed", err)
 		return false
 	}
-	opened := editor.NewEditor(buffer)
-	prepareEditor(opened)
 	if ed.Buffer.Path == "" && !ed.Buffer.Dirty() {
 		// Reuse an empty unnamed buffer instead of leaving it in the list.
-		s.Buffers[s.Current].Editor = opened
+		s.Buffers[s.Current] = opened
 	} else {
-		s.Buffers = append(s.Buffers, &SessionBuffer{Editor: opened})
+		s.Buffers = append(s.Buffers, opened)
 		s.Current = len(s.Buffers) - 1
 	}
+	s.prepareBuffer(opened)
 	s.SetStatus("", false)
 	return true
 }
@@ -283,14 +316,35 @@ func (s *Session) SwitchBuffer(number, delta int) (changed bool) {
 		}
 	}
 	s.Current = index
-	prepareEditor(s.CurrentEditor())
+	s.prepareBuffer(s.CurrentBuffer())
 	return true
 }
 
-// SwitchTab is a single-tab stub until M4 adds cart code tabs.
+// SwitchTab implements :tabn/:tabp and Ctrl+Tab for cart code tabs.
 func (s *Session) SwitchTab(delta int) (changed bool) {
-	s.SetStatus("only one code tab is available until M4", false)
-	return false
+	buffer := s.CurrentBuffer()
+	if buffer == nil || buffer.Cart == nil || len(buffer.Cart.Tabs) == 0 {
+		s.SetStatus("E85: no code tabs", true)
+		return false
+	}
+	if len(buffer.Cart.Tabs) == 1 {
+		s.SetStatus("E85: only one code tab", true)
+		return false
+	}
+	if delta == 0 {
+		return false
+	}
+	s.saveActiveView(buffer)
+	next := (buffer.ActiveTab + delta) % len(buffer.Cart.Tabs)
+	if next < 0 {
+		next += len(buffer.Cart.Tabs)
+	}
+	buffer.ActiveTab = next
+	tab := buffer.Cart.Tabs[next]
+	buffer.Editor.SetLineRange(tab.StartLine, tab.EndLine)
+	restoreView(buffer.Editor, buffer.TabViews[next])
+	s.SetStatus("", false)
+	return true
 }
 
 // ShowBufferList opens the :ls overlay.
@@ -328,25 +382,78 @@ func (s *Session) OpenHelp(topic string) bool {
 	return true
 }
 
+// SaveOptions are the M4 conflict overrides selected by dialogs.
+type SaveOptions struct {
+	AllowExternalChange bool
+	AllowOutsideRoot    bool
+	Backup              bool
+}
+
 // SaveJob is a validated snapshot waiting for background IO.
 type SaveJob struct {
-	Buffer      *editor.Buffer
-	Snapshot    editor.SaveSnapshot
-	QuitAfter   bool
-	OnlyIfDirty bool
+	Buffer       *editor.Buffer
+	Cart         *cart.Document
+	Snapshot     editor.SaveSnapshot
+	CartSnapshot cart.SaveSnapshot
+	QuitAfter    bool
+	OnlyIfDirty  bool
+	Backup       bool
+}
+
+// Empty reports a dirty-check-only job that needs no write.
+func (j *SaveJob) Empty() bool {
+	return j.OnlyIfDirty && j.Snapshot.Data == nil && j.CartSnapshot.Data == nil
+}
+
+// Write performs the write described by the job, including an optional backup
+// of conflicting on-disk bytes.
+func (j *SaveJob) Write() error {
+	if j.Backup {
+		if _, err := fsutil.Backup(j.Buffer.Path); err != nil {
+			return err
+		}
+	}
+	if j.Cart != nil {
+		return j.CartSnapshot.Write()
+	}
+	return j.Snapshot.Write()
 }
 
 // PrepareSave validates and snapshots the current buffer for async writing.
 func (s *Session) PrepareSave(action vim.Action) (*SaveJob, error) {
-	ed := s.CurrentEditor()
-	if ed == nil {
+	return s.PrepareSaveBuffer(s.CurrentBuffer(), action, SaveOptions{})
+}
+
+// PrepareSaveBuffer validates and snapshots a specific buffer.
+func (s *Session) PrepareSaveBuffer(buffer *SessionBuffer, action vim.Action, options SaveOptions) (*SaveJob, error) {
+	if buffer == nil {
 		return nil, nil
 	}
+	ed := buffer.Editor
 	ed.EndGroup()
 	if action.OnlyIfDirty && !ed.Buffer.Dirty() {
-		return &SaveJob{Buffer: ed.Buffer, QuitAfter: action.QuitAfter, OnlyIfDirty: true}, nil
+		return &SaveJob{Buffer: ed.Buffer, Cart: buffer.Cart, QuitAfter: action.QuitAfter, OnlyIfDirty: true}, nil
 	}
-	snapshot, err := ed.Buffer.PrepareSave()
+	if buffer.Cart != nil {
+		snapshot, err := buffer.Cart.PrepareSave(cart.SaveOptions{
+			AllowExternalChange: options.AllowExternalChange,
+			AllowOutsideRoot:    options.AllowOutsideRoot,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &SaveJob{
+			Buffer:       ed.Buffer,
+			Cart:         buffer.Cart,
+			CartSnapshot: snapshot,
+			QuitAfter:    action.QuitAfter,
+			Backup:       options.Backup,
+		}, nil
+	}
+	snapshot, err := ed.Buffer.PrepareSaveWithOptions(editor.SaveOptions{
+		AllowExternalChange: options.AllowExternalChange,
+		AllowOutsideRoot:    options.AllowOutsideRoot,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -354,6 +461,7 @@ func (s *Session) PrepareSave(action vim.Action) (*SaveJob, error) {
 		Buffer:    ed.Buffer,
 		Snapshot:  snapshot,
 		QuitAfter: action.QuitAfter,
+		Backup:    options.Backup,
 	}, nil
 }
 
@@ -362,14 +470,20 @@ func (s *Session) CompleteSave(job *SaveJob, writeErr error) (quit, changed bool
 	if job == nil {
 		return false, false
 	}
-	if job.OnlyIfDirty && job.Snapshot.Data == nil {
+	if job.Empty() {
 		s.SetStatus("", false)
 		if job.QuitAfter {
-			return s.RequestQuit(true)
+			return s.CloseBuffer(job.Buffer, true)
 		}
 		return false, true
 	}
-	if err := job.Buffer.CommitSave(job.Snapshot, writeErr); err != nil {
+	var err error
+	if job.Cart != nil {
+		err = job.Cart.CommitSave(job.CartSnapshot, writeErr)
+	} else {
+		err = job.Buffer.CommitSave(job.Snapshot, writeErr)
+	}
+	if err != nil {
 		s.SetStatus(shortError(err), true)
 		return false, true
 	}
@@ -391,13 +505,34 @@ func (s *Session) Draw(surface *render.Surface, cursorVisible bool) {
 	if ed == nil {
 		return
 	}
-	s.drawBuffer(surface, ed)
-	if cursorVisible && s.Help == nil {
-		s.drawCursor(surface, ed)
+	buffer := s.CurrentBuffer()
+	top := luaCodeTop
+	height := luaCodeRows
+	var first, last int
+	if buffer != nil && buffer.Cart != nil {
+		top = cartCodeTop
+		height = cartCodeRows
+		if tab, ok := s.currentTab(); ok {
+			first, last = tab.StartLine, tab.EndLine
+		}
+	} else {
+		first, last = 0, len(ed.Buffer.Lines)
 	}
+	s.drawBuffer(surface, ed, top, first, last, height)
+	if cursorVisible && s.Help == nil && s.Dialog == nil && !s.Tree.Focused {
+		s.drawCursor(surface, ed, top, first, last)
+	}
+	s.drawFileTabs(surface)
+	s.drawCartTabs(surface)
 	s.drawStatus(surface, ed, cursorVisible)
+	if s.Tree.Visible {
+		s.drawTree(surface)
+	}
 	if s.Help != nil {
 		s.drawHelp(surface)
+	}
+	if s.Dialog != nil {
+		s.drawDialog(surface)
 	}
 }
 
@@ -461,6 +596,8 @@ func helpTopic(topic string) (string, []string) {
 			":w :q :q! :wq :x :e :s   ex commands",
 			"u Ctrl+R .   undo, redo, repeat",
 			"gg G Ctrl+O Ctrl+I zz zt zb   jumps/scroll",
+			"Ctrl+Tab Ctrl+Shift+Tab   cart code tabs",
+			"Ctrl+Shift+B   file tree; Ctrl+S saves",
 			"Esc cancels pending state or leaves a mode.",
 		}
 	}

@@ -21,6 +21,8 @@ type Editor struct {
 	Search    Search
 	History   UndoStack
 
+	lineWindow lineWindow
+
 	now   func() time.Time
 	group editGroup
 }
@@ -113,7 +115,7 @@ func (e *Editor) record(change Change) {
 }
 
 func (e *Editor) setCursor(p Pos, updateDesired bool) {
-	p = e.Buffer.NormalizePos(p)
+	p = e.clampToWindow(p)
 	e.Cursor.Pos = p
 	if updateDesired {
 		e.Cursor.DesiredCell = e.Buffer.CellColumn(p)
@@ -146,12 +148,26 @@ func (e *Editor) SetCursorPreserveDesired(p Pos) {
 // EnsureVisible scrolls the viewport so the cursor and its cluster are visible.
 func (e *Editor) EnsureVisible() {
 	pos := e.Buffer.NormalizePos(e.Cursor.Pos)
+	if e.lineWindow.active {
+		pos = e.clampToWindow(pos)
+	}
 	info := e.Buffer.Info(pos)
 	cells := e.Buffer.ClusterAt(pos).Cells
 	if cells < 1 {
 		cells = 1
 	}
-	e.Viewport.EnsureVisible(pos, info.Cell, cells, len(e.Buffer.Lines))
+	lineCount := len(e.Buffer.Lines)
+	if e.lineWindow.active {
+		lineCount = e.lineWindow.end
+	}
+	e.Viewport.EnsureVisible(pos, info.Cell, cells, lineCount)
+	if e.lineWindow.active {
+		if e.WindowEmpty() || e.lineWindow.end-e.lineWindow.first < e.Viewport.Height {
+			e.Viewport.TopLine = e.lineWindow.first
+		} else {
+			e.Viewport.TopLine = min(max(e.Viewport.TopLine, e.lineWindow.first), e.lineWindow.end-e.Viewport.Height)
+		}
+	}
 }
 
 func (e *Editor) applyEdit(edit Edit) (Change, error) {
@@ -166,10 +182,26 @@ func (e *Editor) applyEditAt(edit Edit, after Pos) (Change, error) {
 
 func (e *Editor) apply(edit Edit, after func(Change) Pos) (Change, error) {
 	before := e.Cursor.Pos
+	if e.lineWindow.active && e.WindowEmpty() {
+		adjusted, skip, materialized, err := e.materializeEmptyWindow(edit)
+		if err != nil {
+			return Change{}, err
+		}
+		if skip {
+			e.setCursor(e.Cursor.Pos, true)
+			e.EnsureVisible()
+			return materialized, nil
+		}
+		edit = adjusted
+	}
+	if !e.editInWindow(edit) {
+		return Change{}, ErrOutsideRange
+	}
 	change, err := e.Buffer.Apply(edit)
 	if err != nil || change.Empty() {
 		return change, err
 	}
+	e.shiftLineRange(editLineDelta(edit))
 	change.Before = before
 	e.setCursor(after(change), true)
 	change.After = e.Cursor.Pos
@@ -224,6 +256,9 @@ func (e *Editor) DeleteSelection() (Change, error) {
 // DeleteLines deletes complete lines, including the adjoining newline. The
 // cursor lands at the start of the affected position after the edit.
 func (e *Editor) DeleteLines(first, last int) (Change, error) {
+	if e.lineWindow.active && e.WindowEmpty() {
+		return Change{}, nil
+	}
 	first, last, err := e.lineRange(first, last)
 	if err != nil {
 		return Change{}, err
@@ -235,6 +270,9 @@ func (e *Editor) DeleteLines(first, last int) (Change, error) {
 // LineRangeText returns a linewise range with a trailing newline, suitable for
 // a linewise register.
 func (e *Editor) LineRangeText(first, last int) (string, error) {
+	if e.lineWindow.active && e.WindowEmpty() {
+		return "\n", nil
+	}
 	first, last, err := e.lineRange(first, last)
 	if err != nil {
 		return "", err
@@ -249,7 +287,14 @@ func (e *Editor) lineRange(first, last int) (int, int, error) {
 	if first > last {
 		first, last = last, first
 	}
-	if first < 0 || last >= len(e.Buffer.Lines) {
+	if e.lineWindow.active {
+		if e.WindowEmpty() {
+			return 0, 0, ErrInvalidRange
+		}
+		first = max(first, e.lineWindow.first)
+		last = min(last, e.lineWindow.end-1)
+	}
+	if first < 0 || last >= len(e.Buffer.Lines) || first > last {
 		return 0, 0, ErrInvalidRange
 	}
 	return first, last, nil
@@ -278,6 +323,9 @@ func (e *Editor) SplitLine() (Change, error) {
 // bracket.
 func (e *Editor) JoinLines() (Change, error) {
 	line := e.Cursor.Pos.Line
+	if e.lineWindow.active && (e.WindowEmpty() || line+1 >= e.lineWindow.end) {
+		return Change{}, nil
+	}
 	if line+1 >= len(e.Buffer.Lines) {
 		return Change{}, nil
 	}
@@ -309,6 +357,9 @@ func (e *Editor) JoinLines() (Change, error) {
 // positive. A negative delta removes up to -delta leading spaces, or one
 // leading tab. The whole range is one undo entry.
 func (e *Editor) IndentLines(first, last, delta int) (Change, error) {
+	if e.lineWindow.active && e.WindowEmpty() {
+		return Change{}, nil
+	}
 	first, last, err := e.lineRange(first, last)
 	if err != nil {
 		return Change{}, err
@@ -367,6 +418,9 @@ func firstNonBlank(line string) int {
 // ReplaceCluster replaces the cluster under the cursor. The cursor stays on the
 // replacement's first cluster.
 func (e *Editor) ReplaceCluster(text string) (Change, error) {
+	if e.lineWindow.active && e.WindowEmpty() {
+		return Change{}, ErrNoCluster
+	}
 	line := e.Buffer.Lines[e.Cursor.Pos.Line]
 	if e.Cursor.Pos.Rune >= utf8.RuneCountInString(line) {
 		return Change{}, ErrNoCluster
@@ -391,6 +445,9 @@ func (e *Editor) InsertTab() (Change, error) {
 // start of a line it joins with the previous line.
 func (e *Editor) DeleteClusterBefore() (Change, error) {
 	position := e.Buffer.NormalizePos(e.Cursor.Pos)
+	if e.lineWindow.active && (e.WindowEmpty() || (position.Line == e.lineWindow.first && position.Rune == 0)) {
+		return Change{}, nil
+	}
 	if position.Rune == 0 {
 		if position.Line == 0 {
 			return Change{}, nil
@@ -409,6 +466,15 @@ func (e *Editor) DeleteClusterBefore() (Change, error) {
 // joins with the next line.
 func (e *Editor) DeleteCluster() (Change, error) {
 	position := e.Buffer.NormalizePos(e.Cursor.Pos)
+	if e.lineWindow.active {
+		if e.WindowEmpty() {
+			return Change{}, nil
+		}
+		line := e.Buffer.Lines[position.Line]
+		if position.Line >= e.lineWindow.end-1 && position.Rune >= utf8.RuneCountInString(line) {
+			return Change{}, nil
+		}
+	}
 	line := e.Buffer.Lines[position.Line]
 	if position.Rune >= utf8.RuneCountInString(line) {
 		if position.Line+1 >= len(e.Buffer.Lines) {
@@ -441,6 +507,7 @@ func (e *Editor) Undo() (Change, bool) {
 		return Change{}, false
 	}
 	e.History.PushRedo(change)
+	e.normalizeLineRange()
 	e.setCursor(change.Before, true)
 	e.Selection = Selection{}
 	e.EnsureVisible()
@@ -464,6 +531,7 @@ func (e *Editor) Redo() (Change, bool) {
 		return Change{}, false
 	}
 	e.History.PushUndo(change)
+	e.normalizeLineRange()
 	e.setCursor(change.After, true)
 	e.Selection = Selection{}
 	e.EnsureVisible()
@@ -497,6 +565,7 @@ func (e *Editor) Reload() error {
 	e.History.Undo = nil
 	e.History.Redo = nil
 	e.Selection = Selection{}
+	e.normalizeLineRange()
 	e.setCursor(e.Cursor.Pos, true)
 	e.EnsureVisible()
 	return nil

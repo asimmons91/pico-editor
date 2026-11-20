@@ -18,7 +18,7 @@ var (
 	ErrMixedNewlines   = errors.New("file has mixed line endings")
 	ErrAmbiguousCR     = errors.New("line ending in CR would be indistinguishable from CRLF")
 	ErrNotRegularFile  = errors.New("not a regular file")
-	ErrUnsupportedFile = errors.New("unsupported file type until M4")
+	ErrUnsupportedFile = errors.New("unsupported file type")
 	ErrNoPath          = errors.New("buffer has no path")
 	ErrOutsideRoot     = errors.New("symlink target is outside the workspace root")
 
@@ -27,6 +27,7 @@ var (
 	ErrInvalidText     = errors.New("edit text is not valid UTF-8")
 	ErrNoCluster       = errors.New("no cluster at the cursor")
 	ErrInvalidPattern  = errors.New("invalid search pattern")
+	ErrOutsideRange    = errors.New("edit would leave the active line range")
 )
 
 // PathError attaches the affected path to an editor error.

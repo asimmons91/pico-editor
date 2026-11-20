@@ -47,8 +47,8 @@ func (v *Vim) previewSearch(ed *editor.Editor, pattern string, forward bool, fro
 	}
 	search := v.searchObject(pattern)
 	search.Forward = forward
-	match, ok, err := search.FindIn(ed.Buffer, searchStart(ed, from, forward))
-	if err != nil || !ok {
+	match, ok := findInWindow(ed, search, searchStart(ed, from, forward), forward)
+	if !ok {
 		return false
 	}
 	ed.SetCursor(match.Start)
@@ -114,12 +114,7 @@ func (v *Vim) searchMoveFrom(ed *editor.Editor, forward bool, count int, from ed
 	}
 	var match editor.Match
 	for i := 0; i < max(1, count); i++ {
-		result, ok, err := search.FindIn(ed.Buffer, position)
-		if err != nil {
-			v.message(msgPatternNotFound)
-			v.ringBell()
-			return
-		}
+		result, ok := findInWindow(ed, search, position, forward)
 		if !ok {
 			v.message(msgPatternNotFound)
 			v.ringBell()
@@ -138,6 +133,38 @@ func (v *Vim) searchMoveFrom(ed *editor.Editor, forward bool, count int, from ed
 	ed.SetCursor(match.Start)
 }
 
+// findInWindow searches only the active tab's lines. It wraps inside the tab,
+// never jumping into a hidden separator or another code tab.
+func findInWindow(ed *editor.Editor, search editor.Search, from editor.Pos, forward bool) (editor.Match, bool) {
+	matches, err := search.FindAll(ed.Buffer.Text())
+	if err != nil || len(matches) == 0 {
+		return editor.Match{}, false
+	}
+	within := matches[:0]
+	for _, match := range matches {
+		if ed.HasLine(match.Start.Line) && ed.HasLine(match.End.Line) {
+			within = append(within, match)
+		}
+	}
+	if len(within) == 0 {
+		return editor.Match{}, false
+	}
+	if forward {
+		for _, match := range within {
+			if !match.Start.Before(from) {
+				return match, true
+			}
+		}
+		return within[0], true
+	}
+	for index := len(within) - 1; index >= 0; index-- {
+		if within[index].Start.Before(from) {
+			return within[index], true
+		}
+	}
+	return within[len(within)-1], true
+}
+
 func searchStart(ed *editor.Editor, from editor.Pos, forward bool) editor.Pos {
 	if forward {
 		return ed.Buffer.NextCluster(from)
@@ -146,6 +173,9 @@ func searchStart(ed *editor.Editor, from editor.Pos, forward bool) editor.Pos {
 }
 
 func (v *Vim) searchWord(ed *editor.Editor, forward bool) bool {
+	if ed.WindowEmpty() {
+		return false
+	}
 	line := ed.Buffer.Lines[ed.Cursor.Pos.Line]
 	if len(line) == 0 {
 		return false
@@ -206,7 +236,13 @@ func (v *Vim) SearchHighlights(ed *editor.Editor) []editor.Match {
 	if err != nil {
 		return nil
 	}
-	return matches
+	filtered := matches[:0]
+	for _, match := range matches {
+		if ed.HasLine(match.Start.Line) && ed.HasLine(match.End.Line) {
+			filtered = append(filtered, match)
+		}
+	}
+	return filtered
 }
 
 // SearchPattern returns the committed search pattern.

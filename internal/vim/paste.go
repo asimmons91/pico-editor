@@ -107,6 +107,10 @@ func (v *Vim) pasteLines(ed *editor.Editor, text string, before bool, count int)
 }
 
 func (v *Vim) pasteBlock(ed *editor.Editor, text string, before bool, count int) {
+	if ed.WindowEmpty() {
+		v.ringBell()
+		return
+	}
 	lines := strings.Split(text, "\n")
 	if count > 1 {
 		for i, line := range lines {

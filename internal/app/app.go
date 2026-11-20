@@ -4,12 +4,17 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"runtime/debug"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
+	"github.com/asimmons91/pico-editor/internal/cart"
+	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/render"
 	"github.com/asimmons91/pico-editor/internal/vim"
@@ -26,9 +31,12 @@ type Config struct {
 	Now func() time.Time
 	// DebugCharset forces the M1 charset screen instead of the editor.
 	DebugCharset bool
-	// File opens a .lua file in the Vim-backed editor. It is mutually
-	// exclusive with DebugCharset.
+	// File opens a .lua or .p8 file, or a workspace directory, in the
+	// Vim-backed editor. It is mutually exclusive with DebugCharset.
 	File string
+	// Workspace overrides the workspace root. Nil derives it from File or the
+	// current directory.
+	Workspace string
 }
 
 type clipboardOp uint8
@@ -49,6 +57,18 @@ type saveResult struct {
 	err error
 }
 
+type pendingSave struct {
+	buffer  *SessionBuffer
+	action  vim.Action
+	options SaveOptions
+	saveAll bool
+}
+
+type dialogContext struct {
+	kind    DialogKind
+	pending *pendingSave
+}
+
 // Game is the root Ebitengine game. It owns no package-level state.
 type Game struct {
 	logger           *slog.Logger
@@ -63,8 +83,11 @@ type Game struct {
 	saveResults      chan saveResult
 	saveBusy         bool
 	pendingQuit      bool
+	saveAll          bool
+	saveAllQueue     []*SessionBuffer
+	dialogContext    *dialogContext
+	mouseDown        bool
 	startupErr       error
-	closeNotified    bool
 	blink            *Blink
 	scale            int
 	now              func() time.Time
@@ -109,11 +132,34 @@ func New(cfg Config) *Game {
 			game.startupErr = fmt.Errorf("cannot combine --debug-charset with a file argument")
 		}
 	} else {
-		session, openErr := NewSession(cfg.File, logger)
-		if openErr != nil {
-			game.startupErr = openErr
-		} else {
-			game.session = session
+		root := cfg.Workspace
+		path := cfg.File
+		if path != "" {
+			absolute, err := filepath.Abs(path)
+			if err != nil {
+				game.startupErr = err
+			} else if info, statErr := os.Stat(absolute); statErr != nil {
+				game.startupErr = statErr
+			} else if info.IsDir() {
+				root = absolute
+				path = ""
+			} else {
+				path = absolute
+				if root == "" {
+					root = filepath.Dir(absolute)
+				}
+			}
+		}
+		if root == "" {
+			root, _ = os.Getwd()
+		}
+		if game.startupErr == nil {
+			session, openErr := NewSessionAt(root, path, logger)
+			if openErr != nil {
+				game.startupErr = openErr
+			} else {
+				game.session = session
+			}
 		}
 	}
 	game.redraw()
@@ -195,8 +241,20 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 	case input.KindFocus:
 		if g.session == nil {
 			g.charset.AddLog(fmt.Sprintf("focus %t", event.Focused))
+			return false, true
 		}
-		return false, true
+		if !event.Focused {
+			return false, false
+		}
+		if g.session.DialogOpen() {
+			return false, false
+		}
+		conflict := g.session.RefreshFromDisk()
+		changed = true
+		if conflict != nil {
+			g.showExternalConflict(conflict)
+		}
+		return false, changed
 	case input.KindText:
 		if g.session != nil {
 			return g.handleSessionEvent(event)
@@ -204,7 +262,15 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 		g.charset.AddLog(fmt.Sprintf("text %q", string(event.Runes)))
 		return false, true
 	case input.KindMouse:
-		return false, false
+		if g.session == nil {
+			return false, false
+		}
+		pressed := event.Buttons&input.MouseLeft != 0
+		if pressed && !g.mouseDown {
+			changed = g.session.Click(event.X, event.Y)
+		}
+		g.mouseDown = pressed
+		return false, changed
 	case input.KindResize:
 		return false, false
 	case input.KindKeyDown:
@@ -224,18 +290,24 @@ func (g *Game) handleWindowClose(closing bool) (quit, changed bool) {
 		return true, false
 	}
 	if g.session.CanQuitAll() {
+		if g.saveBusy {
+			g.pendingQuit = true
+			return false, true
+		}
 		return true, false
 	}
-	if !g.closeNotified {
-		g.session.SetStatus("E37: No write since last change (add ! to override)", true)
-		g.closeNotified = true
-		return false, true
+	if g.session.DialogOpen() {
+		return false, false
 	}
-	return false, false
+	g.showQuitDialog()
+	return false, true
 }
 
 func (g *Game) handleSessionEvent(event input.Event) (quit, changed bool) {
 	_, changed, actions := g.session.HandleEvent(event)
+	if dialogChanged := g.handleDialogResult(); dialogChanged {
+		changed = true
+	}
 	if quit, actionChanged := g.applyActions(actions); quit {
 		return true, true
 	} else {
@@ -246,17 +318,30 @@ func (g *Game) handleSessionEvent(event input.Event) (quit, changed bool) {
 
 func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 	key := event.Key
-	if key == input.KeyQ && event.Mods&input.ModCtrl != 0 && !event.Repeat {
-		if g.session != nil {
-			quit, changed = g.session.RequestQuit(false)
-			if quit {
-				return true, changed
-			}
-			return false, changed
-		}
+	if g.session == nil && key == input.KeyQ && event.Mods&input.ModCtrl != 0 && !event.Repeat {
 		return true, false
 	}
 	if g.session != nil {
+		if g.session.DialogOpen() {
+			return g.handleSessionEvent(event)
+		}
+		if event.Mods&input.ModCtrl != 0 && !event.Repeat {
+			switch {
+			case key == input.KeyQ && event.Mods&(input.ModShift|input.ModAlt|input.ModMeta) == 0:
+				return g.requestQuitAll()
+			case key == input.KeyS && event.Mods&(input.ModAlt|input.ModMeta) == 0:
+				_, changed := g.startSaveFor(g.session.CurrentBuffer(), vim.Action{Kind: vim.ActionSave}, SaveOptions{})
+				return false, changed
+			case key == input.KeyTab && event.Mods&(input.ModAlt|input.ModMeta) == 0:
+				delta := 1
+				if event.Mods&input.ModShift != 0 {
+					delta = -1
+				}
+				return false, g.session.SwitchTab(delta)
+			case key == input.KeyB && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
+				return false, g.session.ToggleTree()
+			}
+		}
 		return g.handleSessionEvent(event)
 	}
 
@@ -322,7 +407,7 @@ func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
 		changed = true
 		switch action.Kind {
 		case vim.ActionSave:
-			if g.startSave(action) {
+			if saveQuit, _ := g.startSaveFor(g.session.CurrentBuffer(), action, SaveOptions{}); saveQuit {
 				return true, true
 			}
 		case vim.ActionQuit:
@@ -353,29 +438,225 @@ func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
 	return false, changed
 }
 
-func (g *Game) startSave(action vim.Action) (quit bool) {
-	job, err := g.session.PrepareSave(action)
-	if err != nil {
-		g.session.SetStatus(shortError(err), true)
-		return false
-	}
-	if job == nil {
-		return false
-	}
-	if job.OnlyIfDirty && job.Snapshot.Data == nil {
-		quit, _ := g.session.CompleteSave(job, nil)
-		return quit
+func (g *Game) startSaveFor(buffer *SessionBuffer, action vim.Action, options SaveOptions) (quit, changed bool) {
+	if buffer == nil {
+		return false, false
 	}
 	if g.saveBusy {
 		g.session.SetStatus("save already in progress", true)
-		return false
+		return false, true
+	}
+	job, err := g.session.PrepareSaveBuffer(buffer, action, options)
+	if err != nil {
+		g.handleSaveError(buffer, action, options, err)
+		return false, true
+	}
+	if job == nil {
+		return false, false
+	}
+	if job.Empty() {
+		return g.session.CompleteSave(job, nil)
 	}
 	g.saveBusy = true
 	go func() {
-		writeErr := job.Snapshot.Write()
+		writeErr := job.Write()
 		g.saveResults <- saveResult{job: job, err: writeErr}
 	}()
-	return false
+	return false, true
+}
+
+func (g *Game) handleSaveError(buffer *SessionBuffer, action vim.Action, options SaveOptions, err error) {
+	g.logger.Error("save", "path", buffer.Editor.Buffer.Path, "error", err)
+	switch {
+	case errors.Is(err, cart.ErrReadOnly), errors.Is(err, editor.ErrReadOnly):
+		g.cancelSaveAll()
+		g.session.ShowError("Cannot save", err)
+	case errors.Is(err, cart.ErrDeleted), errors.Is(err, fs.ErrNotExist) &&
+		(errors.Is(err, editor.ErrExternalChange) || errors.Is(err, cart.ErrExternalChange)):
+		g.showSaveDialog(DialogDeleted, buffer, action, options, err)
+	case errors.Is(err, cart.ErrOutsideRoot), errors.Is(err, editor.ErrOutsideRoot):
+		g.showSaveDialog(DialogOutsideRoot, buffer, action, options, err)
+	case errors.Is(err, cart.ErrExternalChange), errors.Is(err, editor.ErrExternalChange):
+		g.showSaveDialog(DialogConflict, buffer, action, options, err)
+	default:
+		g.cancelSaveAll()
+		g.session.SetStatus(shortError(err), true)
+	}
+}
+
+func (g *Game) showSaveDialog(kind DialogKind, buffer *SessionBuffer, action vim.Action, options SaveOptions, err error) {
+	path := g.session.bufferName(buffer)
+	pending := &pendingSave{
+		buffer:  buffer,
+		action:  action,
+		options: options,
+		saveAll: g.saveAll,
+	}
+	var title, message string
+	var choices []DialogOption
+	var defaultChoice int
+	switch kind {
+	case DialogDeleted:
+		title = "File deleted"
+		message = path + " was deleted on disk. Recreate it with the current buffer?"
+		choices = []DialogOption{{Label: "Recreate"}, {Label: "Cancel"}}
+		defaultChoice = 1
+	case DialogOutsideRoot:
+		title = "Outside workspace"
+		message = err.Error() + ". Save anyway?"
+		choices = []DialogOption{{Label: "Save anyway"}, {Label: "Cancel"}}
+		defaultChoice = 1
+	default:
+		title = "File changed"
+		message = path + " changed on disk. Overwrite it, reload from disk, or cancel?"
+		choices = []DialogOption{{Label: "Overwrite"}, {Label: "Reload"}, {Label: "Cancel"}}
+		defaultChoice = 2
+	}
+	g.dialogContext = &dialogContext{kind: kind, pending: pending}
+	g.session.ShowDialog(kind, title, message, choices, defaultChoice)
+}
+
+func (g *Game) handleDialogResult() bool {
+	if g.session == nil {
+		return false
+	}
+	kind, choice, ok := g.session.TakeDialogResult()
+	if !ok {
+		return false
+	}
+	context := g.dialogContext
+	g.dialogContext = nil
+	switch kind {
+	case DialogConflict:
+		if context == nil || context.pending == nil {
+			return true
+		}
+		pending := context.pending
+		switch choice {
+		case 0:
+			options := pending.options
+			options.AllowExternalChange = true
+			options.Backup = true
+			g.startSaveFor(pending.buffer, pending.action, options)
+		case 1:
+			g.reloadSessionBuffer(pending.buffer)
+			if pending.saveAll {
+				g.nextSaveAll()
+			} else if pending.action.QuitAfter {
+				if quit, _ := g.session.CloseBuffer(pending.buffer.Editor.Buffer, true); quit {
+					g.pendingQuit = true
+				}
+			}
+		default:
+			g.cancelSaveAll()
+		}
+	case DialogDeleted:
+		if context != nil && context.pending != nil && choice == 0 {
+			pending := context.pending
+			options := pending.options
+			options.AllowExternalChange = true
+			options.Backup = false
+			g.startSaveFor(pending.buffer, pending.action, options)
+		} else {
+			g.cancelSaveAll()
+		}
+	case DialogOutsideRoot:
+		if context != nil && context.pending != nil && choice == 0 {
+			pending := context.pending
+			options := pending.options
+			options.AllowOutsideRoot = true
+			g.startSaveFor(pending.buffer, pending.action, options)
+		} else {
+			g.cancelSaveAll()
+		}
+	case DialogQuit:
+		switch choice {
+		case 0:
+			g.startSaveAll()
+		case 1:
+			g.pendingQuit = true
+		default:
+			g.cancelSaveAll()
+		}
+	}
+	return true
+}
+
+func (g *Game) reloadSessionBuffer(buffer *SessionBuffer) {
+	if buffer == nil {
+		return
+	}
+	index := g.session.bufferIndex(buffer)
+	if index < 0 {
+		return
+	}
+	if err := g.session.reloadBufferAt(buffer, index); err != nil {
+		g.session.ShowError("Reload failed", err)
+	}
+}
+
+func (g *Game) requestQuitAll() (quit, changed bool) {
+	if g.session == nil {
+		return true, false
+	}
+	if g.session.CanQuitAll() {
+		if g.saveBusy {
+			g.pendingQuit = true
+			return false, true
+		}
+		return true, true
+	}
+	if g.session.DialogOpen() {
+		return false, false
+	}
+	g.showQuitDialog()
+	return false, true
+}
+
+func (g *Game) showQuitDialog() {
+	g.dialogContext = &dialogContext{kind: DialogQuit}
+	g.session.ShowDialog(DialogQuit, "Unsaved changes",
+		"One or more buffers have unsaved changes.",
+		[]DialogOption{{Label: "Save all"}, {Label: "Discard all"}, {Label: "Cancel"}}, 2)
+}
+
+func (g *Game) startSaveAll() {
+	if g.session == nil {
+		g.pendingQuit = true
+		return
+	}
+	g.saveAll = true
+	g.saveAllQueue = g.session.unsavedBuffers()
+	g.nextSaveAll()
+}
+
+func (g *Game) nextSaveAll() {
+	if !g.saveAll || g.saveBusy {
+		return
+	}
+	for len(g.saveAllQueue) > 0 {
+		buffer := g.saveAllQueue[0]
+		g.saveAllQueue = g.saveAllQueue[1:]
+		if buffer == nil || !buffer.Editor.Buffer.Dirty() {
+			continue
+		}
+		if g.session.bufferIndex(buffer) < 0 {
+			continue
+		}
+		_, changed := g.startSaveFor(buffer, vim.Action{Kind: vim.ActionSave}, SaveOptions{})
+		if changed {
+			return
+		}
+		g.cancelSaveAll()
+		return
+	}
+	g.saveAll = false
+	g.pendingQuit = true
+}
+
+func (g *Game) cancelSaveAll() {
+	g.saveAll = false
+	g.saveAllQueue = nil
 }
 
 func (g *Game) pollSave() (quit, changed bool) {
@@ -386,6 +667,13 @@ func (g *Game) pollSave() (quit, changed bool) {
 	case result := <-g.saveResults:
 		g.saveBusy = false
 		quit, _ := g.session.CompleteSave(result.job, result.err)
+		if !quit && g.saveAll {
+			if result.err != nil {
+				g.cancelSaveAll()
+			} else {
+				g.nextSaveAll()
+			}
+		}
 		return quit, true
 	default:
 		return false, false

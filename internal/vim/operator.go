@@ -126,7 +126,7 @@ func (v *Vim) applyLineOperator(ed *editor.Editor) {
 	}
 	v.Operator = OpNone
 	first := ed.Cursor.Pos.Line
-	last := min(first+count-1, len(ed.Buffer.Lines)-1)
+	last := min(first+count-1, ed.WindowLast())
 	start := ed.Cursor.Pos
 	v.applyOperatorLines(ed, operator, first, last, 0, count, start)
 }
@@ -144,8 +144,8 @@ func (v *Vim) applyLineOperatorAt(ed *editor.Editor, targetLine int) {
 
 func (v *Vim) applyOperatorLines(ed *editor.Editor, operator Operator, first, last int, motion rune, count int, start editor.Pos) {
 	first, last = min(first, last), max(first, last)
-	first = clampLine(first, len(ed.Buffer.Lines))
-	last = clampLine(last, len(ed.Buffer.Lines))
+	first = clampVimLine(ed, first)
+	last = clampVimLine(ed, last)
 	selector := v.selectedRegister()
 
 	switch operator {

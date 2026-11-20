@@ -129,16 +129,16 @@ func (v *Vim) moveForKey(ed *editor.Editor, key rune, count int, countGiven, for
 	case '$':
 		line := start.Line
 		if count > 1 {
-			line = min(line+count-1, len(ed.Buffer.Lines)-1)
+			line = min(line+count-1, ed.WindowLast())
 		}
 		setLineEnd(ed, line)
 		outcome.inclusive = true
 	case 'G':
-		line := len(ed.Buffer.Lines) - 1
+		line := ed.WindowLast()
 		if countGiven {
 			line = count - 1
 		}
-		line = clampLine(line, len(ed.Buffer.Lines))
+		line = clampVimLine(ed, line)
 		if forOperator {
 			outcome.linewise = true
 			outcome.target = editor.Pos{Line: line}
@@ -148,11 +148,11 @@ func (v *Vim) moveForKey(ed *editor.Editor, key rune, count int, countGiven, for
 		setFirstNonBlank(ed, line)
 		outcome.linewise = true
 	case '\n', '+':
-		line := min(start.Line+count, len(ed.Buffer.Lines)-1)
+		line := min(start.Line+count, ed.WindowLast())
 		setFirstNonBlank(ed, line)
 		outcome.linewise = true
 	case '-':
-		line := max(start.Line-count, 0)
+		line := max(start.Line-count, ed.WindowFirst())
 		setFirstNonBlank(ed, line)
 		outcome.linewise = true
 	case '%':
@@ -173,16 +173,16 @@ func (v *Vim) moveForKey(ed *editor.Editor, key rune, count int, countGiven, for
 		ed.SetCursor(editor.Pos{Line: line})
 		outcome.inclusive = false
 	case 'H':
-		line := min(ed.Viewport.TopLine+count-1, len(ed.Buffer.Lines)-1)
+		line := min(ed.Viewport.TopLine+count-1, ed.WindowLast())
 		setFirstNonBlank(ed, line)
 		outcome.linewise = true
 	case 'M':
 		line := ed.Viewport.TopLine + max(0, ed.Viewport.Height/2)
-		setFirstNonBlank(ed, clampLine(line, len(ed.Buffer.Lines)))
+		setFirstNonBlank(ed, clampVimLine(ed, line))
 		outcome.linewise = true
 	case 'L':
 		line := ed.Viewport.TopLine + ed.Viewport.Height - 1 - (count - 1)
-		setFirstNonBlank(ed, clampLine(line, len(ed.Buffer.Lines)))
+		setFirstNonBlank(ed, clampVimLine(ed, line))
 		outcome.linewise = true
 	case ctrlRune('d'):
 		ed.MoveDown(max(1, ed.Viewport.Height/2) * count)
@@ -222,11 +222,11 @@ func (v *Vim) doubleGMotion(ed *editor.Editor) {
 	start := ed.Cursor.Pos
 	count := v.Count
 	v.Count = 0
-	line := 0
+	line := ed.WindowFirst()
 	if count > 0 {
 		line = count - 1
 	}
-	line = clampLine(line, len(ed.Buffer.Lines))
+	line = clampVimLine(ed, line)
 	if v.Operator != OpNone {
 		v.applyLineOperatorAt(ed, line)
 		return
@@ -238,7 +238,7 @@ func (v *Vim) doubleGMotion(ed *editor.Editor) {
 }
 
 func (v *Vim) wrappedLeft(ed *editor.Editor) {
-	if ed.Cursor.Pos.Rune == 0 && ed.Cursor.Pos.Line == 0 {
+	if ed.Cursor.Pos.Rune == 0 && ed.Cursor.Pos.Line == ed.WindowFirst() {
 		v.ringBell()
 		return
 	}
@@ -254,7 +254,7 @@ func (v *Vim) wrappedRight(ed *editor.Editor) {
 		needsWrap = next.Rune >= utf8.RuneCountInString(line)
 	}
 	if needsWrap {
-		if ed.Cursor.Pos.Line+1 >= len(ed.Buffer.Lines) {
+		if ed.Cursor.Pos.Line >= ed.WindowLast() {
 			v.ringBell()
 			return
 		}
@@ -268,6 +268,10 @@ func (v *Vim) wrappedRight(ed *editor.Editor) {
 func (v *Vim) findMotion(ed *editor.Editor, spec findSpec, count int) bool {
 	if count < 1 {
 		count = 1
+	}
+	if ed.WindowEmpty() {
+		v.ringBell()
+		return false
 	}
 	lineNumber := ed.Cursor.Pos.Line
 	line := ed.Buffer.Lines[lineNumber]
@@ -330,23 +334,22 @@ func (v *Vim) findMotion(ed *editor.Editor, spec findSpec, count int) bool {
 }
 
 func setFirstNonBlank(ed *editor.Editor, line int) {
-	if line < 0 {
-		line = 0
-	}
-	if line >= len(ed.Buffer.Lines) {
-		line = len(ed.Buffer.Lines) - 1
-	}
+	line = clampVimLine(ed, line)
 	ed.SetCursor(editor.Pos{Line: line, Rune: firstNonBlankRune(ed.Buffer.Lines[line])})
 }
 
 func setLineEnd(ed *editor.Editor, line int) {
-	line = clampLine(line, len(ed.Buffer.Lines))
+	line = clampVimLine(ed, line)
 	length := utf8.RuneCountInString(ed.Buffer.Lines[line])
 	if length == 0 {
 		ed.SetCursor(editor.Pos{Line: line})
 		return
 	}
 	ed.SetCursor(editor.Pos{Line: line, Rune: prevClusterRune(ed.Buffer.Lines[line], length)})
+}
+
+func clampVimLine(ed *editor.Editor, line int) int {
+	return min(max(line, ed.WindowFirst()), ed.WindowLast())
 }
 
 func firstNonBlankRune(line string) int {
