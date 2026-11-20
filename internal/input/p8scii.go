@@ -336,7 +336,7 @@ func isKanaConsonant(r rune) bool {
 // shifting the Hiragana P8SCII bytes by 0x32.
 //
 // Capture: PICO-8 0.2.7, testdata/pico8/input/manifest.json
-// sha256 2753264dbaf695d81567b3b8e585ba7ded7afe3658e7ab35b921df58e34399e1
+// sha256 6ffa9a5ad21eb1cafed8d41ff88cfe4d06a70840d4e546a35f93699c07a5d344
 var kanaTable, kanaPrefixes = buildKanaTable()
 
 func buildKanaTable() (map[string]string, map[string]bool) {

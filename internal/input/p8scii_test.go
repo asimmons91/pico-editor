@@ -303,6 +303,7 @@ func TestP8KanaMatchesCapture(t *testing.T) {
 		{"hiragana", P8ModeHiragana, "../../testdata/pico8/input/hiragana-keys.txt", "../../testdata/pico8/input/hiragana-capture.txt"},
 		{"katakana", P8ModeKatakana, "../../testdata/pico8/input/katakana-keys.txt", "../../testdata/pico8/input/katakana-capture.txt"},
 		{"gemination", P8ModeHiragana, "../../testdata/pico8/input/gemination-keys.txt", "../../testdata/pico8/input/gemination-capture.txt"},
+		{"all-sequences", P8ModeHiragana, "../../testdata/pico8/input/all-sequences-keys.txt", "../../testdata/pico8/input/all-sequences-capture.txt"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

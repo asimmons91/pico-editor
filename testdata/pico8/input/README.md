@@ -29,6 +29,8 @@ one per line in the order A-Z.
   consonants, `n` edge cases, and invalid sequences.
 - `shift-digits.png`, `shift-digits-keys.txt`, `shift-digits-capture.txt` — the
   ten kana Shift+digit symbols (identical in Hiragana and Katakana).
+- `all-sequences-keys.txt`, `all-sequences-capture.txt` — the broad CV,
+  digraph, alias, c-row, and invalid-sequence sweep.
 - `hiragana-ka.png` — `Ctrl+J`, `k`, `a`; status `HIRAGANA MODE (CTRL-J)`.
 - `katakana-mode-status.png` — `Ctrl+K`; status `KATAKANA MODE (CTRL-K)`.
 - `puny-mode-status.png` — `Ctrl+P`; status `PUNY FONT MODE (CTRL-P)`.

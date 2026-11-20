@@ -83,6 +83,11 @@
       "screenshot": "shift-digits.png",
       "keys_file": "shift-digits-keys.txt",
       "capture_file": "shift-digits-capture.txt"
+    },
+    {
+      "screenshot": "hiragana-romaji.png",
+      "keys_file": "all-sequences-keys.txt",
+      "capture_file": "all-sequences-capture.txt"
     }
   ]
 }
