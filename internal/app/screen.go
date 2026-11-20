@@ -7,6 +7,7 @@ import (
 
 	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/font"
+	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/render"
 	"github.com/asimmons91/pico-editor/internal/vim"
 )
@@ -14,6 +15,12 @@ import (
 func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow, first, last, height int) {
 	viewport := &ed.Viewport
 	matches := s.Vim.SearchHighlights(ed)
+	documentURI := s.activeURI()
+	tokens := s.LSPTokens[documentURI]
+	baseLine := 0
+	if buffer := s.CurrentBuffer(); buffer != nil {
+		baseLine = s.baseLine(buffer)
+	}
 	for _, visible := range viewport.VisibleLines(ed.Buffer) {
 		if visible.Line < first || visible.Line >= last || visible.Row >= height {
 			continue
@@ -31,6 +38,9 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 			selected := clusterSelected(ed, visible.Line, cluster.Rune)
 			searched := clusterSearched(matches, visible.Line, cluster.Rune)
 			foreground := uint8(render.DefaultForeground)
+			if color, ok := tokens.ColorAt(visible.Line, cluster.Rune); ok {
+				foreground = color
+			}
 			background := uint8(render.DefaultBackground)
 			if searched {
 				background = searchBackground
@@ -51,6 +61,35 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 				surface.DrawGlyph(x, y, font.Replacement, foreground, background)
 			}
 		}
+		s.drawDiagnosticsForLine(surface, ed, documentURI, baseLine, visible.Line, y)
+	}
+}
+
+func (s *Session) drawDiagnosticsForLine(surface *render.Surface, ed *editor.Editor, documentURI string, baseLine, line, y int) {
+	for _, diagnostic := range s.LSPDiagnostics[documentURI] {
+		if diagnostic.Severity != lsp.SeverityError && diagnostic.Severity != lsp.SeverityWarning {
+			continue
+		}
+		start, end, ok := lsp.EditorRange(ed.Buffer, baseLine, diagnostic.Range)
+		if !ok || line < start.Line || line > end.Line {
+			continue
+		}
+		if start.Line < line {
+			start = editor.Pos{Line: line}
+		}
+		if end.Line > line {
+			end = editor.Pos{Line: line, Rune: len([]rune(ed.Buffer.Lines[line]))}
+		}
+		startCell := ed.Buffer.CellColumn(start) - ed.Viewport.LeftCell
+		endCell := ed.Buffer.CellColumn(end) - ed.Viewport.LeftCell
+		if endCell <= startCell {
+			endCell = startCell + 1
+		}
+		color := uint8(8)
+		if diagnostic.Severity == lsp.SeverityWarning {
+			color = 9
+		}
+		surface.FillRect(startCell*font.NarrowWidth, y+font.CellHeight-1, (endCell-startCell)*font.NarrowWidth, 1, color)
 	}
 }
 
@@ -156,14 +195,33 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 	info := ed.Buffer.Info(ed.Cursor.Pos)
 	position := fmt.Sprintf("%d:%d", info.Pos.Line+1, info.Cell+1)
 	status := fmt.Sprintf("%s%s%s  %s", name, marker, owner, position)
-	if s.Status != "" {
-		status += "  " + s.Status
+	message := s.Status
+	messageError := s.StatusError
+	if message == "" && s.LSPMessage != "" {
+		message = s.LSPMessage
+		messageError = s.LSPMessageError
+	}
+	if message != "" {
+		status += "  " + message
+	}
+	if s.LSPStatus == lsp.StatusFailed && s.LSPMessage != "" && s.LSPMessage != message {
+		status += "  " + s.LSPMessage
+		messageError = true
+	}
+	segments := s.lspStatusSegments()
+	suffixCells := segmentCells(segments)
+	limit := GridColumns - x - suffixCells - 1
+	if limit < 1 {
+		limit = 1
 	}
 	color := uint8(statusForeground)
-	if s.StatusError {
+	if messageError {
 		color = statusErrorColor
 	}
-	surface.DrawText(x*font.NarrowWidth, y, clipCells(status, GridColumns-x-1), color, render.DefaultBackground)
+	surface.DrawText(x*font.NarrowWidth, y, clipCells(status, limit), color, render.DefaultBackground)
+	if suffixCells > 0 {
+		drawStatusSegments(surface, (GridColumns-suffixCells)*font.NarrowWidth, y, segments)
+	}
 }
 
 func (s *Session) drawHelp(surface *render.Surface) {

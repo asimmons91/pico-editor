@@ -107,6 +107,21 @@ func TestClipboardReadCompletesPendingPaste(t *testing.T) {
 	}
 }
 
+func TestCrossFileJumpQueuesAction(t *testing.T) {
+	ed := testEditor(t, "a\nb", 0, 0)
+	ed.Buffer.Path = "/tmp/two.lua"
+	v := New()
+	v.jumps.back = []jumpEntry{{Path: "/tmp/one.lua", Pos: editor.Pos{Line: 1, Rune: 0}}}
+	result := v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyO, Mods: input.ModCtrl}, ed)
+	if len(result.Actions) != 1 {
+		t.Fatalf("actions = %+v, want one jump", result.Actions)
+	}
+	action := result.Actions[0]
+	if action.Kind != ActionJump || action.Path != "/tmp/one.lua" || action.Pos.Line != 1 {
+		t.Fatalf("action = %+v", action)
+	}
+}
+
 func TestJumpListTruncatesForwardBranch(t *testing.T) {
 	ed := testEditor(t, "a\nb\nc\nd\ne", 0, 0)
 	v := New()

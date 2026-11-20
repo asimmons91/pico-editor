@@ -141,6 +141,9 @@ func namedKey(name string) (input.Event, bool) {
 	case "c-space":
 		key = input.KeySpace
 		mods = input.ModCtrl
+	case "c-]":
+		key = input.KeyRightBracket
+		mods = input.ModCtrl
 	case "pgup":
 		key = input.KeyPageUp
 	case "pgdown":

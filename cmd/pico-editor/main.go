@@ -84,6 +84,8 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 		Logger:       logger,
 		DebugCharset: options.debugCharset,
 		File:         options.file,
+		EnableLSP:    true,
+		Version:      version.Version,
 	})
 	if err := game.StartupError(); err != nil {
 		logger.Error("startup", "error", err)

@@ -2,6 +2,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,6 +17,7 @@ import (
 	"github.com/asimmons91/pico-editor/internal/cart"
 	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/input"
+	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/render"
 	"github.com/asimmons91/pico-editor/internal/vim"
 )
@@ -37,6 +39,10 @@ type Config struct {
 	// Workspace overrides the workspace root. Nil derives it from File or the
 	// current directory.
 	Workspace string
+	// EnableLSP starts the in-process pico-lsp service.
+	EnableLSP bool
+	// Version is the editor version sent to pico-lsp in clientInfo.
+	Version string
 }
 
 type clipboardOp uint8
@@ -96,6 +102,9 @@ type Game struct {
 	firstFrame       bool
 	screenWidth      int
 	screenHeight     int
+	lsp              *lsp.Service
+	lspCtx           context.Context
+	lspCancel        context.CancelFunc
 }
 
 // New returns a game configured by cfg.
@@ -161,11 +170,61 @@ func New(cfg Config) *Game {
 				game.startupErr = openErr
 			} else {
 				game.session = session
+				if cfg.EnableLSP {
+					game.startLSP(session, cfg.Version)
+				}
 			}
 		}
 	}
 	game.redraw()
 	return game
+}
+
+func (g *Game) startLSP(session *Session, version string) {
+	service := lsp.New(lsp.Options{
+		WorkspaceRoot: session.Workspace.Root,
+		Settings:      lsp.DefaultSettings(),
+		Log:           g.logger,
+		Version:       version,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	g.lsp = service
+	g.lspCtx = ctx
+	g.lspCancel = cancel
+	session.AttachLSP(service)
+	go func() {
+		if err := service.Start(ctx); err != nil {
+			g.logger.Warn("lsp start", "error", err)
+		}
+	}()
+}
+
+func (g *Game) stopLSP() {
+	if g.lsp == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	_ = g.lsp.Stop(ctx)
+	cancel()
+	if g.lspCancel != nil {
+		g.lspCancel()
+	}
+	g.lsp = nil
+	g.lspCtx = nil
+	g.lspCancel = nil
+}
+
+func (g *Game) restartLSP() {
+	if g.lsp == nil || g.lspCtx == nil {
+		return
+	}
+	service := g.lsp
+	ctx := g.lspCtx
+	go func() {
+		if err := service.Restart(ctx); err != nil {
+			g.logger.Warn("lsp restart", "error", err)
+		}
+	}()
 }
 
 // StartupError reports a file or flag problem found while constructing the
@@ -190,6 +249,14 @@ func (g *Game) Update() (err error) {
 }
 
 func (g *Game) updateFrame() error {
+	err := g.update()
+	if errors.Is(err, ebiten.Termination) {
+		g.stopLSP()
+	}
+	return err
+}
+
+func (g *Game) update() error {
 	now := g.now()
 	changed := g.blink.Update(now)
 	if quit, saveChanged := g.pollSave(); quit {
@@ -203,6 +270,9 @@ func (g *Game) updateFrame() error {
 	if clipboardChanged, quit := g.pollClipboard(); quit {
 		return ebiten.Termination
 	} else if clipboardChanged {
+		changed = true
+	}
+	if g.session != nil && g.session.PollLSP(time.Now()) {
 		changed = true
 	}
 	if quit, closeChanged := g.handleWindowClose(ebiten.IsWindowBeingClosed()); quit {
@@ -443,6 +513,16 @@ func (g *Game) applyActions(actions []vim.Action) (quit, changed bool) {
 			g.startClipboardRead()
 		case vim.ActionClipboardWrite:
 			g.startClipboardWrite(action.Text)
+		case vim.ActionDiagnostics:
+			g.session.ShowDiagnostics()
+		case vim.ActionHover:
+			g.session.RequestHover()
+		case vim.ActionDefinition:
+			g.session.RequestDefinition()
+		case vim.ActionLSPRestart:
+			g.restartLSP()
+		case vim.ActionJump:
+			g.session.JumpToPath(action.Path, action.Pos)
 		}
 	}
 	return false, changed

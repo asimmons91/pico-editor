@@ -1,0 +1,31 @@
+matrix: 2.1-hover
+name: hover requests LSP hover
+buffer: abc
+keys: K
+want.buffer: abc
+want.action: hover
+want.mode: normal
+---
+matrix: 2.1-definition
+name: gd requests a definition
+buffer: abc
+keys: gd
+want.buffer: abc
+want.action: definition
+want.mode: normal
+---
+matrix: 2.1-definition-ctrl
+name: ctrl-bracket requests a definition
+buffer: abc
+keys: <c-]>
+want.buffer: abc
+want.action: definition
+want.mode: normal
+---
+matrix: 2.8-lsp-restart
+name: lsp restart queues the restart action
+buffer: abc
+keys: :lsp restart<enter>
+want.buffer: abc
+want.action: lsp-restart
+want.mode: normal

@@ -115,7 +115,7 @@ name: diagnostics arrive in M5
 buffer: abc
 keys: :diag<enter>
 want.buffer: abc
-want.notify: M5
+want.action: diagnostics
 want.mode: normal
 ---
 matrix: 2.8-messages

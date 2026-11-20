@@ -13,7 +13,7 @@ import (
 var exCommandNames = []string{
 	"write", "wq", "quit", "edit", "bnext", "bprevious", "buffer", "ls",
 	"tabnext", "tabprevious", "help", "noh", "substitute", "diag",
-	"messages", "reload", "x",
+	"messages", "reload", "x", "lsp",
 }
 
 var exAliases = map[string]string{
@@ -157,7 +157,17 @@ func (v *Vim) executeEx(ed *editor.Editor, line string) {
 	case "substitute":
 		v.substitute(ed, rangeSpec, argument)
 	case "diag":
-		v.info(":diag is available in M5")
+		v.queue(Action{Kind: ActionDiagnostics})
+	case "lsp":
+		switch strings.TrimSpace(argument) {
+		case "restart":
+			v.queue(Action{Kind: ActionLSPRestart})
+		case "":
+			v.info("pico-lsp is managed by the editor; use :lsp restart")
+		default:
+			v.message("E492: Not an editor command: lsp " + strings.TrimSpace(argument))
+			v.ringBell()
+		}
 	case "messages":
 		v.info(":messages is available in M7")
 	case "reload":

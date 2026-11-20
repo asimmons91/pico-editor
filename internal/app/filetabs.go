@@ -135,6 +135,8 @@ func (s *Session) ClickFileTabs(x, y int) bool {
 				s.endInsertMode()
 				s.Current = hit.Index
 				s.prepareBuffer(s.CurrentBuffer())
+				s.clearLSPTransients()
+				s.requestActiveCartInfo()
 			}
 			return true
 		}
@@ -161,6 +163,7 @@ func (s *Session) ClickCartTabs(x, y int) bool {
 				tab := buffer.Cart.Tabs[hit.Index]
 				buffer.Editor.SetLineRange(tab.StartLine, tab.EndLine)
 				restoreView(buffer.Editor, buffer.TabViews[hit.Index])
+				s.clearLSPTransients()
 			}
 			return true
 		}

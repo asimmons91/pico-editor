@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/asimmons91/pico-editor/internal/cart"
 	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/fsutil"
 	"github.com/asimmons91/pico-editor/internal/input"
+	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/render"
 	"github.com/asimmons91/pico-editor/internal/vim"
 	"github.com/asimmons91/pico-editor/internal/workspace"
@@ -40,8 +42,23 @@ type Session struct {
 
 	Workspace *workspace.Workspace
 
+	LSP *lsp.Service
+
 	Status      string
 	StatusError bool
+
+	LSPStatus       lsp.Status
+	LSPMessage      string
+	LSPMessageError bool
+	LSPTokens       map[string]lsp.TokenSet
+	LSPDiagnostics  map[string][]lsp.Diagnostic
+	LSPCartInfo     map[string]lsp.CartInfo
+	LSPGlyphs       []lsp.Glyph
+
+	Completion *CompletionPopup
+	Hover      *HoverPopup
+	Signature  *SignaturePopup
+	DiagList   *DiagnosticList
 
 	logger         *slog.Logger
 	quit           bool
@@ -49,6 +66,12 @@ type Session struct {
 	pendingTabStep int
 	pendingTabBuf  *SessionBuffer
 	pendingTabAt   int
+
+	completionDue      time.Time
+	completionTrigger  string
+	completionManual   bool
+	signatureDue       time.Time
+	signatureRetrigger bool
 }
 
 // SessionBuffer is one open file. Cart is non-nil for .p8 buffers; its Code
@@ -60,6 +83,9 @@ type SessionBuffer struct {
 	TabViews      []cart.ViewState
 	Owner         string
 	SyncedVersion int
+	LSPVersion    int
+	LSPOpened     bool
+	LSPCartAsked  int
 }
 
 // NewSession opens path or creates an empty unnamed buffer. The workspace root
@@ -151,6 +177,12 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 	if s.Help != nil {
 		return false, s.handleHelp(ev), nil
 	}
+	if s.DiagList != nil {
+		return false, s.handleDiagnosticList(ev), nil
+	}
+	if handled := s.handleLSPInput(ev); handled {
+		return false, true, nil
+	}
 	if ev.Kind == input.KindText && s.blocksTabSeparator(ev) {
 		s.SetStatus("cannot create a -->8 tab separator in insert mode", true)
 		return false, true, nil
@@ -162,6 +194,7 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 	result := s.Vim.Handle(ev, ed)
 	s.applyVimResult(result)
 	s.syncCurrentCart()
+	s.afterInput(ev)
 	return false, true, result.Actions
 }
 
@@ -269,9 +302,11 @@ func (s *Session) CloseBuffer(buffer *editor.Buffer, force bool) (quit, changed 
 		return false, true
 	}
 	if len(s.Buffers) == 1 {
+		s.closeLSPDocument(s.Buffers[0])
 		s.quit = true
 		return true, true
 	}
+	s.closeLSPDocument(s.Buffers[index])
 	s.Buffers = append(s.Buffers[:index], s.Buffers[index+1:]...)
 	if index < s.Current {
 		s.Current--
@@ -321,6 +356,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 			if active < len(fresh.Cart.Tabs) {
 				fresh.ActiveTab = active
 			}
+			s.closeLSPDocument(current)
 			s.Buffers[s.Current] = fresh
 			s.prepareBuffer(fresh)
 		} else {
@@ -330,6 +366,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 				return false
 			}
 			ed.Buffer.SetWorkspaceRoot(s.Workspace.Root)
+			s.reloadLSPDocument(s.CurrentBuffer())
 			s.prepareBuffer(s.CurrentBuffer())
 			s.refreshOwner(s.CurrentBuffer())
 		}
@@ -362,6 +399,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 				s.ShowError("Open failed", err)
 				return false
 			}
+			s.closeLSPDocument(s.Buffers[index])
 			s.Buffers[index] = fresh
 		}
 		s.Current = index
@@ -376,10 +414,12 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 	}
 	if ed.Buffer.Path == "" && !ed.Buffer.Dirty() {
 		// Reuse an empty unnamed buffer instead of leaving it in the list.
+		s.closeLSPDocument(s.Buffers[s.Current])
 		s.Buffers[s.Current] = opened
 	} else if force && ed.Buffer.Dirty() {
 		// :e! abandons the current buffer's changes rather than leaving a
 		// second dirty buffer behind.
+		s.closeLSPDocument(s.Buffers[s.Current])
 		s.Buffers[s.Current] = opened
 	} else {
 		s.Buffers = append(s.Buffers, opened)
@@ -416,6 +456,8 @@ func (s *Session) SwitchBuffer(number, delta int) (changed bool) {
 	}
 	s.Current = index
 	s.prepareBuffer(s.CurrentBuffer())
+	s.clearLSPTransients()
+	s.requestActiveCartInfo()
 	return true
 }
 
@@ -443,6 +485,7 @@ func (s *Session) SwitchTab(delta int) (changed bool) {
 	tab := buffer.Cart.Tabs[next]
 	buffer.Editor.SetLineRange(tab.StartLine, tab.EndLine)
 	restoreView(buffer.Editor, buffer.TabViews[next])
+	s.clearLSPTransients()
 	s.SetStatus("", false)
 	return true
 }
@@ -587,6 +630,9 @@ func (s *Session) CompleteSave(job *SaveJob, writeErr error) (quit, changed bool
 		s.SetStatus(shortError(err), true)
 		return false, true
 	}
+	if !job.Empty() {
+		s.LSPDidSave(job.Buffer)
+	}
 	s.SetStatus("written", false)
 	if !job.QuitAfter {
 		return false, true
@@ -619,12 +665,18 @@ func (s *Session) Draw(surface *render.Surface, cursorVisible bool) {
 		first, last = 0, len(ed.Buffer.Lines)
 	}
 	s.drawBuffer(surface, ed, top, first, last, height)
-	if cursorVisible && s.Help == nil && s.Dialog == nil && !s.Tree.Focused {
+	if cursorVisible && s.Help == nil && s.Dialog == nil && s.DiagList == nil && !s.Tree.Focused {
 		s.drawCursor(surface, ed, top, first, last)
 	}
 	s.drawFileTabs(surface)
 	s.drawCartTabs(surface)
 	s.drawStatus(surface, ed, cursorVisible)
+	s.drawSignature(surface)
+	s.drawCompletion(surface, ed, top)
+	s.drawHover(surface)
+	if s.DiagList != nil {
+		s.drawDiagnosticList(surface)
+	}
 	if s.Tree.Visible {
 		s.drawTree(surface)
 	}
@@ -675,9 +727,13 @@ func helpTopic(topic string) (string, []string) {
 		}
 	case "lsp":
 		return "Help: lsp", []string{
-			"pico-lsp runs in-process from M5.",
-			"Diagnostics, semantic tokens, completion, hover,",
-			"signature help, and go-to-definition arrive then.",
+			"pico-lsp runs in-process via internal/lsp.",
+			"K hover; gd or Ctrl+] definition; Ctrl+O/I jump back/forward.",
+			"Ctrl+Space completion; Ctrl+N / Ctrl+Shift+N select;",
+			"Enter/Tab accept; Esc closes the popup first.",
+			"Typing ( or , opens signature help.",
+			":diag lists diagnostics; :lsp restart restarts pico-lsp.",
+			"Status shows E/W, T/C/Z, and LSP state.",
 		}
 	case "config":
 		return "Help: config", []string{
@@ -696,6 +752,8 @@ func helpTopic(topic string) (string, []string) {
 			":w :q :q! :wq :x :e :s   ex commands",
 			"u Ctrl+R .   undo, redo, repeat",
 			"gg G Ctrl+O Ctrl+I zz zt zb   jumps/scroll",
+			"K hover; gd Ctrl+] definition; :diag; :lsp restart",
+			"Ctrl+Space completion; Ctrl+N Ctrl+Shift+N select",
 			"Ctrl+Tab Ctrl+Shift+Tab   cart code tabs",
 			"Ctrl+Shift+B   file tree; Ctrl+S saves",
 			"Esc cancels pending state or leaves a mode.",

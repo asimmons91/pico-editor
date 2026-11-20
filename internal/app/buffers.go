@@ -97,6 +97,7 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 	if buffer == nil {
 		return
 	}
+	s.clearLSPTransients()
 	ed := buffer.Editor
 	ed.Viewport.Width = GridColumns
 	ed.Viewport.ScrollOff = 2
@@ -104,6 +105,7 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 		ed.Viewport.Height = luaCodeRows
 		ed.ClearLineRange()
 		ed.EnsureVisible()
+		s.ensureLSPDocument(buffer)
 		return
 	}
 	ed.Viewport.Height = cartCodeRows
@@ -125,6 +127,8 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 	ed.EnsureVisible()
 	buffer.TabViews[buffer.ActiveTab] = captureView(ed)
 	buffer.SyncedVersion = ed.Buffer.Version
+	s.ensureLSPDocument(buffer)
+	s.requestActiveCartInfo()
 }
 
 func captureView(ed *editor.Editor) cart.ViewState {
@@ -303,6 +307,7 @@ func (s *Session) reloadBufferAtPreserving(buffer *SessionBuffer, index int) err
 			fresh.TabViews[fresh.ActiveTab] = view
 		}
 	}
+	s.closeLSPDocument(buffer)
 	s.Buffers[index] = fresh
 	s.prepareBuffer(fresh)
 	if fresh.Cart != nil && len(fresh.Cart.Tabs) > 0 {
