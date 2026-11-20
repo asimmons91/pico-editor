@@ -125,6 +125,7 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 	ed.EnsureVisible()
 	buffer.TabViews[buffer.ActiveTab] = captureView(ed)
 	buffer.SyncedVersion = ed.Buffer.Version
+	buffer.SyncedLines = len(ed.Buffer.Lines)
 }
 
 func captureView(ed *editor.Editor) cart.ViewState {
@@ -166,6 +167,7 @@ func (s *Session) syncCart(buffer *SessionBuffer) {
 	oldTabs := append([]cart.Tab(nil), buffer.Cart.Tabs...)
 	if err := buffer.Cart.SyncTabs(); err != nil {
 		s.logger.Warn("cart tab sync", "path", buffer.Cart.Path, "error", err)
+		s.shiftTabsAfterFailedSync(buffer)
 		buffer.SyncedVersion = buffer.Editor.Buffer.Version
 		return
 	}
@@ -247,6 +249,43 @@ func (s *Session) syncCart(buffer *SessionBuffer) {
 	buffer.Editor.EnsureVisible()
 	buffer.TabViews[buffer.ActiveTab] = captureView(buffer.Editor)
 	buffer.SyncedVersion = buffer.Editor.Buffer.Version
+	buffer.SyncedLines = len(buffer.Editor.Buffer.Lines)
+}
+
+// shiftTabsAfterFailedSync keeps hidden separators out of the active range when
+// validation rejects a code edit. Edits are confined to the active tab, so later
+// tab boundaries and all later views move by the buffer's line delta.
+func (s *Session) shiftTabsAfterFailedSync(buffer *SessionBuffer) {
+	delta := len(buffer.Editor.Buffer.Lines) - buffer.SyncedLines
+	if delta == 0 || len(buffer.Cart.Tabs) == 0 {
+		return
+	}
+	active := min(max(buffer.ActiveTab, 0), len(buffer.Cart.Tabs)-1)
+	for index := range buffer.Cart.Tabs {
+		tab := &buffer.Cart.Tabs[index]
+		switch {
+		case index == active:
+			tab.EndLine += delta
+			if tab.EndLine < tab.StartLine {
+				tab.EndLine = tab.StartLine
+			}
+		case index > active:
+			tab.StartLine += delta
+			tab.EndLine += delta
+			if tab.MarkerLine >= 0 {
+				tab.MarkerLine += delta
+			}
+		}
+		if index < len(buffer.TabViews) && index != active {
+			view := &buffer.TabViews[index]
+			view.Cursor.Line = max(0, view.Cursor.Line+delta)
+			view.TopLine = max(0, view.TopLine+delta)
+		}
+	}
+	tab := buffer.Cart.Tabs[active]
+	buffer.Editor.SetLineRange(tab.StartLine, tab.EndLine)
+	buffer.Editor.EnsureVisible()
+	buffer.SyncedLines = len(buffer.Editor.Buffer.Lines)
 }
 
 func (s *Session) syncCurrentCart() {

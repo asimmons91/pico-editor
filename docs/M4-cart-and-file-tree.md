@@ -383,6 +383,8 @@ guarantees byte-preserving saves.
 | Startup layout | A file argument opens with the tree hidden and editor focus. A directory or no argument opens an empty buffer with the tree visible and focused. |
 | Dialog input | Dialogs use arrows/Tab plus Enter, single-key accelerators drawn from the option labels (O/R/C, S/D/C), and Esc for Cancel or OK. |
 | Conflict backups | Every conflicting overwrite, cart or `.lua`, writes `<name>.bak` or `<name>.bak.1`–`.bak.9` before the atomic replace. Failed backups abort the write. Conflict overwrites refresh the target mode from disk before the write. |
+| Recreated modes | A deleted writable file keeps its recorded mode; a deleted read-only file is recreated `0644`. |
+| Symlink targets | Save targets resolve parent/final/chained symlinks component by component, including broken links, before the workspace boundary check. |
 | Focus refresh | On focus the workspace rescans, clean changed buffers reload (carts preserve the active tab and view), dirty buffers prompt, and deleted files prompt. |
 | New tab separators | M4 rejects typing a new `-->8` separator in insert mode; code tabs derive from markers already in the cart. Adding tabs by editing markers is deferred. |
 | Section headers in code | Save fails with a typed error if code text would introduce a cart section header and truncate `__lua__`. |

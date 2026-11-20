@@ -43,9 +43,10 @@ type Session struct {
 	Status      string
 	StatusError bool
 
-	logger       *slog.Logger
-	quit         bool
-	suppressText rune
+	logger         *slog.Logger
+	quit           bool
+	suppressText   rune
+	pendingTabStep int
 }
 
 // SessionBuffer is one open file. Cart is non-nil for .p8 buffers; its Code
@@ -57,6 +58,7 @@ type SessionBuffer struct {
 	TabViews      []cart.ViewState
 	Owner         string
 	SyncedVersion int
+	SyncedLines   int
 }
 
 // NewSession opens path or creates an empty unnamed buffer. The workspace root
@@ -84,10 +86,22 @@ func (s *Session) CurrentBuffer() *SessionBuffer {
 	return s.Buffers[s.Current]
 }
 
-// EndBatch resets frame-local input suppression after one Poll batch.
-func (s *Session) EndBatch() {
+// EndBatch finishes frame-local input suppression and applies any tab switch
+// deferred so this batch's text events reach the original insert session.
+func (s *Session) EndBatch() (changed bool) {
 	s.Vim.EndBatch()
 	s.suppressText = 0
+	if s.pendingTabStep != 0 {
+		step := s.pendingTabStep
+		s.pendingTabStep = 0
+		return s.SwitchTab(step)
+	}
+	return false
+}
+
+// QueueTabSwitch defers Ctrl+Tab until the current input batch is delivered.
+func (s *Session) QueueTabSwitch(delta int) {
+	s.pendingTabStep += delta
 }
 
 // CurrentEditor returns the active editor, or nil if there is no buffer.

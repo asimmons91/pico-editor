@@ -163,6 +163,25 @@ func TestEditedCRLFAndBOMRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDeletedWritableFileKeepsMode(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "private.lua", []byte("print(1)\n"), 0o600)
+	buffer, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := buffer.PrepareSaveWithOptions(SaveOptions{AllowExternalChange: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Mode.Perm() != 0o600 {
+		t.Fatalf("recreate mode = %o, want preserved 0600", snapshot.Mode.Perm())
+	}
+}
+
 func TestConflictOverwriteUsesCurrentFileMode(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "mode.lua", []byte("print(1)\n"), 0o644)

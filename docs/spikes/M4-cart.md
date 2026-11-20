@@ -18,23 +18,24 @@ Automated coverage in this repo:
   section-header rejection; synthetic trailing tabs; parse errors include the
   path.
 - `internal/fsutil`: numbered backup copies, collisions, missing sources,
-  symlink preservation, and backup directory-sync failures that must not look
-  like committed target writes.
+  symlink preservation, relative/chained broken symlink resolution, and backup
+  directory-sync failures that must not look like committed target writes.
 - `internal/workspace`: nested scans, sorting, hidden/ignored entries, file and
   directory symlinks, child/sibling include ownership, oversized-cart skips,
   nearest-cart selection, refresh.
 - `internal/editor`: active line-window clamping, boundary joins/deletes,
   trailing-buffer-line deletion, empty tab materialization, undo/redo,
-  read-only-file recreation.
+  read-only and writable deleted-file recreation modes.
 - `internal/vim`: existing matrix plus tab-bounded `G`, `gg`, `J`, `%`, scroll,
   text objects, search, and ex ranges.
-- `internal/app`: cart opening, tab switching/view restoration, empty-tab
-  editing and no-final-newline tabs, section/marker input guards, dialog
-  accelerator suppression, conflict overwrite with backup and current modes,
-  conflict reload followed by `:wq`, read-only error, deferred quits with late
-  edits, quit Save all including edits made during the save run, outside-root
-  symlink confirmation, tree startup/filtering/scrolling, external focus
-  reloads, and tab clicks.
+- `internal/app`: cart opening, tab switching/view restoration, same-batch
+  insert text with deferred tab switches, stale tab ranges after rejected
+  section headers, empty-tab editing and no-final-newline tabs, section/marker
+  input guards, dialog accelerator suppression, conflict overwrite with backup
+  and current modes, conflict reload followed by `:wq`, read-only error,
+  deferred quits with late edits, quit Save all including edits made during the
+  save run, outside-root symlink confirmation, tree startup/filtering/scrolling,
+  external focus reloads, and tab clicks.
 
 Interactive checklist:
 

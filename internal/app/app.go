@@ -227,7 +227,9 @@ func (g *Game) updateFrame() error {
 		}
 	}
 	if g.session != nil {
-		g.session.EndBatch()
+		if g.session.EndBatch() {
+			changed = true
+		}
 	}
 	if g.shouldTerminate() {
 		return ebiten.Termination
@@ -339,6 +341,10 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 				delta := 1
 				if event.Mods&input.ModShift != 0 {
 					delta = -1
+				}
+				if g.session.Vim.Mode == vim.ModeInsert {
+					g.session.QueueTabSwitch(delta)
+					return false, true
 				}
 				return false, g.session.SwitchTab(delta)
 			case key == input.KeyB && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:

@@ -399,6 +399,38 @@ func TestTreeFilterTextIsNotSeparatorBlocked(t *testing.T) {
 	}
 }
 
+func TestSectionHeaderKeepsHiddenSeparatorSafe(t *testing.T) {
+	game, path := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, "ggO__gfx__<esc>"); err != nil {
+		t.Fatal(err)
+	}
+	if len(buffer.Cart.Tabs) < 2 {
+		t.Fatalf("tabs = %+v", buffer.Cart.Tabs)
+	}
+	tab := buffer.Cart.Tabs[1]
+	if tab.MarkerLine < 0 || tab.StartLine != tab.MarkerLine+1 {
+		t.Fatalf("stale tab range after failed sync: %+v", tab)
+	}
+	if line := buffer.Editor.Buffer.Lines[tab.MarkerLine]; !strings.HasPrefix(line, "-->8") {
+		t.Fatalf("marker line = %q", line)
+	}
+	if err := sendKeys(t, game, ":tabn<enter>dd:tabp<enter>ggdd:w<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	waitClean(t, game, buffer)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "-->8 second") {
+		t.Fatalf("hidden separator was lost: %q", data)
+	}
+	if strings.Contains(string(data), "__gfx__\nb=2") {
+		t.Fatalf("section header remained in code: %q", data)
+	}
+}
+
 func TestLongDirtyFileTabKeepsMarker(t *testing.T) {
 	game, _ := newCartGame(t, fullCart)
 	long := filepath.Join(filepath.Dir(game.session.CurrentEditor().Buffer.Path), strings.Repeat("x", 40)+".lua")
@@ -679,6 +711,31 @@ func TestTypingTabSeparatorPrefixIsRejected(t *testing.T) {
 	}
 	if got := strings.Count(buffer.Editor.Buffer.Text(), "-->8"); got != 1 {
 		t.Fatalf("separator count = %d, want the original only", got)
+	}
+}
+
+func TestSwitchingTabsInSameBatchKeepsInsertText(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, "2i"); err != nil {
+		t.Fatal(err)
+	}
+	game.source.(*fakeSource).events = []input.Event{
+		{Kind: input.KindKeyDown, Key: input.KeyZ},
+		{Kind: input.KindKeyDown, Key: input.KeyTab, Mods: input.ModCtrl},
+		{Kind: input.KindText, Runes: []rune{'Z'}},
+	}
+	if err := game.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if buffer.ActiveTab != 1 {
+		t.Fatalf("active tab = %d, want 1", buffer.ActiveTab)
+	}
+	if !strings.Contains(buffer.Editor.Buffer.Text(), "ZZa=1") {
+		t.Fatalf("insert text was lost with the deferred switch: %q", buffer.Editor.Buffer.Text())
+	}
+	if strings.Count(buffer.Editor.Buffer.Text(), "-->8") != 1 {
+		t.Fatalf("separator duplicated: %q", buffer.Editor.Buffer.Text())
 	}
 }
 

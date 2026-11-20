@@ -6,43 +6,64 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
+const maxSymlinkDepth = 40
+
 // ResolveTarget returns the absolute path that should be replaced by an atomic
-// write. A final symlink and symlinked parent directories are resolved so the
-// link itself survives. A broken final symlink is followed lexically so a
-// deleted target can still be checked against its real directory.
+// write. Symlinks, including parent directories and broken chains, are resolved
+// component by component so the link itself survives and a missing target can
+// still be checked against its real directory.
 func ResolveTarget(path string) (string, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", path, err)
 	}
-	info, err := os.Lstat(absolute)
-	if errors.Is(err, fs.ErrNotExist) {
-		return resolveParent(absolute)
-	}
-	if err != nil {
-		return "", fmt.Errorf("stat %s: %w", absolute, err)
-	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		return resolveParent(absolute)
-	}
-	if resolved, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
-		return resolved, nil
-	}
-	link, linkErr := os.Readlink(absolute)
-	if linkErr != nil {
-		return "", fmt.Errorf("resolve symlink %s: %w", absolute, linkErr)
-	}
-	if !filepath.IsAbs(link) {
-		link = filepath.Join(filepath.Dir(absolute), link)
-	}
-	return resolveParent(filepath.Clean(link))
+	return resolveComponents(absolute, 0)
 }
 
-func resolveParent(path string) (string, error) {
-	if directory, err := filepath.EvalSymlinks(filepath.Dir(path)); err == nil {
-		return filepath.Join(directory, filepath.Base(path)), nil
+func resolveComponents(path string, depth int) (string, error) {
+	if depth > maxSymlinkDepth {
+		return "", fmt.Errorf("resolve %s: too many symlink levels", path)
 	}
-	return path, nil
+	volume := filepath.VolumeName(path)
+	rest := strings.TrimPrefix(path, volume)
+	root := volume + string(filepath.Separator)
+	current := root
+	for _, component := range strings.Split(strings.Trim(rest, string(filepath.Separator)), string(filepath.Separator)) {
+		switch component {
+		case "", ".":
+			continue
+		case "..":
+			current = filepath.Dir(current)
+			continue
+		}
+		candidate := filepath.Join(current, component)
+		info, err := os.Lstat(candidate)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				current = candidate
+				continue
+			}
+			return "", fmt.Errorf("stat %s: %w", candidate, err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			current = candidate
+			continue
+		}
+		link, err := os.Readlink(candidate)
+		if err != nil {
+			return "", fmt.Errorf("readlink %s: %w", candidate, err)
+		}
+		if !filepath.IsAbs(link) {
+			link = current + string(filepath.Separator) + link
+		}
+		resolved, err := resolveComponents(link, depth+1)
+		if err != nil {
+			return "", err
+		}
+		current = resolved
+	}
+	return filepath.Clean(current), nil
 }

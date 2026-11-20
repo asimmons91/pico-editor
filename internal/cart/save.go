@@ -51,7 +51,9 @@ func (d *Document) PrepareSave(options SaveOptions) (SaveSnapshot, error) {
 		case statErr == nil:
 			mode = info.Mode() & modeBits
 		case errors.Is(statErr, fs.ErrNotExist):
-			mode = 0o644
+			if mode.Perm()&0o222 == 0 {
+				mode = 0o644
+			}
 		default:
 			return SaveSnapshot{}, fmt.Errorf("stat %s: %w", d.Path, statErr)
 		}
