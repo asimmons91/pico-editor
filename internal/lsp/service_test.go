@@ -216,6 +216,29 @@ func TestServiceDidSaveFlushesPendingChange(t *testing.T) {
 	}
 }
 
+func TestServiceCartInfoUnavailableForStandaloneLua(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "standalone.lua")
+	if err := os.WriteFile(path, []byte("print(1)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, cancel := startTestService(t, dir)
+	defer func() {
+		_ = service.Stop(context.Background())
+		cancel()
+	}()
+	buffer, err := editor.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openDocument(t, service, path, "lua", buffer.Version, readFile(t, path), false)
+	service.RequestCartInfo(URIForPath(path))
+	event := waitEvent(t, service, EventCartInfo)
+	if event.CartInfo == nil || !event.CartInfo.Unavailable() {
+		t.Fatalf("standalone cart info = %+v, want unavailable", event.CartInfo)
+	}
+}
+
 func TestServiceServerCloseMarksFailed(t *testing.T) {
 	dir := t.TempDir()
 	path := copyFixture(t, "smoke.p8", dir, "smoke.p8")
