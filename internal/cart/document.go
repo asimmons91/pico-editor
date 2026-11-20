@@ -316,6 +316,32 @@ func (d *Document) SyncTabs() error {
 	return nil
 }
 
+// SyncTabsLoose updates tab ranges even when code validation fails. Section
+// header candidates are neutralized for the probe so pkg/cart can still locate
+// -->8 separators; the real save remains rejected by FullText.
+func (d *Document) SyncTabsLoose() error {
+	code := d.codeText()
+	probe := "pico-8 cartridge // pico-8.com\nversion 42\n__lua__\n" + sanitizeTabProbe(code)
+	parsed, err := p8cart.Parse(d.Path, []byte(probe))
+	if err != nil {
+		return err
+	}
+	d.Tabs = localTabs(parsed)
+	d.ensureSyntheticTail()
+	return nil
+}
+
+func sanitizeTabProbe(code string) string {
+	lines := strings.Split(code, "\n")
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(line, "__") && strings.HasSuffix(trimmed, "__") {
+			lines[index] = " " + line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // Dirty reports whether the code buffer differs from the last saved code.
 func (d *Document) Dirty() bool {
 	return d.Code.Dirty()

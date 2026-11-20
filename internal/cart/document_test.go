@@ -473,6 +473,34 @@ func TestParseErrorIncludesPath(t *testing.T) {
 	}
 }
 
+func TestLooseTabSyncSurvivesInvalidSectionHeader(t *testing.T) {
+	path := copyFixture(t, "all_sections.p8")
+	doc, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := doc.Code.Apply(editor.Edit{
+		Start: editor.Pos{Line: 0},
+		End:   editor.Pos{Line: 0},
+		Text:  "__gfx__\n",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.SyncTabs(); !errors.Is(err, ErrCodeSection) {
+		t.Fatalf("SyncTabs err = %v, want ErrCodeSection", err)
+	}
+	if err := doc.SyncTabsLoose(); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Tabs) < 2 {
+		t.Fatalf("tabs = %+v", doc.Tabs)
+	}
+	tab := doc.Tabs[1]
+	if tab.MarkerLine < 0 || tab.StartLine != tab.MarkerLine+1 {
+		t.Fatalf("loose tab = %+v, want marker immediately before content", tab)
+	}
+}
+
 func TestLoneCRInCodePreserved(t *testing.T) {
 	path := copyFixture(t, "lone_cr.p8")
 	doc, err := Open(path)

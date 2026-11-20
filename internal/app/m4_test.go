@@ -431,6 +431,40 @@ func TestSectionHeaderKeepsHiddenSeparatorSafe(t *testing.T) {
 	}
 }
 
+func TestSectionHeaderCrossTabUndoKeepsSeparator(t *testing.T) {
+	game, path := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, "ggO__gfx__<esc>:tabn<enter>Go<esc>:tabp<enter>u:tabn<enter>ggdd:tabp<enter>ggdd:w<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	waitClean(t, game, buffer)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "-->8 second") {
+		t.Fatalf("hidden separator was lost after cross-tab undo: %q", data)
+	}
+	if !strings.Contains(string(data), "-->8 second\nc=3\n") {
+		t.Fatalf("tab 1 content is wrong: %q", data)
+	}
+	if strings.Contains(string(data), "__gfx__\nb=2") {
+		t.Fatalf("section header remained in code: %q", data)
+	}
+}
+
+func TestFailedSyncDoesNotShiftEarlierTabViews(t *testing.T) {
+	const cart = "pico-8 cartridge // pico-8.com\nversion 42\n__lua__\na=1\nb=2\n-->8 second\nc=3\n-->8 third\nd=4\n"
+	game, _ := newCartGame(t, cart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, "j:tabn<enter>ggO__gfx__<esc>:tabp<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	if got := buffer.Editor.Cursor.Pos.Line; got != 1 {
+		t.Fatalf("earlier tab cursor = %d, want preserved line 1", got)
+	}
+}
+
 func TestLongDirtyFileTabKeepsMarker(t *testing.T) {
 	game, _ := newCartGame(t, fullCart)
 	long := filepath.Join(filepath.Dir(game.session.CurrentEditor().Buffer.Path), strings.Repeat("x", 40)+".lua")
@@ -736,6 +770,29 @@ func TestSwitchingTabsInSameBatchKeepsInsertText(t *testing.T) {
 	}
 	if strings.Count(buffer.Editor.Buffer.Text(), "-->8") != 1 {
 		t.Fatalf("separator duplicated: %q", buffer.Editor.Buffer.Text())
+	}
+}
+
+func TestDeferredTabSwitchDoesNotOverrideSameBatchClick(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	if err := sendKeys(t, game, "i"); err != nil {
+		t.Fatal(err)
+	}
+	hits := fitTabs(game.session.cartTabLabels(buffer), buffer.ActiveTab, GridColumns)
+	if len(hits) < 2 {
+		t.Fatalf("cart hits = %+v", hits)
+	}
+	x := hits[1].StartCell*CellWidth + 1
+	game.source.(*fakeSource).events = []input.Event{
+		{Kind: input.KindKeyDown, Key: input.KeyTab, Mods: input.ModCtrl},
+		{Kind: input.KindMouse, X: x, Y: cartTabRow * CellHeight, Buttons: input.MouseLeft},
+	}
+	if err := game.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if buffer.ActiveTab != 1 {
+		t.Fatalf("active tab = %d, want the same-batch click to win", buffer.ActiveTab)
 	}
 }
 

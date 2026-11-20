@@ -47,6 +47,8 @@ type Session struct {
 	quit           bool
 	suppressText   rune
 	pendingTabStep int
+	pendingTabBuf  *SessionBuffer
+	pendingTabAt   int
 }
 
 // SessionBuffer is one open file. Cart is non-nil for .p8 buffers; its Code
@@ -58,7 +60,6 @@ type SessionBuffer struct {
 	TabViews      []cart.ViewState
 	Owner         string
 	SyncedVersion int
-	SyncedLines   int
 }
 
 // NewSession opens path or creates an empty unnamed buffer. The workspace root
@@ -91,16 +92,31 @@ func (s *Session) CurrentBuffer() *SessionBuffer {
 func (s *Session) EndBatch() (changed bool) {
 	s.Vim.EndBatch()
 	s.suppressText = 0
-	if s.pendingTabStep != 0 {
-		step := s.pendingTabStep
-		s.pendingTabStep = 0
-		return s.SwitchTab(step)
+	if s.pendingTabStep == 0 {
+		return false
 	}
-	return false
+	step := s.pendingTabStep
+	buffer := s.pendingTabBuf
+	start := s.pendingTabAt
+	s.pendingTabStep = 0
+	s.pendingTabBuf = nil
+	if buffer == nil || s.CurrentBuffer() != buffer || buffer.ActiveTab != start {
+		return false
+	}
+	return s.SwitchTab(step)
 }
 
 // QueueTabSwitch defers Ctrl+Tab until the current input batch is delivered.
 func (s *Session) QueueTabSwitch(delta int) {
+	buffer := s.CurrentBuffer()
+	if buffer == nil {
+		return
+	}
+	if s.pendingTabStep == 0 || s.pendingTabBuf != buffer || s.pendingTabAt != buffer.ActiveTab {
+		s.pendingTabBuf = buffer
+		s.pendingTabAt = buffer.ActiveTab
+		s.pendingTabStep = 0
+	}
 	s.pendingTabStep += delta
 }
 
