@@ -232,7 +232,7 @@ func (s *Session) lspStatusSegments() []statusSegment {
 	var sizes []statusSegment
 	buffer := s.CurrentBuffer()
 	if buffer != nil {
-		if buffer.Cart == nil {
+		if buffer.Cart == nil && buffer.Owner == "" {
 			sizes = append(sizes, statusSegment{"T/C/Z n/a", 6})
 		} else if info, ok := s.LSPCartInfo[s.activeURI()]; ok && !info.Unavailable() {
 			color := uint8(7)

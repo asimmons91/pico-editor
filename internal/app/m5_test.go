@@ -16,9 +16,15 @@ import (
 
 func newLSPGame(t *testing.T, path string) *Game {
 	t.Helper()
+	return newLSPGameAt(t, path, "")
+}
+
+func newLSPGameAt(t *testing.T, path, workspace string) *Game {
+	t.Helper()
 	game := New(Config{
 		Logger:    slog.New(slog.DiscardHandler),
 		File:      path,
+		Workspace: workspace,
 		EnableLSP: true,
 		Version:   "test",
 	})
@@ -329,6 +335,26 @@ func TestLSPAutoSignature(t *testing.T) {
 		updateGame(t, game)
 		return game.session.Signature != nil
 	})
+}
+
+func TestLSPIncludeShowsOwnerCartBudget(t *testing.T) {
+	dir := copyFixtureDir(t, "navigation")
+	path := filepath.Join(dir, "lib", "player.lua")
+	game := newLSPGameAt(t, path, dir)
+	waitLSPReady(t, game)
+	documentURI := game.session.ActiveDocumentURI()
+	eventually(t, func() bool {
+		updateGame(t, game)
+		info, ok := game.session.LSPCartInfo[documentURI]
+		return ok && !info.Unavailable()
+	})
+	joined := ""
+	for _, segment := range game.session.lspStatusSegments() {
+		joined += segment.text + " "
+	}
+	if !strings.Contains(joined, "T") || strings.Contains(joined, "n/a") {
+		t.Fatalf("include status = %q, want owner cart sizes", joined)
+	}
 }
 
 func TestLSPCartInfoAfterRestart(t *testing.T) {
