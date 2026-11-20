@@ -138,3 +138,34 @@ func TestCanvasRect(t *testing.T) {
 		})
 	}
 }
+
+func TestScaleForDeviceFactors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		scale       int
+		device      float64
+		wantScale   int
+		widthPixels int
+	}{
+		{name: "1.25 at four", scale: 4, device: 1.25, wantScale: 5, widthPixels: 1280},
+		{name: "1.5 at four", scale: 4, device: 1.5, wantScale: 6, widthPixels: 1536},
+		{name: "2.0 at four", scale: 4, device: 2.0, wantScale: 8, widthPixels: 2048},
+		{name: "1.25 at two", scale: 2, device: 1.25, wantScale: 2, widthPixels: 640},
+		{name: "1.5 at two", scale: 2, device: 1.5, wantScale: 3, widthPixels: 768},
+		{name: "2.0 at two", scale: 2, device: 2.0, wantScale: 4, widthPixels: 1024},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			physical := int(float64(CanvasWidth*test.scale) * test.device)
+			if physical != test.widthPixels {
+				t.Fatalf("physical width = %d, want %d", physical, test.widthPixels)
+			}
+			if got := ScaleFor(physical, physical); got != test.wantScale {
+				t.Errorf("ScaleFor(%d, %d) = %d, want %d", physical, physical, got, test.wantScale)
+			}
+		})
+	}
+}

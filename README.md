@@ -7,10 +7,17 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 > PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
 > with, sponsored by, or endorsed by Lexaloffle Games.
 
-**Status:** M0 complete. The repository builds, tests, and opens an empty
-256×256 PICO-8-black canvas at 4× (1024×1024). M1 adds the font, rendering,
-input foundation, and the pico-lsp `pkg/p8scii` dependency; see
-[docs/ROADMAP.md](docs/ROADMAP.md).
+**Status:** M1 implemented. Automated checks pass, with interactive
+X11/Wayland spot checks tracked in
+[docs/spikes/M1-input.md](docs/spikes/M1-input.md). The editor opens a
+pixel-perfect 256×256 P8SCII full-charset screen at 4× (1024×1024) and has the
+palette, software renderer, font atlas, keyboard/text/clipboard input
+foundation, and pico-lsp `pkg/p8scii` dependency in place. M2 adds the editor
+core; see [docs/ROADMAP.md](docs/ROADMAP.md).
+
+On the charset screen, `1`–`4` change the window scale, `W` toggles the width
+overlay, `P` cycles the background palette, and the arrow keys move the
+selection. Typing and `Ctrl+V` paste into the debug log; `Ctrl+Q` quits.
 
 ## Requirements
 
@@ -18,14 +25,15 @@ input foundation, and the pico-lsp `pkg/p8scii` dependency; see
 - [mise](https://mise.jdx.dev/) for the pinned Go 1.27.4 toolchain and
   `golangci-lint`.
 - A working OpenGL environment. Ebitengine selects Wayland or X11
-  automatically.
+  automatically. Clipboard access is pure Go; on GNOME Wayland it uses
+  XWayland, and it degrades to internal registers when unavailable.
 
 ## Build and run
 
 ```sh
 mise install
 mise run build     # bin/pico-editor
-mise run run       # opens the empty canvas
+mise run run       # opens the full-charset demo
 ```
 
 `Ctrl+Q` or closing the window quits.
@@ -53,6 +61,7 @@ inject the version, commit, and build date into
 - [Architecture and invariants](docs/ARCHITECTURE.md)
 - [Frozen Vim command matrix](docs/VIM.md)
 - [Notices and attributions](NOTICE)
+- [M1 input and rendering spike results](docs/spikes/M1-input.md)
 - [License](LICENSE)
 
 ## Contributing

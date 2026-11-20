@@ -1,6 +1,10 @@
 package app
 
-import "image"
+import (
+	"image"
+
+	"github.com/asimmons91/pico-editor/internal/font"
+)
 
 // Canvas geometry is a locked V1 decision: a 256x256 logical canvas of 64x42
 // cells with a 4x6 glyph cell. Every later milestone builds on these values.
@@ -10,8 +14,8 @@ const (
 
 	// The layout grid is 64 columns x 42 rows of 4x6 cells. Forty-two rows
 	// cover 252 pixels, leaving the bottom four pixels free.
-	CellWidth   = 4
-	CellHeight  = 6
+	CellWidth   = font.NarrowWidth
+	CellHeight  = font.CellHeight
 	GridColumns = 64
 	GridRows    = 42
 

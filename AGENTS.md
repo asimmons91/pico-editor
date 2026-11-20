@@ -2,17 +2,17 @@
 
 ## Read first
 
-- M0 (foundation) is implemented: `cmd/pico-editor`, `internal/app`, `internal/version`, mise tasks, and CI exist. `docs/ROADMAP.md` links one detailed spec per milestone (`docs/M0-foundation.md` through `docs/M8-linux-release.md`); start with the roadmap, then read `docs/ARCHITECTURE.md` and `docs/VIM.md`.
+- M0 (foundation) and M1 (font, rendering, and input foundation) are implemented: `cmd/pico-editor`, `internal/app`, `internal/font`, `internal/fontgen`, `internal/render`, `internal/input`, `internal/version`, mise tasks, and CI exist. `docs/ROADMAP.md` links one detailed spec per milestone (`docs/M0-foundation.md` through `docs/M8-linux-release.md`); start with the roadmap, then read `docs/ARCHITECTURE.md` and `docs/VIM.md`. M1 results and the remaining interactive spot checks live in `docs/spikes/M1-input.md`.
 - `docs/ROADMAP.md` is the source of truth for V1 scope, locked decisions, milestones, and deferred work. Read it before adding features; update it when a locked decision changes.
 - Do not implement post-V1 items without explicit approval: full Vim macros/marks/plugins/splits, references/rename/formatting/code actions, `.p8.png`, run-cart, macOS/Windows packaging.
 
 ## Stack and boundaries
 
 - Go 1.27.4, pinned in `mise.toml`; module `github.com/asimmons91/pico-editor`.
-- Planned stack: upstream Ebitengine 2.10+ (`github.com/hajimehoshi/ebiten/v2`), a custom 1-bit P8SCII glyph atlas, a custom Vim core, and pico-lsp in-process. Linux-first.
+- Stack: upstream Ebitengine 2.10+ (`github.com/hajimehoshi/ebiten/v2`), a checked-in 1-bit P8SCII glyph atlas, a custom Vim core, and pico-lsp in-process. Linux-first.
 - Do not vendor or fork Rune, and do not use Rune's Ebitengine fork. It is reference material only. Its GPL-3.0 code cannot be copied into this repo unless the license decision changes.
 - Upstream pico-lsp is a separate repo at `/var/home/austin/projects/pico-lsp`. Read its `AGENTS.md` before changing it; it has its own branch/PR/test rules.
-- The editor will import planned public pico-lsp packages (`pkg/lsp`, `pkg/cart`, `pkg/p8scii`, `pkg/glyphs`). Go forbids importing another module's `internal/` packages. Use a local `replace` during development and pin a release before shipping.
+- The editor imports public pico-lsp packages (`pkg/p8scii` now; `pkg/cart` before M4; `pkg/lsp`/`pkg/glyphs` before M5). Go forbids importing another module's `internal/` packages. Use a local `replace` during development and pin a release before shipping.
 - Do not duplicate cart parsing, P8SCII mapping, or language analysis if an upstream pico-lsp package can own it. Do not add a second Lua/PICO-8 parser for highlighting; use pico-lsp semantic tokens.
 
 ## Domain constraints
@@ -31,7 +31,7 @@
 - `mise run check` is the gate: `fmt-check`, `lint`, `test`, and `build`. Also available: `mise run build`, `mise run run`, `mise run test`, `mise run lint`, and `mise run fmt`.
 - Use `mise exec -- go <cmd>` for Go commands not exposed as tasks. `go build ./...`, `go test ./...`, `go vet ./...`, and `gofmt` work directly.
 - CI runs `mise run check` with `CGO_ENABLED=0` and `GOFLAGS=-mod=readonly`. Do not add toolchain versions to workflows; `mise.toml` is the only source.
-- pico-lsp is not a dependency yet. Follow the pin schedule in `docs/ARCHITECTURE.md` §12; never import pico-lsp `internal/` packages.
+- pico-lsp `v1.6.0` is pinned for `pkg/p8scii`; `pkg/cart` and `pkg/lsp`/`pkg/glyphs` follow the pin schedule in `docs/ARCHITECTURE.md` §12. Never import pico-lsp `internal/` packages.
 
 ## Working agreements
 

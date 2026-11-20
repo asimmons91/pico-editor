@@ -1,7 +1,8 @@
 # pico-editor V1 Roadmap
 
-Status: M0 — Foundation complete; M1 next
-Date: 2026-11-19
+Status: M1 — Font, rendering, and input foundation implemented; interactive
+spot checks pending (see `docs/spikes/M1-input.md`); M2 next
+Date: 2026-11-20
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise
 
@@ -436,5 +437,7 @@ These are scheduled in the specs and do not block M0:
 
 - Capture PICO-8 0.2.7 Shift+letter, kana, and Ctrl+P behavior (M6).
 - Capture puny-font metrics against PICO-8 (M6).
-- Confirm clipboard and IME behavior on X11 and Wayland (M1).
+- Interactive X11/Wayland clipboard, IME, and non-US layout spot checks
+  (M1; automated results and the remaining checklist are in
+  `docs/spikes/M1-input.md`).
 - Confirm the `arm64` AppImage build and smoke test (M8).

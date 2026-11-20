@@ -1,6 +1,7 @@
 # M1 — Font, rendering, and input foundation
 
-**Status:** Draft
+**Status:** Implemented — automated checks complete; interactive X11/Wayland
+spot checks are tracked in [spikes/M1-input.md](spikes/M1-input.md).
 **Depends on:** M0; pico-lsp release with public `pkg/p8scii`
 **Blocks:** M2, M6
 **Roadmap:** [ROADMAP.md](ROADMAP.md)
@@ -442,18 +443,46 @@ image.
 
 ## Exit criteria
 
-- [ ] pico-lsp exposes and tags `pkg/p8scii`; the editor imports it with no
+- [x] pico-lsp exposes and tags `pkg/p8scii`; the editor imports it with no
       duplicated mapping.
-- [ ] Every printable P8SCII glyph renders pixel-perfect at 2×, 3×, and 4×.
-- [ ] Wide glyphs occupy two cells and cursor motion matches.
-- [ ] The 16-color palette matches the canonical values.
-- [ ] Shift, Ctrl, Alt, Meta, text input, and key repeat behave correctly on
-      Linux.
-- [ ] Window resizing never blurs or misaligns the grid.
-- [ ] Clipboard works on X11 and Wayland or has a documented fallback.
-- [ ] IME limitations are recorded and accepted for V1.
-- [ ] Golden tests run without a GPU or display.
-- [ ] `mise run check` passes.
+- [x] Every printable P8SCII glyph renders pixel-perfect at 2×, 3×, and 4×.
+- [x] Wide glyphs occupy two cells and cursor motion matches.
+- [x] The 16-color palette matches the canonical values.
+- [x] Shift, Ctrl, Alt, Meta, text input, and key repeat behave correctly on
+      Linux in unit tests; live layout/IME spot checks are in the spike report.
+- [x] Window resizing never blurs or misaligns the grid.
+- [x] Clipboard works on X11 and Wayland or has a documented fallback.
+- [x] IME limitations are recorded and accepted for V1.
+- [x] Golden tests run without a GPU or display.
+- [x] `mise run check` passes.
+
+## Implementation notes
+
+- pico-lsp `v1.6.0` is pinned directly; `internal/font`, `internal/render`, and
+  the cluster tokenizer consume `pkg/p8scii` and do not own a second table.
+- `internal/fontgen` owns parsing, validation, and deterministic generation;
+  `tools/fontgen` is the CLI. `go generate ./internal/font` rewrites
+  `atlas_gen.go` and `atlas.png`, and a test fails when either is stale.
+- The checked-in glyph data was extracted once from PICO-8 0.2.7's
+  `pod/f_pico8.pod` (256 `CBMP` records, 128 narrow 3×5 and 128 wide 7×5), then
+  compared pixel-for-pixel against a PICO-8-rendered charset screenshot with
+  zero mismatches. See [spikes/M1-input.md](spikes/M1-input.md).
+- `render.Surface` clips every write and inverts block cursors with XOR `0x0f`.
+  Unknown runes draw a replacement box and log once per rune.
+- `input.Tracker` takes a platform-neutral `Snapshot`, so repeat, focus, text,
+  and mouse behavior are tested without a display. `EbitenSource` is the only
+  adapter that reads Ebitengine globals.
+- Clipboard access uses `golang.design/x/clipboard` `v0.11.0`, lazily
+  initialized. On GNOME Wayland the package falls back to XWayland; without a
+  data-control manager or X11 display it returns `input.ErrUnavailable` and the
+  UI degrades to internal registers.
+- `internal/app` always opens the charset screen in M1. `--debug-charset` is
+  already parsed and retained so M2 can keep it after the editor becomes the
+  default. `1`–`4` change the window scale, `W` toggles the width overlay, `P`
+  cycles the background, arrows move the selection, and `Ctrl+V` exercises the
+  clipboard through the debug log.
+- V1 deliberately does not use Ebitengine's experimental `exp/textinput` IME
+  API. Committed text only is recorded as the accepted limitation.
 
 ## Risks and mitigations
 

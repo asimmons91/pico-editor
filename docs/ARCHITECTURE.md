@@ -323,7 +323,7 @@ be used at a milestone exit.
 | `go.lsp.dev/protocol` | latest tagged version at integration | M5 |
 | `go.lsp.dev/jsonrpc2` | latest tagged version at integration | M5 |
 | TOML parser | selected and pinned in M7 | M7 |
-| `golang.design/x/clipboard` | latest tagged version at integration | M1 |
+| `golang.design/x/clipboard` | `v0.11.0` (pure Go on Linux) | M1 |
 
 Development rules:
 
@@ -357,3 +357,15 @@ Development rules:
 - Linux backends: Ebitengine selects Wayland or X11 automatically. If a backend
   fails to open in M0 manual testing, record the environment, backend, and
   workaround here before the milestone exits.
+- M1 adds the checked-in CC0 glyph data under `internal/font`, the deterministic
+  `tools/fontgen` generator, the indexed `internal/render.Surface`, and the
+  platform-neutral `internal/input.Tracker`. The font data was extracted once
+  from PICO-8 0.2.7 and verified pixel-for-pixel against a PICO-8 screenshot;
+  see `docs/spikes/M1-input.md`.
+- Clipboard access uses `golang.design/x/clipboard` `v0.11.0` behind
+  `input.Clipboard`, initialized lazily. On GNOME Wayland the package falls back
+  to XWayland; without a data-control manager or X11 display it returns a typed
+  unavailable error and the UI degrades to internal registers.
+- Ebitengine 2.10.6's experimental `exp/textinput` package is not used. V1
+  accepts committed text only and does not promise preedit or candidate-window
+  rendering.
