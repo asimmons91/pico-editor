@@ -27,6 +27,8 @@ const (
 	ActionDefinition
 	ActionLSPRestart
 	ActionJump
+	ActionGlyphPick
+	ActionInputMode
 )
 
 func (k ActionKind) String() string {
@@ -59,6 +61,10 @@ func (k ActionKind) String() string {
 		return "lsp-restart"
 	case ActionJump:
 		return "jump"
+	case ActionGlyphPick:
+		return "glyph-pick"
+	case ActionInputMode:
+		return "input-mode"
 	default:
 		return "none"
 	}
@@ -232,6 +238,7 @@ type Vim struct {
 
 type pasteRequest struct {
 	before       bool
+	insert       bool
 	count        int
 	register     byte
 	visual       bool
@@ -795,6 +802,21 @@ func (v *Vim) enterVisual(ed *editor.Editor, mode Mode) {
 	v.Count = 0
 	v.Operator = OpNone
 	v.pending = pendingState{}
+}
+
+// ReplaceSelection replaces the active visual selection with characterwise
+// text and returns to normal mode. The glyph picker uses it for visual mode.
+func (v *Vim) ReplaceSelection(ed *editor.Editor, text string) Result {
+	v.actions = nil
+	v.notify = ""
+	v.notifyError = false
+	v.bell = false
+	if !v.Mode.Visual() || ed.Selection.Kind == editor.SelectionNone {
+		v.info("visual selection required")
+		return v.finish()
+	}
+	v.pasteOverSelection(ed, registerValue{Text: text, Kind: registerChar})
+	return v.finish()
 }
 
 func (v *Vim) leaveVisual(ed *editor.Editor) {

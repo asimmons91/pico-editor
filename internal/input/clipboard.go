@@ -95,9 +95,11 @@ func (c *SystemClipboard) initialize() error {
 	return nil
 }
 
-// NormalizeNewlines converts CRLF to LF. It deliberately leaves a lone CR
-// alone because CR is a valid P8SCII byte. Callers apply this at paste sites,
+// NormalizeNewlines converts CRLF and lone CR to LF for clipboard paste.
+// Editor-internal edits use editor.NormalizeNewlines, which preserves a lone CR
+// because CR is a valid P8SCII byte. Callers apply this at the paste boundary,
 // never inside the clipboard adapter.
 func NormalizeNewlines(text string) string {
-	return strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	return strings.ReplaceAll(text, "\r", "\n")
 }

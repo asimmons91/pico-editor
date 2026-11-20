@@ -205,6 +205,10 @@ func (v *Vim) finishClipboardPaste(request *pasteRequest, value registerValue, e
 		v.pasteOverSelection(target, value)
 		return
 	}
+	if request.insert {
+		v.insertClipboardValue(target, value, request.pos)
+		return
+	}
 	v.pasteValue(target, value, request)
 	v.recordChange(changeRecord{
 		action:   changePaste,

@@ -72,9 +72,10 @@ func TestClipboardWriteText(t *testing.T) {
 func TestNormalizeNewlines(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"a\r\nb", "a\nb"},
-		{"a\rb", "a\rb"},
+		{"a\rb", "a\nb"},
 		{"a\nb", "a\nb"},
 		{"\r\n\r\n", "\n\n"},
+		{"\r", "\n"},
 	}
 	for _, tc := range cases {
 		if got := NormalizeNewlines(tc.in); got != tc.want {

@@ -13,7 +13,7 @@ import (
 var exCommandNames = []string{
 	"write", "wq", "quit", "edit", "bnext", "bprevious", "buffer", "ls",
 	"tabnext", "tabprevious", "help", "noh", "substitute", "diag",
-	"messages", "reload", "x", "lsp",
+	"messages", "reload", "x", "lsp", "glyph", "input",
 }
 
 var exAliases = map[string]string{
@@ -166,6 +166,22 @@ func (v *Vim) executeEx(ed *editor.Editor, line string) {
 			v.info("pico-lsp is managed by the editor; use :lsp restart")
 		default:
 			v.message("E492: Not an editor command: lsp " + strings.TrimSpace(argument))
+			v.ringBell()
+		}
+	case "glyph":
+		if strings.TrimSpace(argument) != "" {
+			v.message(msgTrailingCharacters)
+			v.ringBell()
+			return
+		}
+		v.queue(Action{Kind: ActionGlyphPick})
+	case "input":
+		topic := strings.TrimSpace(argument)
+		switch topic {
+		case "puny", "hira", "kata", "off":
+			v.queue(Action{Kind: ActionInputMode, Topic: topic})
+		default:
+			v.message("E474: input mode must be puny, hira, kata, or off")
 			v.ringBell()
 		}
 	case "messages":
