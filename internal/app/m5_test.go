@@ -317,6 +317,14 @@ func TestLSPDefinitionAcrossCartTabs(t *testing.T) {
 		buffer = game.session.CurrentBuffer()
 		return buffer.ActiveTab == 0 && buffer.Editor.Cursor.Pos.Line == 0
 	})
+	if err := sendKeys(t, game, "<c-o>"); err != nil {
+		t.Fatalf("Update jump back: %v", err)
+	}
+	eventually(t, func() bool {
+		updateGame(t, game)
+		buffer = game.session.CurrentBuffer()
+		return buffer.ActiveTab == 1 && buffer.Editor.Cursor.Pos.Line == 4
+	})
 }
 
 func TestLSPAutoSignature(t *testing.T) {

@@ -107,6 +107,18 @@ func TestClipboardReadCompletesPendingPaste(t *testing.T) {
 	}
 }
 
+func TestSameFileJumpIntoAnotherCartTabQueuesAction(t *testing.T) {
+	ed := testEditor(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9", 5, 0)
+	ed.Buffer.Path = "/tmp/tabs.p8"
+	ed.SetLineRange(5, 10)
+	v := New()
+	v.jumps.back = []jumpEntry{{Path: "/tmp/tabs.p8", Pos: editor.Pos{Line: 1, Rune: 0}}}
+	result := v.Handle(input.Event{Kind: input.KindKeyDown, Key: input.KeyO, Mods: input.ModCtrl}, ed)
+	if len(result.Actions) != 1 || result.Actions[0].Kind != ActionJump || result.Actions[0].Pos.Line != 1 {
+		t.Fatalf("actions = %+v, want a jump into the other tab", result.Actions)
+	}
+}
+
 func TestCrossFileJumpQueuesAction(t *testing.T) {
 	ed := testEditor(t, "a\nb", 0, 0)
 	ed.Buffer.Path = "/tmp/two.lua"

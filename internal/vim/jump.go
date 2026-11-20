@@ -56,11 +56,14 @@ func (v *Vim) jump(ed *editor.Editor, delta int) {
 		v.jumps.back = append(v.jumps.back, current)
 		v.jumps.back = trimJumps(v.jumps.back)
 	}
-	// Same-file jumps stay immediate. Cross-file jumps are queued for the app,
-	// which owns buffer lookup and cursor placement.
+	// Same-file jumps stay immediate when the target is in the active line
+	// window. Cross-file jumps, and jumps into another cart tab, are queued for
+	// the app, which owns buffer and tab lookup.
 	if entry.Path == "" || ed.Buffer.Path == "" || entry.Path == ed.Buffer.Path {
-		ed.SetCursor(entry.Pos)
-		return
+		if entry.Pos.Line >= ed.WindowFirst() && entry.Pos.Line <= ed.WindowLast() {
+			ed.SetCursor(entry.Pos)
+			return
+		}
 	}
 	v.queue(Action{Kind: ActionJump, Path: entry.Path, Pos: entry.Pos})
 }

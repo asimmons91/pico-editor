@@ -436,7 +436,10 @@ func (s *Session) drawSignature(surface *render.Surface) {
 			continue
 		}
 		label := signature.Parameters[parameter].Label
-		offset := strings.Index(signature.Label, label)
+		offset := signature.Parameters[parameter].Start
+		if offset < 0 {
+			offset = strings.Index(signature.Label, label)
+		}
 		if offset < 0 || label == "" {
 			continue
 		}

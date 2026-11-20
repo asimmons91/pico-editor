@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.lsp.dev/protocol"
+
 	"github.com/asimmons91/pico-editor/internal/editor"
 )
 
@@ -77,6 +79,28 @@ func TestSettingsNormalize(t *testing.T) {
 	settings := Settings{TypeChecking: "turbo", MaxProblems: -1}.normalize()
 	if settings.TypeChecking != "basic" || settings.MaxProblems != 100 {
 		t.Fatalf("normalized = %+v", settings)
+	}
+}
+
+func TestSignatureParameterOffsetSkipsFunctionName(t *testing.T) {
+	help := convertSignature(&protocol.SignatureHelp{
+		Signatures: []protocol.SignatureInformation{{
+			Label: "function init(n: number): number",
+			Parameters: []protocol.ParameterInformation{{
+				Label: protocol.String("n"),
+			}},
+		}},
+	})
+	if help == nil || len(help.Signatures) != 1 || len(help.Signatures[0].Parameters) != 1 {
+		t.Fatalf("signature = %+v", help)
+	}
+	parameter := help.Signatures[0].Parameters[0]
+	want := strings.Index(help.Signatures[0].Label, "(n")
+	if want >= 0 {
+		want++
+	}
+	if parameter.Start != want {
+		t.Fatalf("parameter start = %d, want %d", parameter.Start, want)
 	}
 }
 

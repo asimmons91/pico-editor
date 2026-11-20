@@ -81,6 +81,7 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 			s.Completion = nil
 			s.Signature = nil
 			s.Hover = nil
+			s.LSPGlyphs = nil
 			for _, buffer := range s.Buffers {
 				buffer.LSPCartAsked = -1
 			}
@@ -103,6 +104,7 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 		s.Completion = nil
 		s.Signature = nil
 		s.Hover = nil
+		s.LSPGlyphs = nil
 		for _, buffer := range s.Buffers {
 			buffer.LSPCartAsked = -1
 		}
@@ -285,6 +287,16 @@ func (s *Session) afterInput(ev input.Event) {
 				s.signatureDue = now.Add(100 * time.Millisecond)
 				s.signatureRetrigger = true
 			}
+		case input.KeyW, input.KeyU:
+			if ev.Mods&input.ModCtrl != 0 && s.Signature != nil {
+				s.signatureDue = now.Add(100 * time.Millisecond)
+				s.signatureRetrigger = true
+			}
+		case input.KeyTab:
+			if ev.Mods&input.ModShift != 0 && s.Signature != nil {
+				s.signatureDue = now.Add(100 * time.Millisecond)
+				s.signatureRetrigger = true
+			}
 		}
 	}
 }
@@ -387,6 +399,16 @@ func (s *Session) handleLSPInput(ev input.Event) bool {
 		case ev.Key == input.KeyEsc:
 			s.Completion = nil
 			return true
+		}
+		if (ctrl && (ev.Key == input.KeyW || ev.Key == input.KeyU)) ||
+			(ev.Key == input.KeyTab && shift) {
+			s.Completion = nil
+			s.scheduleCompletion(time.Now(), "", false)
+			if s.Signature != nil {
+				s.signatureDue = time.Now().Add(100 * time.Millisecond)
+				s.signatureRetrigger = true
+			}
+			return false
 		}
 		switch ev.Key {
 		case input.KeyLeft, input.KeyRight, input.KeyUp, input.KeyDown, input.KeyHome, input.KeyEnd, input.KeyBackspace, input.KeyDelete:
@@ -710,6 +732,7 @@ func (s *Session) LSPDidSave(buffer *editor.Buffer) {
 		if candidate.Editor.Buffer != buffer {
 			continue
 		}
+		s.syncLSPDocument(candidate)
 		s.LSP.DidSave(lsp.URIForPath(buffer.Path))
 		return
 	}

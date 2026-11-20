@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/asimmons91/pico-editor/internal/editor"
+	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/vim"
 )
@@ -64,6 +65,20 @@ func TestAcceptCompletionAppliesMultipleAdditionalEditsDescending(t *testing.T) 
 	session.acceptCompletion()
 	if got := ed.Buffer.Lines[0]; got != "XXbYdMf" {
 		t.Fatalf("line = %q, want XXbYdMf", got)
+	}
+}
+
+func TestCompletionDismissesOnCtrlW(t *testing.T) {
+	session, ed := completionSession(t, "foo bar")
+	ed.SetCursor(editor.Pos{Line: 0, Rune: 7})
+	session.Vim.Mode = vim.ModeInsert
+	session.Completion = &CompletionPopup{Items: []lsp.CompletionItem{{Label: "baz", TextEdit: &lsp.TextEdit{}}}}
+	handled := session.handleLSPInput(input.Event{Kind: input.KindKeyDown, Key: input.KeyW, Mods: input.ModCtrl})
+	if handled {
+		t.Fatal("Ctrl+W was consumed instead of reaching Vim")
+	}
+	if session.Completion != nil {
+		t.Fatal("completion popup survived Ctrl+W")
 	}
 }
 

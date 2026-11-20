@@ -491,7 +491,20 @@ func convertParameter(parameter protocol.ParameterInformation, signatureLabel st
 	switch label := parameter.Label.(type) {
 	case protocol.String:
 		converted.Label = string(label)
-		if index := strings.Index(signatureLabel, converted.Label); index >= 0 {
+		searchFrom := 0
+		if open := strings.Index(signatureLabel, "("); open >= 0 {
+			searchFrom = open + 1
+		}
+		index := -1
+		if searchFrom <= len(signatureLabel) {
+			if found := strings.Index(signatureLabel[searchFrom:], converted.Label); found >= 0 {
+				index = searchFrom + found
+			}
+		}
+		if index < 0 {
+			index = strings.Index(signatureLabel, converted.Label)
+		}
+		if index >= 0 {
 			converted.Start = index
 			converted.End = index + len(converted.Label)
 		}
