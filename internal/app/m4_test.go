@@ -12,6 +12,7 @@ import (
 
 	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/input"
+	"github.com/asimmons91/pico-editor/internal/vim"
 )
 
 const fullCart = "pico-8 cartridge // pico-8.com\n" +
@@ -359,6 +360,25 @@ func TestSaveConflictOverwriteCreatesBackup(t *testing.T) {
 	}
 	if string(backup) != external {
 		t.Fatalf("backup = %q, want conflicting bytes", backup)
+	}
+}
+
+func TestTreeFilterTextIsNotSeparatorBlocked(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	buffer := game.session.CurrentBuffer()
+	buffer.Editor.Buffer.Lines[0] = "-->"
+	buffer.Editor.SetCursor(editor.Pos{Line: 0, Rune: 3})
+	game.session.Vim.Mode = vim.ModeInsert
+	game.session.Tree.Visible = true
+	game.session.Tree.Focused = true
+	game.session.Tree.Filtering = true
+	game.session.Tree.Filter = ""
+	_, changed, _ := game.session.HandleEvent(input.Event{Kind: input.KindText, Runes: []rune{'8'}})
+	if !changed || game.session.Tree.Filter != "8" {
+		t.Fatalf("filter = %q changed=%t, want tree text", game.session.Tree.Filter, changed)
+	}
+	if strings.Contains(game.session.Status, "cannot create") {
+		t.Fatalf("tree text was blocked as a separator: %q", game.session.Status)
 	}
 }
 

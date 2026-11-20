@@ -112,10 +112,6 @@ func (s *Session) HandleEvent(ev input.Event) (quit, changed bool, actions []vim
 			s.suppressText = 0
 		}
 	}
-	if ev.Kind == input.KindText && s.blocksTabSeparator(ev) {
-		s.SetStatus("cannot create a -->8 tab separator in insert mode", true)
-		return false, true, nil
-	}
 	if s.Dialog != nil {
 		return false, s.handleDialog(ev), nil
 	}
@@ -152,17 +148,18 @@ func (s *Session) blocksTabSeparator(ev input.Event) bool {
 		return false
 	}
 	ed := buffer.Editor
-	if ed.WindowEmpty() {
-		return false
-	}
 	pos := ed.Cursor.Pos
-	if pos.Line < 0 || pos.Line >= len(ed.Buffer.Lines) {
-		return false
-	}
-	line := ed.Buffer.Lines[pos.Line]
-	runes := []rune(line)
-	if pos.Rune < 0 || pos.Rune > len(runes) {
-		return false
+	line := ""
+	runes := []rune(nil)
+	if !ed.WindowEmpty() {
+		if pos.Line < 0 || pos.Line >= len(ed.Buffer.Lines) {
+			return false
+		}
+		line = ed.Buffer.Lines[pos.Line]
+		runes = []rune(line)
+		if pos.Rune < 0 || pos.Rune > len(runes) {
+			return false
+		}
 	}
 	inserted := string(ev.Runes)
 	if strings.Contains(inserted, "\n-->8") {
