@@ -406,12 +406,12 @@ func (g *Game) handleKey(event input.Event) (quit, changed bool) {
 		if g.session.DialogOpen() {
 			return g.handleSessionEvent(event)
 		}
-		if key == input.KeyF1 && event.Mods == 0 && !event.Repeat {
+		if key == input.KeyF1 && event.Mods == 0 && !event.Repeat && g.session.Vim.Mode != vim.ModeCommandLine {
 			return false, g.session.OpenHelp("")
 		}
 		if event.Mods&input.ModCtrl != 0 && !event.Repeat {
 			switch {
-			case key == input.KeyP && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
+			case key == input.KeyP && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0 && g.session.Vim.Mode != vim.ModeCommandLine:
 				g.openPalette()
 				return false, true
 			case key == input.KeyM && event.Mods&input.ModShift != 0 && event.Mods&(input.ModAlt|input.ModMeta) == 0:
