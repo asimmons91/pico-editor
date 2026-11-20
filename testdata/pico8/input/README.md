@@ -8,8 +8,9 @@ not PICO-8 behavior.
 
 - PICO-8 0.2.7, Linux, 4x scale, inside an Xvfb container.
 - The editor was driven with `xdotool`; files were saved with `Ctrl+S`.
-- Each screenshot is a 512x512 window capture; each `*-capture.txt` is the
-  `__lua__` body of the saved cart after entering the listed keys.
+- Each screenshot is a 512x512 window capture. Each `*-capture.txt` is the saved
+  cart text after entering the listed keys; some files retain the cart header,
+  and the comparison test skips it when present.
 - A reviewer compares the screenshots and capture files with the tables in
   `internal/input/p8scii.go` and `docs/INPUT.md`.
 
@@ -24,6 +25,8 @@ one per line in the order A-Z.
 - `shift-letters.png` — Shift+A through Shift+Z, one glyph per line.
 - `hiragana-romaji.png` — the Hiragana romaji list.
 - `katakana-romaji.png` — the Katakana romaji list.
+- `gemination.png`, `gemination-keys.txt`, `gemination-capture.txt` — doubled
+  consonants, `n` edge cases, and invalid sequences.
 - `hiragana-ka.png` — `Ctrl+J`, `k`, `a`; status `HIRAGANA MODE (CTRL-J)`.
 - `katakana-mode-status.png` — `Ctrl+K`; status `KATAKANA MODE (CTRL-K)`.
 - `puny-mode-status.png` — `Ctrl+P`; status `PUNY FONT MODE (CTRL-P)`.

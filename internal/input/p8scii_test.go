@@ -1,6 +1,8 @@
 package input
 
 import (
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,6 +26,39 @@ func TestP8ShiftLetterTable(t *testing.T) {
 		if got := string(text); got != want[i] {
 			t.Errorf("%s = %q, want %q", KeyName(key), got, want[i])
 		}
+	}
+}
+
+func TestP8ShiftLetterSurvivesShiftKeydownOrder(t *testing.T) {
+	in := NewP8Input(nil)
+	in.HandleKey(KeyA, ModShift)
+	// Ebitengine may drain the physical Shift keydown after the letter.
+	in.HandleKey(KeyShift, ModShift)
+	text, handled := in.TransformText([]rune("A"), ModShift)
+	if handled || string(text) != "█" {
+		t.Fatalf("text = %q handled=%t, want █", string(text), handled)
+	}
+}
+
+func TestP8BatchedShiftLetters(t *testing.T) {
+	in := NewP8Input(nil)
+	in.HandleKey(KeyA, ModShift)
+	in.HandleKey(KeyB, ModShift)
+	in.HandleKey(KeyShift, ModShift)
+	text, handled := in.TransformText([]rune("AB"), ModShift)
+	if handled || string(text) != "█▒" {
+		t.Fatalf("text = %q handled=%t, want █▒", string(text), handled)
+	}
+}
+
+func TestP8BatchedKanaShiftDigits(t *testing.T) {
+	in := NewP8Input(nil)
+	in.HandleKey(KeyJ, ModCtrl)
+	in.HandleKey(Key1, ModShift)
+	in.HandleKey(Key2, ModShift)
+	text, handled := in.TransformText([]rune("!@"), ModShift)
+	if handled || string(text) != "▮■" {
+		t.Fatalf("text = %q handled=%t, want ▮■", string(text), handled)
 	}
 }
 
@@ -255,6 +290,49 @@ func TestP8KanaCoversEveryByte(t *testing.T) {
 		if !kataSeen[byte(b)] {
 			t.Errorf("katakana byte 0x%02x is not produced by any romaji sequence", b)
 		}
+	}
+}
+
+func TestP8KanaMatchesCapture(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    P8Mode
+		keys    string
+		capture string
+	}{
+		{"hiragana", P8ModeHiragana, "../../testdata/pico8/input/hiragana-keys.txt", "../../testdata/pico8/input/hiragana-capture.txt"},
+		{"katakana", P8ModeKatakana, "../../testdata/pico8/input/katakana-keys.txt", "../../testdata/pico8/input/katakana-capture.txt"},
+		{"gemination", P8ModeHiragana, "../../testdata/pico8/input/gemination-keys.txt", "../../testdata/pico8/input/gemination-capture.txt"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			keyData, err := os.ReadFile(tc.keys)
+			if err != nil {
+				t.Fatal(err)
+			}
+			captureData, err := os.ReadFile(tc.capture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			keys := strings.Split(strings.TrimRight(string(keyData), "\n"), "\n")
+			capture := strings.Split(string(captureData), "\n")
+			if index := slices.Index(capture, "__lua__"); index >= 0 {
+				capture = capture[index+1:]
+			}
+			if len(capture) < len(keys) {
+				t.Fatalf("capture has %d lines, want at least %d", len(capture), len(keys))
+			}
+			for i, key := range keys {
+				in := NewP8Input(nil)
+				in.Mode = tc.mode
+				text, _ := in.TransformText([]rune(key), 0)
+				got := strings.TrimSpace(string(text))
+				want := strings.TrimSpace(capture[i])
+				if got != want {
+					t.Errorf("%q = %q, capture says %q", key, got, want)
+				}
+			}
+		})
 	}
 }
 

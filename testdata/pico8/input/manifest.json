@@ -73,6 +73,11 @@
       "screenshot": "katakana-romaji.png",
       "keys_file": "katakana-keys.txt",
       "capture_file": "katakana-capture.txt"
+    },
+    {
+      "screenshot": "gemination.png",
+      "keys_file": "gemination-keys.txt",
+      "capture_file": "gemination-capture.txt"
     }
   ]
 }

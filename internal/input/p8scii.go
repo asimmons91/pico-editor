@@ -29,9 +29,8 @@ type P8Input struct {
 	// Log receives one debug record when a layout cannot produce a US letter.
 	Log *slog.Logger
 
-	pendingGlyph Key
-	pendingDigit Key
-	logged       map[Key]bool
+	pendingKeys []Key
+	logged      map[Key]bool
 }
 
 // NewP8Input returns a default-mode input state.
@@ -56,9 +55,13 @@ func (p *P8Input) ModeLabel() string {
 // Reset clears mode and pending state, for example when insert mode ends.
 func (p *P8Input) Reset() {
 	p.Mode = P8ModeDefault
+	p.ClearPending()
+}
+
+// ClearPending discards an in-progress kana or deferred text sequence.
+func (p *P8Input) ClearPending() {
 	p.Pending = ""
-	p.pendingGlyph = KeyUnknown
-	p.pendingDigit = KeyUnknown
+	p.pendingKeys = nil
 }
 
 // HandleKey consumes P8SCII mode toggles and records the physical key needed
@@ -74,9 +77,11 @@ func (p *P8Input) HandleRepeat(key Key, mods Mods) bool {
 }
 
 func (p *P8Input) handleKey(key Key, mods Mods, repeat bool) bool {
-	// A new key always cancels a deferred text conversion that never arrived.
-	p.pendingGlyph = KeyUnknown
-	p.pendingDigit = KeyUnknown
+	// Modifier keydowns can be drained after the letter they modify. They must
+	// not clear a deferred conversion.
+	if IsModifier(key) {
+		return false
+	}
 
 	if mods&ModCtrl != 0 && mods&(ModAlt|ModMeta|ModShift) == 0 {
 		switch key {
@@ -84,6 +89,7 @@ func (p *P8Input) handleKey(key Key, mods Mods, repeat bool) bool {
 			if repeat {
 				return true
 			}
+			p.pendingKeys = nil
 			switch key {
 			case KeyJ:
 				p.toggle(P8ModeHiragana)
@@ -96,24 +102,31 @@ func (p *P8Input) handleKey(key Key, mods Mods, repeat bool) bool {
 		}
 	}
 
-	if mods == ModShift && key >= KeyA && key <= KeyZ {
-		if p.Mode != P8ModePuny {
+	if mods == ModShift {
+		switch {
+		case key >= KeyA && key <= KeyZ:
 			p.Pending = ""
-			p.pendingGlyph = key
-			// Let Vim see the key (insert-mode key handling has no text
-			// effect); the paired text event carries the layout result.
+			if p.Mode != P8ModePuny {
+				// Let Vim see the key (insert-mode key handling has no text
+				// effect); the paired text event carries the layout result.
+				p.pendingKeys = append(p.pendingKeys, key)
+			}
+			return false
+		case (p.Mode == P8ModeHiragana || p.Mode == P8ModeKatakana) &&
+			key >= Key0 && key <= Key9:
+			p.Pending = ""
+			p.pendingKeys = append(p.pendingKeys, key)
+			return false
+		default:
+			// Shift+punctuation still belongs to the same text batch; keep any
+			// pending letters in order for the following text event.
 			return false
 		}
-		p.Pending = ""
-		return false
 	}
 
-	if (p.Mode == P8ModeHiragana || p.Mode == P8ModeKatakana) &&
-		mods == ModShift && key >= Key0 && key <= Key9 {
-		p.Pending = ""
-		p.pendingDigit = key
-		return false
-	}
+	// A new unshifted/control key starts a new input unit. Deferred
+	// conversions from earlier keys can no longer be matched to text.
+	p.pendingKeys = nil
 
 	if mods&(ModCtrl|ModAlt|ModMeta) != 0 {
 		p.Pending = ""
@@ -144,34 +157,57 @@ func (p *P8Input) TransformText(runes []rune, mods Mods) (out []rune, handled bo
 		return runes, false
 	}
 
-	if p.pendingGlyph != KeyUnknown {
-		key := p.pendingGlyph
-		p.pendingGlyph = KeyUnknown
-		expected := rune('A' + int(key-KeyA))
-		if len(runes) == 1 && runes[0] == expected {
-			return []rune(p8scii.Decode([]byte{byte(128 + int(key-KeyA))})), false
+	out = make([]rune, 0, len(runes))
+	remaining := runes
+	for len(p.pendingKeys) > 0 && len(remaining) > 0 {
+		key := p.pendingKeys[0]
+		p.pendingKeys = p.pendingKeys[1:]
+		r := remaining[0]
+		remaining = remaining[1:]
+		switch {
+		case key >= KeyA && key <= KeyZ:
+			expected := rune('A' + int(key-KeyA))
+			if r == expected {
+				out = append(out, []rune(p8scii.Decode([]byte{byte(128 + int(key-KeyA))}))...)
+			} else {
+				p.logLayoutFallback(key, []rune{r})
+				out = append(out, r)
+			}
+		case key >= Key0 && key <= Key9:
+			if glyph := p.kanaDigitGlyph(key); glyph != "" {
+				out = append(out, []rune(glyph)...)
+			} else {
+				out = append(out, r)
+			}
 		}
-		p.logLayoutFallback(key, runes)
-		return runes, false
 	}
+	// A text batch carries one rune per deferred key. Anything left over is
+	// stale and must not convert a later, unrelated text event.
+	p.pendingKeys = nil
 
-	if p.pendingDigit != KeyUnknown {
-		key := p.pendingDigit
-		p.pendingDigit = KeyUnknown
-		if glyph := p.kanaDigitGlyph(key); glyph != "" {
-			out = append([]rune(glyph), runes[1:]...)
-			return out, false
+	if len(remaining) == 0 {
+		if len(out) == 0 {
+			return nil, true
 		}
+		return out, false
 	}
 
 	switch p.Mode {
 	case P8ModePuny:
-		return punyText(runes, mods), false
+		out = append(out, punyText(remaining, mods)...)
 	case P8ModeHiragana, P8ModeKatakana:
-		return p.kanaText(runes, mods)
+		kana, consumed := p.kanaText(remaining, mods)
+		if consumed && len(out) == 0 {
+			return nil, true
+		}
+		out = append(out, kana...)
 	default:
-		return runes, false
+		out = append(out, remaining...)
 	}
+	if len(out) == 0 {
+		return nil, true
+	}
+	return out, false
 }
 
 func punyText(runes []rune, mods Mods) []rune {
@@ -306,7 +342,7 @@ func isKanaConsonant(r rune) bool {
 // shifting the Hiragana P8SCII bytes by 0x32.
 //
 // Capture: PICO-8 0.2.7, testdata/pico8/input/manifest.json
-// sha256 241f2d910dd2eef26e1f80e019c9efb3dcb770a30da25d9530ea55dfa5f097b3
+// sha256 773b2543066bb59876c83ef114ca2745457036fa61546e6567b0ff6187465720
 var kanaTable, kanaPrefixes = buildKanaTable()
 
 func buildKanaTable() (map[string]string, map[string]bool) {
@@ -357,7 +393,9 @@ func buildKanaTable() (map[string]string, map[string]bool) {
 			continue
 		}
 		for i, vowel := range []string{"ya", "yu", "yo"} {
-			b := base + byte(i)
+			// All three digraphs use the i-row kana as the main glyph; only
+			// the small kana changes.
+			b := base
 			switch {
 			case r.dakuten != 0:
 				add(r.key+vowel, b, r.dakuten, 0xc9+byte(i))
