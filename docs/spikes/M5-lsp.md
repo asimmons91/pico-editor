@@ -44,8 +44,10 @@ planned `v1.8.0` tag.
 - `internal/app`: semantic highlighting and diagnostic underlines drawn in the
   code area, completion acceptance (including multiple additional edits),
   automatic completion and signature triggers, hover, definition and jump-back,
-  both same-cart and cross-tab definitions, diagnostics list jump, status
-  segments, cart info after restart, and restart usability.
+  both same-cart and cross-tab definitions including Ctrl+O back into the
+  original tab, diagnostics list jump, completion dismissal on Ctrl+W, signature
+  parameter offsets, status segments, cart info after restart, and restart
+  usability.
 - `internal/vim`: matrix fixtures for `K`, `gd`, `Ctrl+]`, `:diag`, and
   `:lsp restart`, plus a cross-file jump action.
 - Fixtures under `internal/lsp/testdata` are copied from pico-lsp `v1.6.0`;
