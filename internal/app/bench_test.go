@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -96,25 +95,33 @@ func make64KBCart(tb testing.TB) string {
 
 func Test64KBCartOpenAndEdit(t *testing.T) {
 	path := make64KBCart(t)
+	openBudget := 200 * time.Millisecond
+	editBudget := 8 * time.Millisecond
+	if os.Getenv("CI") != "" {
+		// Shared runners are noisy; keep the budget check for the reference
+		// machine and use a smoke threshold in CI.
+		openBudget = 2 * time.Second
+		editBudget = 2 * time.Second
+	}
 	start := time.Now()
 	game := New(Config{Logger: slog.New(slog.DiscardHandler), File: path, Now: time.Now})
 	open := time.Since(start)
 	if err := game.StartupError(); err != nil {
 		t.Fatal(err)
 	}
-	if open > 2*time.Second {
-		t.Fatalf("64KB cart open took %s, want < 2s", open)
+	if open > openBudget {
+		t.Fatalf("64KB cart open took %s, want < %s", open, openBudget)
 	}
 	game.source = &fakeSource{}
 	start = time.Now()
 	if err := sendKeys(t, game, "ix<esc>"); err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Fatalf("64KB cart edit took %s, want < 2s", elapsed)
+	if elapsed := time.Since(start); elapsed > editBudget {
+		t.Fatalf("64KB cart edit took %s, want < %s", elapsed, editBudget)
 	}
 	if got := len(game.session.CurrentEditor().Buffer.Text()); got < 65536 {
 		t.Fatalf("edited cart text = %d bytes, want >= 64KB", got)
 	}
-	t.Logf("64KB cart: open %s, edit %s", open, fmt.Sprint(time.Since(start)))
+	t.Logf("64KB cart: open %s (budget %s), edit %s (budget %s)", open, openBudget, time.Since(start), editBudget)
 }

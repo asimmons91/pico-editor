@@ -61,6 +61,8 @@ func TestKeymapRejectsReservedAndGrammarKeys(t *testing.T) {
 	writeFile(t, filepath.Join(configHome, "pico-editor", "config.toml"), `
 [keys.insert]
 "ctrl+p" = "palette.show"
+[keys.visual]
+"ctrl+d" = "file.close"
 [keys.normal]
 d = "file.close"
 "ctrl+b" = "tree.toggle"
@@ -73,6 +75,9 @@ d = "file.close"
 	}
 	if command, _ := settings.CommandFor("normal", "ctrl+s"); command != "file.save" {
 		t.Errorf("invalid command ID overwrote the default: %q", command)
+	}
+	if _, ok := settings.CommandFor("visual", "ctrl+d"); ok {
+		t.Error("reserved visual ctrl+d was accepted")
 	}
 	if _, ok := settings.CommandFor("normal", "d"); ok {
 		t.Error("grammar key d was accepted")

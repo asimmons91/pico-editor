@@ -18,8 +18,9 @@
 - Run with `--log-file -` to see logs on stderr.
 - If an audio backend warning appears, it is harmless: V1 plays no audio
   but Ebitengine may initialize one.
-- If a configuration file is malformed, startup offers **Use defaults** or
-  **Quit**. The same dialog appears for an unsupported `version`.
+- If the global `config.toml` is malformed, startup offers **Use defaults** or
+  **Quit**. A malformed workspace `.pico-editor.toml` only warns and keeps the
+  global layer.
 - Check `$XDG_STATE_HOME/pico-editor/pico-editor.log` for the reason. Logs
   rotate at 1MB and keep `.1`, `.2`, and `.3`.
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/asimmons91/pico-editor/internal/config"
 	"github.com/asimmons91/pico-editor/internal/input"
@@ -99,7 +100,7 @@ func TestKeymapUnbindTreeToggle(t *testing.T) {
 func TestConfigReloadOnFocus(t *testing.T) {
 	game := newProjectGame(t, "[editor]\ntab_width = 2\n")
 	path := filepath.Join(game.session.Workspace.Root, ".pico-editor.toml")
-	if err := os.WriteFile(path, []byte("[editor]\ntab_width = 6\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("[editor]\ntab_width = 6\n# changed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if !game.checkConfigOnFocus() {
@@ -178,12 +179,26 @@ func TestDetachLSPHidesLanguageUI(t *testing.T) {
 	game.session.LSP = lsp.New(lsp.Options{})
 	game.session.LSPStatus = lsp.StatusReady
 	game.session.LSPTokens["x"] = lsp.TokenSet{}
+	game.session.DiagList = &DiagnosticList{Items: []DiagnosticItem{{Message: "stale"}}}
+	game.session.glyphPickerPending = true
+	game.session.completionDue = time.Now()
+	game.session.signatureDue = time.Now()
+	game.session.tokenDue = time.Now()
+	game.session.cartInfoDue = time.Now()
 	game.session.DetachLSP()
 	if game.session.LSP != nil || game.session.LSPStatus != lsp.StatusOff {
 		t.Fatal("DetachLSP left a live service or ready status")
 	}
 	if len(game.session.LSPTokens) != 0 {
 		t.Fatal("DetachLSP kept token caches")
+	}
+	if game.session.DiagList != nil {
+		t.Fatal("DetachLSP kept the diagnostics overlay")
+	}
+	if game.session.glyphPickerPending || !game.session.completionDue.IsZero() ||
+		!game.session.signatureDue.IsZero() || !game.session.tokenDue.IsZero() ||
+		!game.session.cartInfoDue.IsZero() {
+		t.Fatal("DetachLSP left pending LSP work")
 	}
 }
 
@@ -234,7 +249,7 @@ func TestExMessagesAndReloadActions(t *testing.T) {
 	}
 	game.session.Help = nil
 	path := filepath.Join(game.session.Workspace.Root, ".pico-editor.toml")
-	if err := os.WriteFile(path, []byte("[editor]\ntab_width = 7\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("[editor]\ntab_width = 7\n# changed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := sendKeys(t, game, ":reload<enter>"); err != nil {
@@ -304,5 +319,48 @@ func TestDefaultKeymapCtrlShiftPOpensPalette(t *testing.T) {
 	}
 	if game.palette == nil {
 		t.Fatal("ctrl+shift+p did not open the palette")
+	}
+}
+
+func TestReloadEnablesRecovery(t *testing.T) {
+	game := newProjectGame(t, "[recovery]\nenabled = false\n")
+	if game.recovery != nil {
+		t.Fatal("recovery store exists while disabled")
+	}
+	settings := game.settings.Clone()
+	settings.Recovery.Enabled = true
+	game.applySettings(settings, nil, false)
+	if game.recovery == nil {
+		t.Fatal("enabling recovery on reload did not create the store")
+	}
+}
+
+func TestUnknownKeymapCommandIsWarnedAndRemoved(t *testing.T) {
+	game := newProjectGame(t, `
+[keys.normal]
+f2 = "file.sav"
+"ctrl+s" = "file.sav"
+`)
+	if _, ok := game.settings.CommandFor("normal", "f2"); ok {
+		t.Fatal("unknown command ID remained bound")
+	}
+	if command, _ := game.settings.CommandFor("normal", "ctrl+s"); command != "file.save" {
+		t.Fatalf("ctrl+s = %q, want the default restored", command)
+	}
+	if !strings.Contains(historyText(game), "unknown command") {
+		t.Fatalf("history = %q, want an unknown-command warning", historyText(game))
+	}
+}
+
+func TestConfigErrorEscUsesDefaults(t *testing.T) {
+	game := newProjectGame(t, "")
+	game.settingsErr = errors.New("bad config")
+	game.showConfigError()
+	game.session.handleDialog(input.Event{Kind: input.KindKeyDown, Key: input.KeyEsc})
+	if game.session.Dialog == nil || game.session.Dialog.Selected != 0 {
+		t.Fatalf("dialog = %+v, want Use defaults selected", game.session.Dialog)
+	}
+	if !game.session.Dialog.Chosen {
+		t.Fatal("Esc did not choose an option")
 	}
 }

@@ -648,7 +648,7 @@ func TestSelectionAndSearchBackgroundsArePainted(t *testing.T) {
 		t.Fatal("visual line selection painted no background")
 	}
 
-	game, _ = newEditorGame(t, "one two\n", &recordingClipboard{})
+	game, _ = newEditorGame(t, "one two two\n", &recordingClipboard{})
 	base = render.NewSurface(CanvasWidth, CanvasHeight)
 	game.session.Draw(base, true)
 	if countPalette(base, searchBackground) != 0 {
@@ -659,8 +659,11 @@ func TestSelectionAndSearchBackgroundsArePainted(t *testing.T) {
 	}
 	searched := render.NewSurface(CanvasWidth, CanvasHeight)
 	game.session.Draw(searched, true)
-	if countPalette(searched, searchBackground)+countPalette(searched, searchCurrentBackground) == 0 {
-		t.Fatal("search matches painted no background")
+	if countPalette(searched, searchBackground) == 0 {
+		t.Fatal("non-current search matches painted no background")
+	}
+	if countPalette(searched, searchCurrentBackground) == 0 {
+		t.Fatal("current search match painted no current-match background")
 	}
 }
 

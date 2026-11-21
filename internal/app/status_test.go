@@ -6,6 +6,7 @@ import (
 
 	"github.com/asimmons91/pico-editor/internal/font"
 	"github.com/asimmons91/pico-editor/internal/lsp"
+	"github.com/asimmons91/pico-editor/internal/render"
 )
 
 func fullStatusData() statusData {
@@ -133,4 +134,35 @@ func TestStatusDeprecatedMarker(t *testing.T) {
 
 func fontCells(text string) int {
 	return font.CellWidth(text)
+}
+
+func TestDrawStatusLineUsesPixelCoordinates(t *testing.T) {
+	surface := render.NewSurface(CanvasWidth, CanvasHeight)
+	segments := []statusSegment{{"N", 10}, {"file.lua", 7}, {"1:1", 7}, {"LSP", 11}}
+	got := drawStatusLine(surface, 0, segments)
+	want := 3 * 2 * font.NarrowWidth
+	for _, segment := range segments {
+		want += font.CellWidth(segment.text) * font.NarrowWidth
+	}
+	if got != want {
+		t.Fatalf("drawStatusLine returned x=%d, want %d", got, want)
+	}
+}
+
+func TestStatusMiddleTruncationKeepsWideSuffix(t *testing.T) {
+	data := statusData{mode: "N", file: strings.Repeat("あ", 30) + ".p8", line: 1, column: 1}
+	segments := layoutStatus(24, data)
+	if len(segments) < 2 {
+		t.Fatalf("segments = %+v", segments)
+	}
+	file := segments[1].text
+	if !strings.HasSuffix(file, ".p8") {
+		t.Fatalf("truncated file = %q, want the .p8 suffix", file)
+	}
+	if !strings.Contains(file, "…") {
+		t.Fatalf("truncated file = %q, want a middle ellipsis", file)
+	}
+	if cells := font.CellWidth(statusText(segments)); cells > 24 {
+		t.Fatalf("status is %d cells, want <= 24", cells)
+	}
 }

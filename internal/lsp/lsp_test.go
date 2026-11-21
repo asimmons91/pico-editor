@@ -1,6 +1,9 @@
 package lsp
 
 import (
+	"bytes"
+	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -154,5 +157,26 @@ func TestM7ColorTable(t *testing.T) {
 		if style := StyleFor("variable", []string{modifier}); style.Color != color {
 			t.Errorf("modifier %q color = %d, want %d", modifier, style.Color, color)
 		}
+	}
+}
+
+func TestLSPMessagesAreNotLoggedVerbatim(t *testing.T) {
+	var logs bytes.Buffer
+	service := New(Options{Log: slog.New(slog.NewTextHandler(&logs, nil))})
+	handler := &clientHandler{service: service}
+	if err := handler.ShowMessage(context.Background(), &protocol.ShowMessageParams{Message: "SECRET_SHOW_TEXT"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := handler.LogMessage(context.Background(), &protocol.LogMessageParams{Type: protocol.MessageTypeInfo, Message: "SECRET_LOG_TEXT"}); err != nil {
+		t.Fatal(err)
+	}
+	output := logs.String()
+	for _, secret := range []string{"SECRET_SHOW_TEXT", "SECRET_LOG_TEXT"} {
+		if strings.Contains(output, secret) {
+			t.Fatalf("log output contains message text %q: %s", secret, output)
+		}
+	}
+	if !strings.Contains(output, "chars=") {
+		t.Fatalf("log output = %q, want bounded message lengths", output)
 	}
 }

@@ -99,6 +99,8 @@ func (g *Game) loadConfig(notifyWarnings bool) bool {
 }
 
 func (g *Game) applySettings(settings config.Settings, warnings []config.Warning, notifyWarnings bool) {
+	settings, keymapWarnings := sanitizeKeymapCommands(settings, g.commands)
+	warnings = append(warnings, keymapWarnings...)
 	old := g.settings
 	g.settings = settings
 	if g.notifications != nil {
@@ -113,6 +115,17 @@ func (g *Game) applySettings(settings config.Settings, warnings []config.Warning
 	if g.session != nil {
 		g.session.ApplySettings(settings)
 	}
+	if settings.Recovery.Enabled && g.recovery == nil {
+		base := g.baseLogger
+		if base == nil {
+			base = g.logger
+		}
+		g.recovery = newRecoveryStore(config.RecoveryDir(), base.With("component", "recovery"), g.now)
+	}
+	if !settings.Recovery.Enabled {
+		g.recoveryDue = time.Time{}
+	}
+	g.recoverySignature = 0
 	if notifyWarnings {
 		for _, warning := range warnings {
 			g.pushNotification(warning.String(), NotifyWarning, true)
@@ -158,7 +171,13 @@ func (s *Session) DetachLSP() {
 	s.Completion = nil
 	s.Hover = nil
 	s.Signature = nil
+	s.DiagList = nil
 	s.GlyphPicker = nil
+	s.glyphPickerPending = false
+	s.completionDue = time.Time{}
+	s.signatureDue = time.Time{}
+	s.tokenDue = time.Time{}
+	s.cartInfoDue = time.Time{}
 	for _, buffer := range s.Buffers {
 		buffer.LSPOpened = false
 		buffer.LSPCartAsked = -1

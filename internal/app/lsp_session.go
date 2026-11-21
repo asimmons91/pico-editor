@@ -95,6 +95,7 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 			s.Completion = nil
 			s.Signature = nil
 			s.Hover = nil
+			s.DiagList = nil
 			s.LSPGlyphs = nil
 			s.GlyphPicker = nil
 			s.glyphPickerPending = false
@@ -120,6 +121,7 @@ func (s *Session) applyLSPEvent(event lsp.Event) bool {
 		s.Completion = nil
 		s.Signature = nil
 		s.Hover = nil
+		s.DiagList = nil
 		s.LSPGlyphs = nil
 		s.GlyphPicker = nil
 		s.glyphPickerPending = false

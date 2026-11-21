@@ -219,9 +219,14 @@ type rotatingFile struct {
 
 func openRotatingFile(path string, stderr io.Writer) (*rotatingFile, error) {
 	writer := &rotatingFile{path: path, max: logRotateBytes, stderr: stderr}
-	if info, err := os.Stat(path); err == nil && info.Size() >= writer.max {
-		if err := writer.rotateFiles(); err != nil {
-			fmt.Fprintf(stderr, "pico-editor: warning: cannot rotate log %s: %v\n", path, err)
+	if info, err := os.Stat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s is not a regular file", path)
+		}
+		if info.Size() >= writer.max {
+			if err := writer.rotateFiles(); err != nil {
+				fmt.Fprintf(stderr, "pico-editor: warning: cannot rotate log %s: %v\n", path, err)
+			}
 		}
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)

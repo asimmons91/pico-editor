@@ -5,6 +5,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/asimmons91/pico-editor/internal/config"
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/vim"
@@ -128,6 +129,39 @@ func (g *Game) commandEnabled(command Command) bool {
 	return command.Enabled(g)
 }
 
+// sanitizeKeymapCommands removes bindings whose IDs are not in the registry.
+// Config validation owns key syntax; the app owns the stable command list.
+func sanitizeKeymapCommands(settings config.Settings, commands []Command) (config.Settings, []config.Warning) {
+	known := make(map[string]bool, len(commands))
+	for _, command := range commands {
+		known[command.ID] = true
+	}
+	settings = settings.Clone()
+	defaults := config.DefaultKeys()
+	var warnings []config.Warning
+	for mode, bindings := range settings.Keys {
+		for key, commandID := range bindings {
+			if known[commandID] {
+				continue
+			}
+			if fallback, ok := defaults[mode][key]; ok {
+				bindings[key] = fallback
+				warnings = append(warnings, config.Warning{
+					Key:     "keys." + mode + "." + key,
+					Message: fmt.Sprintf("unknown command %q; restored %s", commandID, fallback),
+				})
+			} else {
+				delete(bindings, key)
+				warnings = append(warnings, config.Warning{
+					Key:     "keys." + mode + "." + key,
+					Message: fmt.Sprintf("unknown command %q removed", commandID),
+				})
+			}
+		}
+	}
+	return settings, warnings
+}
+
 // runCommand executes one registry command with panic recovery so a bug in a
 // command cannot take down the frame loop. Fatal render/init failures still
 // flow through the normal doFrame path.
@@ -191,6 +225,10 @@ func (g *Game) displayKey(command Command) string {
 			return key
 		}
 		if strings.HasPrefix(command.Key, ":") {
+			return command.Key
+		}
+		if command.ID == "input.puny" {
+			// Ctrl+P is owned by the P8SCII input layer, not the keymap.
 			return command.Key
 		}
 		return ""

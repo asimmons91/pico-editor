@@ -196,14 +196,40 @@ func clipMiddle(text string, limit int) string {
 	if limit < ellipsisCells {
 		return clipCells(ellipsis, limit)
 	}
-	runes := []rune(text)
 	left := (limit - ellipsisCells) / 2
 	right := limit - ellipsisCells - left
-	head := clipCells(string(runes), left)
-	tailText := string(runes[max(0, len(runes)-right):])
-	tail := clipCells(tailText, right)
+	head := clipCells(text, left)
+	tail := tailCells(text, right)
 	if head == "" && tail == "" {
 		return clipCells(ellipsis, limit)
 	}
 	return head + ellipsis + tail
+}
+
+// tailCells returns the last clusters that fit in limit display cells. It walks
+// P8SCII clusters from the end so wide glyphs and variation selectors are never
+// split.
+func tailCells(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	clusters := make([]font.Cluster, 0, len(text))
+	for cluster := range font.Clusters(text) {
+		clusters = append(clusters, cluster)
+	}
+	used := 0
+	start := len(clusters)
+	for index := len(clusters) - 1; index >= 0; index-- {
+		width := clusters[index].Width / font.NarrowWidth
+		if used+width > limit {
+			break
+		}
+		used += width
+		start = index
+	}
+	var out strings.Builder
+	for _, cluster := range clusters[start:] {
+		out.WriteString(cluster.Text)
+	}
+	return out.String()
 }

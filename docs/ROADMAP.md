@@ -5,7 +5,9 @@ Interactive M1 spot checks remain tracked in `docs/spikes/M1-input.md`, the M3
 manual checklist lives in `docs/spikes/M3-vim.md`, the M4 manual checklist is in
 `docs/spikes/M4-cart.md`, the M5 integration notes are in
 `docs/spikes/M5-lsp.md`, and the M6 checklist is in `docs/spikes/M6-input.md`.
-M7 results are in `docs/M7-polish.md`.Date: 2026-11-20
+M7 results are in `docs/M7-polish.md`.
+
+Date: 2026-11-20
 Repo: `github.com/asimmons91/pico-editor`
 Go: `1.27.4`, managed by mise
 

@@ -81,8 +81,10 @@ this table.
   `ctrl+o`, `ctrl+i`, `ctrl+rightbracket` (`Ctrl+]`), `ctrl+d`, `ctrl+u`,
   `ctrl+w`, `ctrl+j`, `ctrl+k`, `ctrl+leftbracket` (`Ctrl+[`, Esc),
   `ctrl+shift+v`/`ctrl+shift+c` (clipboard), and insert-mode
-  `ctrl+tab`/`ctrl+shift+tab` (counted-insert tab switching).
+  `ctrl+tab`/`ctrl+shift+tab` (counted-insert tab switching). The same motions
+  and jumps are reserved in visual mode.
 - Invalid notation warns with the accepted key names and keeps the previous
   binding.
-- Unknown command IDs warn at load time and at invocation; the key does nothing.
+- Unknown command IDs warn at load time and at invocation; a documented default
+  binding is restored, or the key is left unbound.
 - `:map` is out of scope for V1.

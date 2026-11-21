@@ -177,10 +177,11 @@ func TestMaybeScheduleRecoveryWritesAfterInterval(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	game.recovery = newRecoveryStore(dir, slog.New(slog.DiscardHandler), game.now)
+	start := game.now()
+	clock := start
+	game.recovery = newRecoveryStore(dir, slog.New(slog.DiscardHandler), func() time.Time { return clock })
 	game.settings.Recovery.Enabled = true
 	game.settings.Recovery.IntervalMS = 2000
-	start := game.now()
 	game.maybeScheduleRecovery(start)
 	if entries, _ := game.recovery.List(); len(entries) != 0 {
 		t.Fatalf("entries written before the interval: %+v", entries)
@@ -192,6 +193,16 @@ func TestMaybeScheduleRecoveryWritesAfterInterval(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("entries = %+v, want one", entries)
+	}
+	firstStamp := entries[0].Timestamp
+	clock = start.Add(10 * time.Second)
+	game.maybeScheduleRecovery(start.Add(4 * time.Second))
+	entries, err = game.recovery.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !entries[0].Timestamp.Equal(firstStamp) {
+		t.Fatalf("journal rewritten while idle: %+v", entries)
 	}
 }
 
@@ -234,6 +245,7 @@ func TestStartupRecoveryListAndActions(t *testing.T) {
 		notifications: newNotificationCenter(time.Now),
 		recovery:      store,
 		knownBuffers:  map[string]bool{},
+		journaled:     map[string]bool{},
 	}
 	game.initRecovery()
 	if game.pendingRecovery == nil || len(game.pendingRecovery.Entries) != 1 {
@@ -256,8 +268,13 @@ func TestStartupRecoveryListAndActions(t *testing.T) {
 	if game.session.CurrentBuffer() == nil || !game.session.CurrentBuffer().Editor.Buffer.Dirty() {
 		t.Fatal("Recover did not open a dirty buffer")
 	}
+	if entries, _ := store.List(); len(entries) != 1 {
+		t.Fatal("Recover deleted the journal before a save or discard")
+	}
+	game.session.CurrentEditor().Buffer.MarkSaved()
+	game.cleanupCleanJournals()
 	if entries, _ := store.List(); len(entries) != 0 {
-		t.Fatal("Recover did not delete the journal entry")
+		t.Fatal("cleanup did not delete the journal after the buffer became clean")
 	}
 }
 
@@ -274,5 +291,170 @@ func TestRecoveryCartDocumentOpenData(t *testing.T) {
 	document.MarkSavedCodeText("")
 	if !document.Dirty() {
 		t.Fatal("MarkSavedCodeText did not dirty the recovered cart")
+	}
+}
+
+func TestRecoveryListConsumesTextAndMouse(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.lua")
+	if err := os.WriteFile(path, []byte("abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewSessionAtOptions(root, path, slog.New(slog.DiscardHandler), SessionOptions{Settings: config.DefaultSettings()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	game := &Game{
+		logger:        slog.New(slog.DiscardHandler),
+		session:       session,
+		settings:      config.DefaultSettings(),
+		notifications: newNotificationCenter(time.Now),
+		recoveryList:  &RecoveryList{Entries: []RecoveryEntry{{Path: path}}},
+	}
+	before := session.CurrentEditor().Buffer.Text()
+	if _, changed := game.handleEvent(input.Event{Kind: input.KindText, Runes: []rune("x")}); changed {
+		t.Fatal("text event changed state behind the recovery list")
+	}
+	if got := session.CurrentEditor().Buffer.Text(); got != before {
+		t.Fatalf("buffer = %q, want unchanged %q", got, before)
+	}
+	if _, changed := game.handleEvent(input.Event{Kind: input.KindMouse, X: 1, Y: 1, Buttons: input.MouseLeft}); changed {
+		t.Fatal("mouse event changed state behind the recovery list")
+	}
+}
+
+func TestRecoveryDiscardRemovesOnlySelected(t *testing.T) {
+	dir := t.TempDir()
+	store := newRecoveryStore(dir, slog.New(slog.DiscardHandler), time.Now)
+	first := filepath.Join(t.TempDir(), "first.lua")
+	second := filepath.Join(t.TempDir(), "second.lua")
+	if err := store.Save(dirtyBuffer(first, "a\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(dirtyBuffer(second, "b\n")); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	game := &Game{
+		logger:        slog.New(slog.DiscardHandler),
+		notifications: newNotificationCenter(time.Now),
+		recovery:      store,
+		recoveryList:  &RecoveryList{Entries: entries},
+	}
+	game.discardRecovery(0)
+	if len(game.recoveryList.Entries) != 1 {
+		t.Fatalf("list = %+v, want one entry", game.recoveryList.Entries)
+	}
+	remaining, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("journal = %+v, want one entry", remaining)
+	}
+}
+
+func TestClearOpenRecoveryDeletesOnlyOpenBuffers(t *testing.T) {
+	game, _ := newEditorGame(t, "abc\n", &recordingClipboard{})
+	if err := sendKeys(t, game, "ix<esc>"); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := newRecoveryStore(dir, slog.New(slog.DiscardHandler), time.Now)
+	game.recovery = store
+	game.writeRecovery()
+	entries, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	game.clearOpenRecovery()
+	entries, err = store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries after close = %+v", entries)
+	}
+}
+
+func TestClearOpenRecoveryKeepsDeferredJournals(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "keep.lua")
+	if err := os.WriteFile(path, []byte("abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewSessionAtOptions(root, path, slog.New(slog.DiscardHandler), SessionOptions{Settings: config.DefaultSettings()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := newRecoveryStore(dir, slog.New(slog.DiscardHandler), time.Now)
+	if err := store.Save(dirtyBuffer(path, "abcd\n")); err != nil {
+		t.Fatal(err)
+	}
+	game := &Game{
+		logger:        slog.New(slog.DiscardHandler),
+		session:       session,
+		settings:      config.DefaultSettings(),
+		notifications: newNotificationCenter(time.Now),
+		recovery:      store,
+		journaled:     map[string]bool{},
+		knownBuffers:  map[string]bool{path: true},
+	}
+	// A journal the user chose Later is not session-owned.
+	game.clearOpenRecovery()
+	if entries, _ := store.List(); len(entries) != 1 {
+		t.Fatal("quit deleted a deferred journal")
+	}
+	// A journal this session wrote is removed on quit.
+	game.journaled[path] = true
+	game.clearOpenRecovery()
+	if entries, _ := store.List(); len(entries) != 0 {
+		t.Fatal("quit kept a session journal")
+	}
+}
+
+func TestExplicitReloadDeletesDeferredJournal(t *testing.T) {
+	game, path := newEditorGame(t, "abc\n", &recordingClipboard{})
+	dir := t.TempDir()
+	store := newRecoveryStore(dir, slog.New(slog.DiscardHandler), time.Now)
+	if err := store.Save(dirtyBuffer(path, "abcd\n")); err != nil {
+		t.Fatal(err)
+	}
+	game.recovery = store
+	if err := sendKeys(t, game, ":e<enter>"); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := store.List(); len(entries) != 0 {
+		t.Fatalf("explicit reload kept the journal: %+v", entries)
+	}
+}
+
+func TestUndoToCleanDeletesSessionJournal(t *testing.T) {
+	game, _ := newEditorGame(t, "abc\n", &recordingClipboard{})
+	if err := sendKeys(t, game, "ix<esc>"); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	store := newRecoveryStore(dir, slog.New(slog.DiscardHandler), time.Now)
+	game.recovery = store
+	game.writeRecovery()
+	if entries, _ := store.List(); len(entries) != 1 {
+		t.Fatalf("journal = %+v", entries)
+	}
+	if err := sendKeys(t, game, "u"); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := store.List(); len(entries) != 0 {
+		t.Fatalf("undo-to-clean kept the journal: %+v", entries)
 	}
 }

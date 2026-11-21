@@ -346,3 +346,23 @@ func TestSetupLoggerDashUsesStderr(t *testing.T) {
 		t.Fatalf("stderr = %q, want the log record", stderr.String())
 	}
 }
+
+func TestOpenRotatingFileRejectsNonRegularPath(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "log-directory")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	if _, err := openRotatingFile(path, &stderr); err == nil {
+		t.Fatal("openRotatingFile accepted a directory")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Fatal("directory log path was moved aside")
+	}
+}

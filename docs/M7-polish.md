@@ -460,16 +460,20 @@ the next frame boundary.
 - **Refresh-on-focus:** clean reload, dirty conflict, tree rescan, config mtime
   reload, and forced cart-info refresh are implemented; no watcher was added.
 - **Recovery:** atomic JSON+text journal, dirty-cart `FullText()`, 1MB/100-entry
-  caps, startup list, and explicit Recover/Discard/Later actions are tested.
+  caps, startup list, explicit Recover/Discard/Later actions, close cleanup, and
+  reload-enabling are tested. The real SIGKILL/restart check remains in
+  `docs/spikes/M7-polish.md` for the release pass.
 - **Logging:** `$XDG_STATE_HOME/pico-editor/pico-editor.log`, mode `0600`,
-  1MB rotation with three backups, `--log-file -` stderr mode.
+  1MB rotation with three backups, `--log-file -` stderr mode, and a privacy
+  test proving file and clipboard text never reach the log.
 - **Docs/screenshots:** `README.md`, `USAGE.md`, `CONFIG.md`, `KEYMAP.md`, and
   `TROUBLESHOOTING.md`; five committed 2× golden PNGs under `docs/images/`.
 - **Performance:** benchmarks for buffer insert, viewport draw, token apply,
-  and palette filter; the 64KB cart acceptance test opens and edits in
-  milliseconds on the reference machine. Idle frames do not rebuild the
-  surface, and buffer-path bookkeeping only runs after input or a save. CI
-  records benchmark output without a pass/fail threshold on shared runners.
+  and palette filter; the 64KB cart acceptance test enforces the documented
+  open/keystroke budgets locally and uses a smoke threshold on shared CI. Idle
+  frames do not rebuild the surface, and buffer-path bookkeeping only runs after
+  input or a save. CI records benchmark output without a pass/fail threshold on
+  shared runners.
 - **Bug pass:** no open P0/P1 defects are known in editing, saving, LSP, input,
   or recovery. The M1–M6 manual checklists remain tracked in `docs/spikes/` for
   the X11/Wayland release pass.

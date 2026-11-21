@@ -82,50 +82,52 @@ var disableRecoveryForTests bool
 
 // Game is the root Ebitengine game. It owns no package-level state.
 type Game struct {
-	logger           *slog.Logger
-	baseLogger       *slog.Logger
-	step             func() error
-	fatalErr         error
-	source           input.Source
-	clipboard        input.Clipboard
-	clipboardResults chan clipboardResult
-	renderer         *Renderer
-	charset          *Charset
-	session          *Session
-	saveResults      chan saveResult
-	saveBusy         bool
-	pendingQuit      bool
-	saveAll          bool
-	saveAllQuit      bool
-	forceQuit        bool
-	saveAllQueue     []*SessionBuffer
-	dialogContext    *dialogContext
-	mouseDown        bool
-	startupErr       error
-	blink            *Blink
-	scale            int
-	now              func() time.Time
-	firstFrame       bool
-	screenWidth      int
-	screenHeight     int
-	lsp              *lsp.Service
-	lspCtx           context.Context
-	lspCancel        context.CancelFunc
-	lspAllowed       bool
-	lspVersion       string
-	commands         []Command
-	palette          *Palette
-	settings         config.Settings
-	settingsErr      error
-	settingsWarnings []config.Warning
-	configStamp      string
-	configErrText    string
-	notifications    *NotificationCenter
-	recovery         *recoveryStore
-	recoveryList     *RecoveryList
-	pendingRecovery  *RecoveryList
-	recoveryDue      time.Time
-	knownBuffers     map[string]bool
+	logger            *slog.Logger
+	baseLogger        *slog.Logger
+	step              func() error
+	fatalErr          error
+	source            input.Source
+	clipboard         input.Clipboard
+	clipboardResults  chan clipboardResult
+	renderer          *Renderer
+	charset           *Charset
+	session           *Session
+	saveResults       chan saveResult
+	saveBusy          bool
+	pendingQuit       bool
+	saveAll           bool
+	saveAllQuit       bool
+	forceQuit         bool
+	saveAllQueue      []*SessionBuffer
+	dialogContext     *dialogContext
+	mouseDown         bool
+	startupErr        error
+	blink             *Blink
+	scale             int
+	now               func() time.Time
+	firstFrame        bool
+	screenWidth       int
+	screenHeight      int
+	lsp               *lsp.Service
+	lspCtx            context.Context
+	lspCancel         context.CancelFunc
+	lspAllowed        bool
+	lspVersion        string
+	commands          []Command
+	palette           *Palette
+	settings          config.Settings
+	settingsErr       error
+	settingsWarnings  []config.Warning
+	configStamp       string
+	configErrText     string
+	notifications     *NotificationCenter
+	recovery          *recoveryStore
+	recoveryList      *RecoveryList
+	pendingRecovery   *RecoveryList
+	recoveryDue       time.Time
+	recoverySignature int64
+	journaled         map[string]bool
+	knownBuffers      map[string]bool
 }
 
 // New returns a game configured by cfg.
@@ -165,6 +167,7 @@ func New(cfg Config) *Game {
 		lspAllowed:       cfg.EnableLSP,
 		lspVersion:       cfg.Version,
 		knownBuffers:     make(map[string]bool),
+		journaled:        make(map[string]bool),
 	}
 	game.source = input.NewEbitenSource(game.mapCursor)
 	game.step = game.updateFrame
@@ -213,6 +216,7 @@ func New(cfg Config) *Game {
 			} else {
 				game.session = session
 				session.notify = game.pushNotification
+				session.forgetRecovery = game.forgetRecovery
 				if session.Status != "" {
 					severity := NotifyInfo
 					if session.StatusError {
@@ -236,6 +240,14 @@ func New(cfg Config) *Game {
 		}
 	}
 	game.commands = game.buildCommands()
+	if game.session != nil {
+		sanitized, keymapWarnings := sanitizeKeymapCommands(game.settings, game.commands)
+		game.settings = sanitized
+		game.session.Settings = sanitized
+		for _, warning := range keymapWarnings {
+			game.notifications.Push(warning.String(), NotifyWarning, true)
+		}
+	}
 	if game.settingsErr != nil && game.session != nil {
 		game.showConfigError()
 	} else {
@@ -269,6 +281,21 @@ func (g *Game) notifyError(title string, err error) {
 	}
 	g.logger.Error(title, "error", err)
 	g.pushNotification(title+": "+shortError(err), NotifyError, true)
+}
+
+// forgetRecovery removes a journal after an explicit reload or discard. It is
+// safe when recovery is disabled or no entry exists.
+func (g *Game) forgetRecovery(path string) {
+	if path == "" {
+		return
+	}
+	if g.recovery != nil {
+		if err := g.recovery.Delete(path); err != nil {
+			g.logger.Warn("recovery delete", "path", path, "error", err)
+			return
+		}
+	}
+	delete(g.journaled, path)
 }
 
 func (g *Game) initRecovery() {
@@ -324,14 +351,42 @@ func (g *Game) syncKnownBuffers() {
 	}
 	if g.recovery != nil {
 		for path := range g.knownBuffers {
-			if !current[path] {
+			if current[path] {
+				continue
+			}
+			if g.journaled[path] {
 				if err := g.recovery.Delete(path); err != nil {
 					g.logger.Warn("recovery delete", "path", path, "error", err)
 				}
+				delete(g.journaled, path)
 			}
 		}
+		g.cleanupCleanJournals()
 	}
 	g.knownBuffers = current
+}
+
+// cleanupCleanJournals removes this session's journals for buffers that are
+// clean again (saved, reloaded, or undone to the save point). Journals the user
+// chose Later are not in journaled, so they survive.
+func (g *Game) cleanupCleanJournals() {
+	if g.recovery == nil || g.session == nil {
+		return
+	}
+	for _, buffer := range g.session.Buffers {
+		if buffer == nil || buffer.Editor == nil {
+			continue
+		}
+		path := buffer.Editor.Buffer.Path
+		if path == "" || !g.journaled[path] || buffer.Editor.Buffer.Dirty() {
+			continue
+		}
+		if err := g.recovery.Delete(path); err != nil {
+			g.logger.Warn("recovery delete", "path", path, "error", err)
+			continue
+		}
+		delete(g.journaled, path)
+	}
 }
 
 func (g *Game) startLSP(session *Session, version string) {
@@ -373,6 +428,15 @@ func (g *Game) restartLSP() {
 	if g.lsp == nil || g.lspCtx == nil {
 		return
 	}
+	if g.session != nil {
+		g.session.clearLSPTransients()
+		g.session.GlyphPicker = nil
+		g.session.glyphPickerPending = false
+		g.session.completionDue = time.Time{}
+		g.session.signatureDue = time.Time{}
+		g.session.tokenDue = time.Time{}
+		g.session.cartInfoDue = time.Time{}
+	}
 	service := g.lsp
 	ctx := g.lspCtx
 	go func() {
@@ -412,19 +476,19 @@ func (g *Game) updateFrame() error {
 	return err
 }
 
-// clearOpenRecovery deletes journal entries for buffers that are closing on a
-// normal or forced quit. A crash never reaches this path, so journals remain.
+// clearOpenRecovery deletes journals this session wrote for buffers that are
+// closing on a normal or forced quit. Pre-existing journals the user chose
+// Later are left on disk so the next startup can offer them again.
 func (g *Game) clearOpenRecovery() {
 	if g.recovery == nil || g.session == nil {
 		return
 	}
-	for _, buffer := range g.session.Buffers {
-		if buffer == nil || buffer.Editor == nil || buffer.Editor.Buffer.Path == "" {
+	for path := range g.journaled {
+		if err := g.recovery.Delete(path); err != nil {
+			g.logger.Warn("recovery delete", "path", path, "error", err)
 			continue
 		}
-		if err := g.recovery.Delete(buffer.Editor.Buffer.Path); err != nil {
-			g.logger.Warn("recovery delete", "path", buffer.Editor.Buffer.Path, "error", err)
-		}
+		delete(g.journaled, path)
 	}
 }
 
@@ -502,8 +566,11 @@ func (g *Game) handleEvent(event input.Event) (quit, changed bool) {
 	case input.KindFocus:
 		g.logger.Debug("focus", "focused", event.Focused)
 	}
-	if g.recoveryList != nil && event.Kind == input.KindKeyDown {
-		return g.handleRecoveryList(event)
+	if g.recoveryList != nil {
+		if event.Kind == input.KindKeyDown {
+			return g.handleRecoveryList(event)
+		}
+		return false, false
 	}
 	if g.palette != nil {
 		if g.session != nil && g.session.DialogOpen() {
@@ -873,6 +940,7 @@ func (g *Game) handleDialogResult() bool {
 			}
 		default:
 			g.cancelSaveAll()
+			g.writeRecovery()
 		}
 	case DialogDeleted:
 		if context != nil && context.pending != nil && choice == 0 {
@@ -883,6 +951,7 @@ func (g *Game) handleDialogResult() bool {
 			g.startSaveFor(pending.buffer, pending.action, options)
 		} else {
 			g.cancelSaveAll()
+			g.writeRecovery()
 		}
 	case DialogOutsideRoot:
 		if context != nil && context.pending != nil && choice == 0 {
@@ -892,6 +961,7 @@ func (g *Game) handleDialogResult() bool {
 			g.startSaveFor(pending.buffer, pending.action, options)
 		} else {
 			g.cancelSaveAll()
+			g.writeRecovery()
 		}
 	case DialogQuit:
 		switch choice {
@@ -926,10 +996,12 @@ func (g *Game) reloadSessionBuffer(buffer *SessionBuffer) (*SessionBuffer, bool)
 	if index < 0 {
 		return nil, false
 	}
+	path := buffer.Editor.Buffer.Path
 	if err := g.session.reloadBufferAtPreserving(buffer, index); err != nil {
-		g.session.ShowErrorDetail("Reload failed", "reload", buffer.Editor.Buffer.Path, err)
+		g.session.ShowErrorDetail("Reload failed", "reload", path, err)
 		return nil, false
 	}
+	g.forgetRecovery(path)
 	return g.session.Buffers[index], true
 }
 
@@ -1047,6 +1119,8 @@ func (g *Game) pollSave() (quit, changed bool) {
 		if result.err == nil && result.job != nil && result.job.Buffer != nil && !result.job.Buffer.Dirty() && g.recovery != nil {
 			if err := g.recovery.Delete(result.job.Buffer.Path); err != nil {
 				g.logger.Warn("recovery delete", "path", result.job.Buffer.Path, "error", err)
+			} else {
+				delete(g.journaled, result.job.Buffer.Path)
 			}
 		}
 		if !quit && g.saveAll {

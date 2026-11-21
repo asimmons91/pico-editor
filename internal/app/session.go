@@ -62,7 +62,8 @@ type Session struct {
 	DisplayMessage      string
 	DisplayMessageError bool
 
-	notify func(message string, severity NotificationSeverity, toast bool)
+	notify         func(message string, severity NotificationSeverity, toast bool)
+	forgetRecovery func(path string)
 
 	LSPStatus       lsp.Status
 	LSPMessage      string
@@ -307,6 +308,12 @@ func (s *Session) clearP8Pending() {
 	}
 }
 
+func (s *Session) forgetPath(path string) {
+	if s.forgetRecovery != nil {
+		s.forgetRecovery(path)
+	}
+}
+
 func (s *Session) applyVimResult(result vim.Result) (quit bool) {
 	if result.Notify != "" {
 		s.SetStatus(result.Notify, result.Error)
@@ -507,6 +514,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 			return false
 		}
 		current := s.CurrentBuffer()
+		reloadPath := ed.Buffer.Path
 		if current != nil && current.Cart != nil {
 			active := current.ActiveTab
 			fresh, err := s.openSessionBuffer(current.Cart.Path)
@@ -531,6 +539,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 			s.prepareBuffer(s.CurrentBuffer())
 			s.refreshOwner(s.CurrentBuffer())
 		}
+		s.forgetPath(reloadPath)
 		s.SetStatus("reloaded", false)
 		return true
 	}
@@ -562,6 +571,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 			}
 			s.closeLSPDocument(s.Buffers[index])
 			s.Buffers[index] = fresh
+			s.forgetPath(absolute)
 		}
 		s.Current = index
 		s.prepareBuffer(s.CurrentBuffer())
@@ -580,6 +590,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 	} else if force && ed.Buffer.Dirty() {
 		// :e! abandons the current buffer's changes rather than leaving a
 		// second dirty buffer behind.
+		s.forgetPath(ed.Buffer.Path)
 		s.closeLSPDocument(s.Buffers[s.Current])
 		s.Buffers[s.Current] = opened
 	} else {
@@ -942,8 +953,10 @@ func helpTopic(topic string) (string, []string) {
 			"gg G Ctrl+O Ctrl+I zz zt zb   jumps/scroll",
 			"K hover; gd Ctrl+] definition; :diag; :lsp restart",
 			"Ctrl+Space completion; Ctrl+N Ctrl+Shift+N select",
-			"Ctrl+Tab Ctrl+Shift+Tab   cart code tabs",
-			"Ctrl+Shift+B   file tree; Ctrl+S saves",
+			"Ctrl+Shift+P palette; Ctrl+Shift+M messages",
+			"Ctrl+Shift+G glyph picker; F1 help",
+			"Ctrl+Shift+B tree; Ctrl+S saves; Ctrl+Tab tabs",
+			":reload config; :messages history; :help config",
 			"Esc cancels pending state or leaves a mode.",
 		}
 	}

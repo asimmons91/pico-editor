@@ -116,7 +116,11 @@ func (s *Session) handleDialog(ev input.Event) bool {
 		dialog.Chosen = true
 		return true
 	case input.KeyEsc:
-		dialog.Selected = cancelOption(dialog.Options)
+		if dialog.Kind == DialogConfigError {
+			dialog.Selected = 0
+		} else {
+			dialog.Selected = cancelOption(dialog.Options)
+		}
 		dialog.Chosen = true
 		return true
 	}

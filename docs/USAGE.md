@@ -91,10 +91,10 @@ the original file; save explicitly after reviewing it.
 
 ## Scaling and layout
 
-The canvas is 256×256 logical cells and is drawn with nearest-neighbor integer
-scaling. `editor.scale = 0` picks the largest scale that fits 80% of the
-monitor, clamped to 2×–8×. Fixed values 1–8 are also accepted. Scale changes
-need a restart.
+The canvas is 256×256 logical pixels (a 64×42 cell grid) and is drawn with
+nearest-neighbor integer scaling. `editor.scale = 0` picks the largest scale
+that fits 80% of the monitor, clamped to 2×–8×. Fixed values 1–8 are also
+accepted. Scale changes need a restart.
 
 ## Logs and troubleshooting
 

@@ -63,6 +63,8 @@ var reservedKeys = map[string]map[string]bool{
 		"ctrl+f": true, "ctrl+b": true, "ctrl+n": true,
 		"ctrl+shift+n": true, "ctrl+space": true,
 		"ctrl+shift+v": true, "ctrl+shift+c": true,
+		"ctrl+d": true, "ctrl+u": true, "ctrl+o": true, "ctrl+i": true,
+		"ctrl+r": true, "ctrl+rightbracket": true,
 	},
 	"command": {
 		"ctrl+u": true, "ctrl+w": true, "ctrl+leftbracket": true,

@@ -55,7 +55,7 @@ func (h *clientHandler) ShowMessage(_ context.Context, params *protocol.ShowMess
 	if h == nil || h.service == nil || params == nil {
 		return nil
 	}
-	h.service.log.Info("lsp message", "type", params.Type, "message", params.Message)
+	h.service.log.Info("lsp message", "type", params.Type, "chars", len(params.Message))
 	h.service.emit(Event{Kind: EventMessage, Message: params.Message})
 	return nil
 }
@@ -65,6 +65,6 @@ func (h *clientHandler) LogMessage(_ context.Context, params *protocol.LogMessag
 		return nil
 	}
 	level := slogLevel(params.Type)
-	h.service.log.Log(context.Background(), level, "lsp log", "message", params.Message)
+	h.service.log.Log(context.Background(), level, "lsp log", "type", params.Type, "chars", len(params.Message))
 	return nil
 }

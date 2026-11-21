@@ -229,14 +229,22 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 	if s.LSP == nil {
 		data.lspStatus = lsp.StatusOff
 	}
-	segments := layoutStatus(GridColumns, data)
+	drawStatusLine(surface, y, layoutStatus(GridColumns, data))
+}
+
+// drawStatusLine draws segments with a two-cell gap and returns the final pixel
+// x coordinate. Surface.DrawText returns cells, so status drawing must convert
+// between cells and pixels explicitly.
+func drawStatusLine(surface *render.Surface, y int, segments []statusSegment) int {
 	x := 0
 	for index, segment := range segments {
 		if index > 0 {
 			x += 2 * font.NarrowWidth
 		}
-		x += surface.DrawText(x, y, segment.text, segment.color, render.DefaultBackground)
+		cells := surface.DrawText(x, y, segment.text, segment.color, render.DefaultBackground)
+		x += cells * font.NarrowWidth
 	}
+	return x
 }
 
 func statusMode(mode vim.Mode) string {

@@ -249,40 +249,65 @@ func (g *Game) writeRecovery() bool {
 		if err := g.recovery.Save(buffer); err != nil {
 			g.notifyError("Recovery write failed", err)
 			changed = true
+			continue
 		}
+		if g.journaled == nil {
+			g.journaled = make(map[string]bool)
+		}
+		g.journaled[buffer.Editor.Buffer.Path] = true
 	}
 	if pruned := g.recovery.TakePruned(); pruned > 0 {
 		g.pushNotification(fmt.Sprintf("pruned %d old recovery entries", pruned), NotifyWarning, true)
 		changed = true
 	}
+	g.recoveryDue = time.Time{}
 	return changed
 }
 
-// maybeScheduleRecovery writes after recovery.interval_ms of dirty idle state.
+// maybeScheduleRecovery writes once after recovery.interval_ms of dirty idle
+// state. A successful write does not reschedule itself; the next edit changes
+// the dirty signature and starts a new idle window.
 func (g *Game) maybeScheduleRecovery(now time.Time) bool {
 	if g.recovery == nil || g.session == nil || !g.settings.Recovery.Enabled {
 		g.recoveryDue = time.Time{}
+		g.recoverySignature = 0
 		return false
 	}
 	interval := time.Duration(g.settings.Recovery.IntervalMS) * time.Millisecond
 	if interval <= 0 {
 		return false
 	}
-	dirty := g.session.unsavedBuffers()
-	if len(dirty) == 0 {
+	signature := g.dirtySignature()
+	if signature == 0 {
 		g.recoveryDue = time.Time{}
+		g.recoverySignature = 0
 		return false
 	}
-	if g.recoveryDue.IsZero() {
+	if signature != g.recoverySignature {
+		g.recoverySignature = signature
 		g.recoveryDue = now.Add(interval)
 		return false
 	}
-	if now.Before(g.recoveryDue) {
+	if g.recoveryDue.IsZero() || now.Before(g.recoveryDue) {
 		return false
 	}
 	changed := g.writeRecovery()
-	g.recoveryDue = now.Add(interval)
+	g.recoveryDue = time.Time{}
 	return changed
+}
+
+func (g *Game) dirtySignature() int64 {
+	if g.session == nil {
+		return 0
+	}
+	signature := int64(0)
+	for _, buffer := range g.session.Buffers {
+		if buffer == nil || buffer.Editor == nil || !buffer.Editor.Buffer.Dirty() {
+			continue
+		}
+		signature = signature*131 + int64(buffer.Editor.Buffer.Version+1)
+	}
+	return signature
 }
 
 // RecoveryList is the startup modal journal browser.
@@ -363,9 +388,12 @@ func (g *Game) recoverEntry(index int) {
 		g.notifyError("Recover failed", err)
 		return
 	}
-	if err := g.recovery.Delete(entry.Path); err != nil {
-		g.notifyError("Recovery cleanup failed", err)
+	// Keep the journal on disk until the recovered buffer is saved, closed, or
+	// explicitly discarded. Mark it session-owned so cleanup can do that.
+	if g.journaled == nil {
+		g.journaled = make(map[string]bool)
 	}
+	g.journaled[entry.Path] = true
 	list.removeSelected()
 	g.syncKnownBuffers()
 }
@@ -381,6 +409,7 @@ func (g *Game) discardRecovery(index int) {
 			g.notifyError("Recovery discard failed", err)
 			return
 		}
+		delete(g.journaled, entry.Path)
 	}
 	list.removeSelected()
 }
@@ -473,6 +502,8 @@ func (s *Session) Recover(entry RecoveryEntry, text string) error {
 		s.closeLSPDocument(s.Buffers[index])
 		s.Buffers[index] = buffer
 		s.Current = index
+	} else if current := s.CurrentBuffer(); current != nil && current.Editor.Buffer.Path == "" && !current.Editor.Buffer.Dirty() {
+		s.Buffers[s.Current] = buffer
 	} else {
 		s.Buffers = append(s.Buffers, buffer)
 		s.Current = len(s.Buffers) - 1
