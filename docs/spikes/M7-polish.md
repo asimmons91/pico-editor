@@ -18,7 +18,7 @@ the M8 release pass.
 | Recovery | atomic save/load/delete, oversize, bad directory, prune, plain/cart recover, invalid cart skip, startup list actions |
 | Logging | private mode, level filtering, rotation, three backups, `--log-file -` |
 | Performance | palette, draw, token apply, buffer insert, 64KB open/edit acceptance |
-| Screenshots | five 2× PNGs under `docs/images/` generated from surfaces |
+| Screenshots | six 2× PNGs under `docs/images/` generated from surfaces, including the sidebar/gutter layout |
 
 ## Reference-machine numbers
 

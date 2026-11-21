@@ -438,8 +438,9 @@ Development rules:
   skipped before reading. `ResolveInclude` returns the nearest owning cart;
   `.lua` buffers show the owner in the status row.
 - M4 layout is row 0 file tabs, row 1 cart code tabs for `.p8`, rows 2–40 for
-  cart code (rows 1–40 for `.lua`), and row 41 for status. The file tree overlay
-  covers columns 0–19 and rows 0–40 without resizing the code area. Ctrl+Tab and
+  cart code (rows 1–40 for `.lua`), and row 41 for status. The file tree is a
+  20-column sidebar; when visible it reduces the editor area, and a four-cell
+  gutter holds diagnostic signs and relative line numbers. Ctrl+Tab and
   Ctrl+Shift+Tab switch code tabs; Ctrl+Shift+B toggles the tree; Ctrl+S saves.
 - Save conflicts, deleted files, outside-root symlinks, read-only failures, and
   dirty-session quits are modal dialogs. Conflict overwrites create a numbered

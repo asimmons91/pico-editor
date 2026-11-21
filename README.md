@@ -27,6 +27,8 @@ Next is M8 (Linux release).
 
 ![pico-editor cart view](docs/images/cart-view.png)
 
+![pico-editor sidebar and gutter layout](docs/images/sidebar.png)
+
 V1 features:
 
 - Open a project folder and browse `.p8` and `.lua` files in a simple tree.

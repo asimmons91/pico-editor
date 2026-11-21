@@ -85,6 +85,29 @@ func TestDocumentationScreenshots(t *testing.T) {
 		setup func()
 	}{
 		{name: "cart-view", setup: func() {}},
+		{name: "sidebar", setup: func() {
+			root := game.session.Workspace.Root
+			lib := filepath.Join(root, "lib")
+			if err := os.MkdirAll(lib, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for path, content := range map[string]string{
+				filepath.Join(lib, "util.lua"):    "function clamp(v, lo, hi)\n  return mid(lo, v, hi)\nend\n",
+				filepath.Join(root, "README.md"):  "pico-editor\n",
+				filepath.Join(root, "config.lua"): "scale=4\n",
+			} {
+				if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := game.session.Workspace.Refresh(); err != nil {
+				t.Fatal(err)
+			}
+			game.session.Tree.Init(game.session)
+			game.session.setTreeVisible(true)
+			game.session.Tree.Focused = false
+			game.session.resizeEditor()
+		}},
 		{name: "completion", setup: func() {
 			game.session.Completion = &CompletionPopup{
 				Items: []lsp.CompletionItem{

@@ -96,6 +96,13 @@ nearest-neighbor integer scaling. `editor.scale = 0` picks the largest scale
 that fits 80% of the monitor, clamped to 2×–8×. Fixed values 1–8 are also
 accepted. Scale changes need a restart.
 
+The file tree is a 20-column sidebar when open and reduces the editor width
+instead of covering it. The editor has a four-cell gutter with diagnostic signs
+and relative line numbers; the current line number is absolute. File and cart
+tabs form the bufferline, and the status row spans the full canvas width with
+the mode block on the left and position, sizes, LSP, and percentage on the
+right. `Ctrl+Shift+B` toggles the sidebar.
+
 ## Logs and troubleshooting
 
 The rotating log is `$XDG_STATE_HOME/pico-editor/pico-editor.log` (1MB, three

@@ -17,6 +17,7 @@ type statusData struct {
 	dirty        bool
 	line         int
 	column       int
+	percent      int
 	errors       int
 	warnings     int
 	deprecated   bool
@@ -32,15 +33,17 @@ type statusPart struct {
 	segment statusSegment
 	drop    int // larger drops first; 0 never
 	file    bool
+	right   bool
+	block   bool
 }
 
 func buildStatusParts(data statusData) []statusPart {
-	parts := make([]statusPart, 0, 10)
+	parts := make([]statusPart, 0, 11)
 	mode := data.mode
 	if data.inputMode != "" {
 		mode += " " + data.inputMode
 	}
-	parts = append(parts, statusPart{segment: statusSegment{mode, statusForeground}, drop: 0})
+	parts = append(parts, statusPart{segment: statusSegment{mode, statusForeground}, drop: 0, block: true})
 	if data.file != "" {
 		text := data.file
 		if data.dirty {
@@ -48,7 +51,6 @@ func buildStatusParts(data statusData) []statusPart {
 		}
 		parts = append(parts, statusPart{segment: statusSegment{text, statusSecondary}, file: true})
 	}
-	parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("%d:%d", data.line, data.column), statusForeground}, drop: 0})
 	if data.deprecated {
 		parts = append(parts, statusPart{segment: statusSegment{"!", statusErrorForeground}, drop: 3})
 	}
@@ -58,28 +60,32 @@ func buildStatusParts(data statusData) []statusPart {
 	if data.warnings > 0 {
 		parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("W%d", data.warnings), statusWarningForeground}, drop: 3})
 	}
+	parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("%d:%d", data.line, data.column), statusForeground}, drop: 0, right: true})
 	if data.sizes != "" {
 		if index := strings.LastIndex(data.sizes, " Z"); index > 0 {
-			parts = append(parts, statusPart{segment: statusSegment{data.sizes[:index], statusForeground}, drop: 4})
-			parts = append(parts, statusPart{segment: statusSegment{data.sizes[index+1:], data.zColor}, drop: 4})
+			parts = append(parts, statusPart{segment: statusSegment{data.sizes[:index], statusForeground}, drop: 4, right: true})
+			parts = append(parts, statusPart{segment: statusSegment{data.sizes[index+1:], data.zColor}, drop: 4, right: true})
 		} else {
-			parts = append(parts, statusPart{segment: statusSegment{data.sizes, data.sizeColor}, drop: 4})
+			parts = append(parts, statusPart{segment: statusSegment{data.sizes, data.sizeColor}, drop: 4, right: true})
 		}
 	}
 	switch data.lspStatus {
 	case lsp.StatusFailed:
-		parts = append(parts, statusPart{segment: statusSegment{"LSP!", statusErrorForeground}, drop: 0})
+		parts = append(parts, statusPart{segment: statusSegment{"LSP!", statusErrorForeground}, drop: 0, right: true})
 	case lsp.StatusReady:
-		parts = append(parts, statusPart{segment: statusSegment{"LSP", statusSecondary}, drop: 2})
+		parts = append(parts, statusPart{segment: statusSegment{"LSP", statusSecondary}, drop: 2, right: true})
 	case lsp.StatusStarting:
-		parts = append(parts, statusPart{segment: statusSegment{"LSP...", statusWarningForeground}, drop: 2})
+		parts = append(parts, statusPart{segment: statusSegment{"LSP...", statusWarningForeground}, drop: 2, right: true})
+	}
+	if data.percent > 0 {
+		parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("%d%%", data.percent), statusForeground}, drop: 4, right: true})
 	}
 	if data.message != "" {
 		color := uint8(statusForeground)
 		if data.messageError {
 			color = statusErrorForeground
 		}
-		parts = append(parts, statusPart{segment: statusSegment{data.message, color}, drop: 0})
+		parts = append(parts, statusPart{segment: statusSegment{data.message, color}, drop: 0, right: true})
 	}
 	return parts
 }
@@ -94,6 +100,9 @@ func statusPartsCells(parts []statusPart) int {
 			cells += 2
 		}
 		cells += font.CellWidth(part.segment.text)
+		if part.block {
+			cells += 2
+		}
 	}
 	return cells
 }
@@ -103,6 +112,12 @@ func statusPartsCells(parts []statusPart) int {
 // notification temporarily replaces sizes/diagnostics/LSP-ready so it can be
 // read in the rightmost cells.
 func layoutStatus(width int, data statusData) []statusSegment {
+	left, right := layoutStatusSections(width, data)
+	return append(left, right...)
+}
+
+// layoutStatusSections returns the left and right-aligned status segments.
+func layoutStatusSections(width int, data statusData) (left, right []statusSegment) {
 	parts := buildStatusParts(data)
 	if data.message != "" {
 		kept := parts[:0]
@@ -163,14 +178,31 @@ func layoutStatus(width int, data statusData) []statusSegment {
 		}
 		parts[messageIndex].segment.text = clipMiddle(parts[messageIndex].segment.text, remaining)
 	}
-	segments := make([]statusSegment, 0, len(parts))
 	for _, part := range parts {
 		if part.segment.text == "" {
 			continue
 		}
-		segments = append(segments, part.segment)
+		if part.right {
+			right = append(right, part.segment)
+		} else {
+			left = append(left, part.segment)
+		}
 	}
-	return segments
+	return left, right
+}
+
+func statusSegmentsCells(segments []statusSegment) int {
+	if len(segments) == 0 {
+		return 0
+	}
+	cells := 0
+	for index, segment := range segments {
+		if index > 0 {
+			cells += 2
+		}
+		cells += font.CellWidth(segment.text)
+	}
+	return cells
 }
 
 // statusText joins segments with the two-cell inter-segment gap used by draw.

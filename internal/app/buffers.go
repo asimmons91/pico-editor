@@ -65,9 +65,9 @@ func NewSessionAtOptions(root, path string, logger *slog.Logger, options Session
 		empty := editor.NewEditor(editor.New(""))
 		empty.Buffer.SetWorkspaceRoot(workspaceTree.Root)
 		session.Buffers = []*SessionBuffer{{Editor: empty}}
-		session.prepareBuffer(session.Buffers[0])
 		session.Tree.Visible = true
 		session.Tree.Focused = true
+		session.prepareBuffer(session.Buffers[0])
 		return session, nil
 	}
 	buffer, err := session.openSessionBuffer(path)
@@ -132,7 +132,7 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 	s.glyphPickerPending = false
 	ed := buffer.Editor
 	ed.Buffer.TabWidth = s.Settings.Editor.TabWidth
-	ed.Viewport.Width = GridColumns
+	ed.Viewport.Width = s.codeWidth()
 	ed.Viewport.ScrollOff = s.Settings.Editor.ScrollOff
 	if buffer.Cart == nil {
 		ed.Viewport.Height = luaCodeRows

@@ -508,8 +508,7 @@ func (s *Session) Recover(entry RecoveryEntry, text string) error {
 		s.Buffers = append(s.Buffers, buffer)
 		s.Current = len(s.Buffers) - 1
 	}
-	s.Tree.Visible = false
-	s.Tree.Focused = false
+	s.setTreeVisible(false)
 	s.prepareBuffer(buffer)
 	s.SetStatus("recovered unsaved changes", false)
 	return nil
