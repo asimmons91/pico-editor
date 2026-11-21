@@ -633,6 +633,32 @@ func TestClipboardFailureIsSurfaced(t *testing.T) {
 	})
 }
 
+func TestSelectedSearchMatchKeepsSearchForeground(t *testing.T) {
+	game, _ := newEditorGame(t, "local\n", &recordingClipboard{})
+	if err := sendKeys(t, game, "/local<enter>V"); err != nil {
+		t.Fatalf("Update search and select: %v", err)
+	}
+	surface := render.NewSurface(CanvasWidth, CanvasHeight)
+	game.session.Draw(surface, false)
+
+	left := game.session.codeLeftPx()
+	found := false
+	for y := luaCodeTop * font.LineAdvance; y < statusRow*font.LineAdvance; y++ {
+		for x := left; x < CanvasWidth; x++ {
+			if surface.At(x, y) == searchForeground {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Fatal("selected search match lost its search foreground")
+	}
+}
+
 func TestSelectionAndSearchBackgroundsArePainted(t *testing.T) {
 	game, _ := newEditorGame(t, "   \n   \n", &recordingClipboard{})
 	base := render.NewSurface(CanvasWidth, CanvasHeight)
