@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -257,6 +258,19 @@ func TestSidebarDoesNotCoverModalOverlays(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("sidebar painted over the centered diagnostic modal")
+	}
+}
+
+func TestStatusFileUsesZeroBasedCartTab(t *testing.T) {
+	game, _ := newCartGame(t, fullCart)
+	session := game.session
+	buffer := session.CurrentBuffer()
+	for _, tab := range []int{0, 1} {
+		buffer.ActiveTab = tab
+		want := fmt.Sprintf("game.p8:%d", tab)
+		if got := session.statusFile(buffer); got != want {
+			t.Errorf("statusFile(tab %d) = %q, want %q", tab, got, want)
+		}
 	}
 }
 

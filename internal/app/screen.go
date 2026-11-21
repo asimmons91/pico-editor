@@ -395,7 +395,7 @@ func statusMode(mode vim.Mode) string {
 func (s *Session) statusFile(buffer *SessionBuffer) string {
 	name := s.bufferName(buffer)
 	if buffer != nil && buffer.Cart != nil {
-		name = fmt.Sprintf("%s:%d", name, buffer.ActiveTab+1)
+		name = fmt.Sprintf("%s:%d", name, buffer.ActiveTab)
 	}
 	return name
 }
