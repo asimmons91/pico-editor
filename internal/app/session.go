@@ -695,6 +695,7 @@ func (s *Session) OpenHelp(topic string) bool {
 	s.glyphPickerPending = false
 	if ed := s.CurrentEditor(); ed != nil && s.Vim != nil {
 		s.Vim.ResetOperator()
+		s.Vim.ResetPending(ed)
 	}
 	title, lines := helpTopic(topic)
 	s.Help = &HelpOverlay{Title: title, Lines: lines}
