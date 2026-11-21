@@ -100,7 +100,9 @@ Rendering:
   tokens never overwrite higher-priority cells.
 - The editor background is index 1. PICO-8 does not tint the current line, so it
   uses the same background and text keeps its token color.
-- Selection is background index 2; text keeps its token color.
+- Selection is background index 2 and overrides search/current-match
+  backgrounds. Search matches keep their index 7 foreground; otherwise text
+  keeps its token color.
 - Search matches use background index 3 with foreground index 7; the current
   match uses background index 9 with foreground index 0.
 - Diagnostics underline errors with index 8 and warnings with index 9, one
