@@ -58,6 +58,7 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 			}
 			if searched {
 				background = searchBackground
+				foreground = searchForeground
 			}
 			if thisMatch && !selected {
 				foreground, background = searchCurrentForeground, searchCurrentBackground
@@ -277,7 +278,7 @@ func (s *Session) statusSizes(buffer *SessionBuffer) (string, uint8) {
 		return "", statusForeground
 	}
 	if buffer.Cart == nil && buffer.Owner == "" {
-		return "T/C/Z n/a", panelBorder
+		return "T/C/Z n/a", statusSecondary
 	}
 	info, ok := s.LSPCartInfo[s.activeURI()]
 	if !ok || info.Unavailable() {

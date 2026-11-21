@@ -98,11 +98,11 @@ Rendering:
 - Token priority is fixed: comment > string > number > keyword > type > function
   > property > variable > operator > parameter > namespace > default. Later
   tokens never overwrite higher-priority cells.
-- The editor background is index 1. The current line is background index 0;
-  text keeps its token color.
+- The editor background is index 1. PICO-8 does not tint the current line, so it
+  uses the same background and text keeps its token color.
 - Selection is background index 2; text keeps its token color.
-- Search matches use background index 3; the current match uses background
-  index 9 with foreground index 0.
+- Search matches use background index 3 with foreground index 7; the current
+  match uses background index 9 with foreground index 0.
 - Diagnostics underline errors with index 8 and warnings with index 9, one
   pixel on row `y+5` of the cell.
 - Cursor: block inverts the cell(s); insert bar uses index 7.
@@ -454,8 +454,9 @@ the next frame boundary.
 - **UI layout:** palette, status, notifications, recovery, and dialogs stay in
   `internal/app` with the existing M4–M6 UI. No `internal/ui` package was added.
 - **Semantic colors:** the final M7 table is implemented in `internal/lsp` and
-  rendered with current-line, selection, search, and current-match backgrounds;
-  deprecated tokens add the status-bar `!` marker.
+  rendered with selection, search, and current-match backgrounds; the current
+  line matches PICO-8's uniform editor background. Deprecated tokens add the
+  status-bar `!` marker.
 - **Status bar:** 64-cell layout with the documented 20/40/64-cell truncation
   tests. Notification text replaces the rightmost optional segments.
 - **Keymaps:** defaults, rebinding, unbinding, reserved Vim/input/LSP bindings,

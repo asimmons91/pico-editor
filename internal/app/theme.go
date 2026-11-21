@@ -13,10 +13,12 @@ const (
 	panelBorder = 6  // light gray
 	panelTitle  = 15 // peach
 
-	// Editor highlights.
-	currentLineBackground   = 0 // black; PICO-8 does not brighten the cursor line
+	// Editor highlights. PICO-8 keeps the cursor line the same navy as the rest
+	// of the code area, so the current line uses the editor background.
+	currentLineBackground   = 1 // same as render.DefaultBackground
 	textSelectionBackground = 2 // dark purple
 	searchBackground        = 3 // dark green
+	searchForeground        = 7 // white; readable on dark green
 	searchCurrentBackground = 9 // orange
 	searchCurrentForeground = 0 // black
 	selectionBackground     = 14

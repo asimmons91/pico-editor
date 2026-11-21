@@ -261,7 +261,7 @@ func TestEditorSurfaceDrawsChromeAndCursor(t *testing.T) {
 	game, _ := newEditorGame(t, "abc\n", &recordingClipboard{})
 	ink := 0
 	for _, pixel := range game.renderer.Surface.Pix {
-		if pixel != render.DefaultBackground {
+		if pixel != render.DefaultBackground && pixel != 0 {
 			ink++
 		}
 	}

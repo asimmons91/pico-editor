@@ -160,6 +160,35 @@ func TestM7ColorTable(t *testing.T) {
 	}
 }
 
+func TestM7ColorIndicesPinPICO8Editor(t *testing.T) {
+	want := map[string]uint8{
+		"keyword":   14,
+		"string":    12,
+		"number":    12,
+		"comment":   13,
+		"operator":  7,
+		"variable":  7,
+		"parameter": 7,
+		"property":  7,
+		"function":  7,
+		"type":      9,
+		"namespace": 14,
+		"macro":     9,
+		"regexp":    12,
+		"decorator": 9,
+		"modifier":  13,
+		"unknown":   7,
+	}
+	for tokenType, index := range want {
+		if got := StyleFor(tokenType, nil).Color; got != index {
+			t.Errorf("StyleFor(%q) color = %d, want %d", tokenType, got, index)
+		}
+	}
+	if got := StyleFor("function", []string{"defaultLibrary"}).Color; got != 11 {
+		t.Errorf("defaultLibrary color = %d, want 11", got)
+	}
+}
+
 func TestLSPMessagesAreNotLoggedVerbatim(t *testing.T) {
 	var logs bytes.Buffer
 	service := New(Options{Log: slog.New(slog.NewTextHandler(&logs, nil))})

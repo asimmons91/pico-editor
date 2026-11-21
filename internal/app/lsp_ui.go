@@ -442,7 +442,10 @@ func (s *Session) drawSignature(surface *render.Surface) {
 		if cells+widthCells > 56 {
 			widthCells = max(1, 56-cells)
 		}
-		surface.InvertRect(x+font.NarrowWidth+cells*font.NarrowWidth, rowY, widthCells*font.NarrowWidth, font.CellHeight)
+		// Inverse video in the editor palette: white block, navy label.
+		paramX := x + font.NarrowWidth + cells*font.NarrowWidth
+		surface.FillRect(paramX, rowY, widthCells*font.NarrowWidth, font.CellHeight, render.DefaultForeground)
+		surface.DrawText(paramX, rowY, clipCells(label, widthCells), render.DefaultBackground, render.DefaultForeground)
 	}
 }
 
