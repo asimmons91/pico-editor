@@ -60,21 +60,24 @@ work. A 64KB cart stays responsive.
 
 Use palette indices only. The final table:
 
+The table mirrors PICO-8's own code editor: pink keywords, blue strings and
+numbers, green built-in API calls, and white default text.
+
 | Token type | Index | Color | Notes |
 | --- | --- | --- | --- |
 | `keyword` | 14 | `#FF77A8` | control flow, declarations |
-| `string` | 11 | `#00E436` | includes escapes |
-| `number` | 10 | `#FFEC27` | numbers and numeric literals |
-| `comment` | 13 | `#83769C` | readable on black |
-| `operator` | 6 | `#C2C3C7` | punctuation |
+| `string` | 12 | `#29ADFF` | includes escapes |
+| `number` | 12 | `#29ADFF` | numbers and numeric literals |
+| `comment` | 13 | `#83769C` | readable on navy |
+| `operator` | 7 | `#FFF1E8` | punctuation |
 | `variable` | 7 | `#FFF1E8` | default identifier color |
-| `parameter` | 15 | `#FFCCAA` | function parameters |
-| `property` | 15 | `#FFCCAA` | fields and members |
-| `function` | 12 | `#29ADFF` | calls and declarations |
+| `parameter` | 7 | `#FFF1E8` | function parameters |
+| `property` | 7 | `#FFF1E8` | fields and members |
+| `function` | 7 | `#FFF1E8` | calls and declarations |
 | `type` / `class` / `enum` | 9 | `#FFA300` | type-like symbols |
 | `namespace` | 14 | `#FF77A8` | modules and namespaces |
 | `macro` | 9 | `#FFA300` | macro-like symbols |
-| `regexp` | 11 | `#00E436` | regex literals |
+| `regexp` | 12 | `#29ADFF` | regex literals |
 | `decorator` | 9 | `#FFA300` | annotations |
 | `modifier` | 13 | `#83769C` | modifiers and attributes |
 | default | 7 | `#FFF1E8` | unknown token types |
@@ -86,7 +89,8 @@ Modifiers:
 - `readonly` / `static`: index 6 instead of the base color.
 - `deprecated`: index 8, plus a one-cell `!` marker in the status bar when the
   cursor is on the token.
-- `defaultLibrary`: index 13.
+- `defaultLibrary`: index 11, so built-in API calls read green like PICO-8's
+  editor.
 - Unknown modifiers are ignored.
 
 Rendering:
@@ -94,13 +98,14 @@ Rendering:
 - Token priority is fixed: comment > string > number > keyword > type > function
   > property > variable > operator > parameter > namespace > default. Later
   tokens never overwrite higher-priority cells.
-- The current line is background index 1; text keeps its token color.
+- The editor background is index 1. The current line is background index 0;
+  text keeps its token color.
 - Selection is background index 2; text keeps its token color.
 - Search matches use background index 3; the current match uses background
   index 9 with foreground index 0.
 - Diagnostics underline errors with index 8 and warnings with index 9, one
   pixel on row `y+5` of the cell.
-- Cursor: block inverts the cell(s); insert bar uses index 10.
+- Cursor: block inverts the cell(s); insert bar uses index 7.
 
 ### 2. Status bar
 
@@ -114,11 +119,14 @@ One row, 64 cells, at the bottom. Segments, left to right:
   active.
 - File: base name, optional cart tab index, `*` when dirty.
 - Position: 1-based line and 1-based cell column.
-- Diagnostics: omit zero counts; color errors/warnings.
+- Background is index 8 (red), normal text is index 15 (peach), and the file
+  segment is index 7 (white), matching PICO-8's status bar.
+- Diagnostics: omit zero counts; color errors with index 0 and warnings with
+  index 10.
 - Sizes: `T` tokens/8192, `C` chars/65535, `Z` compressed bytes. Color `Z` at
   the warning/error thresholds. Show `n/a` for standalone `.lua`.
-- LSP: `LSP` when ready, `LSP!` when failed, hidden when off. Use index 8 for
-  failure.
+- LSP: `LSP` when ready, `LSP!` when failed, hidden when off. Use index 7 for
+  ready and index 0 for failure.
 - Notifications temporarily replace the rightmost segments for 4s.
 - Truncation priority: drop sizes, then diagnostics, then file path segments;
   never drop mode, position, or LSP failure. Truncate the middle of long paths

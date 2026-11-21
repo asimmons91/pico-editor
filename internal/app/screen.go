@@ -190,11 +190,11 @@ func clusterSearched(matches []editor.Match, line, runeOffset int) bool {
 
 func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorVisible bool) {
 	y := statusRow * font.LineAdvance
-	surface.FillRect(0, y, surface.Width, font.CellHeight, render.DefaultBackground)
+	surface.FillRect(0, y, surface.Width, surface.Height-y, statusBackground)
 
 	if prefix, text, cursor, active := s.Vim.Prompt(); active {
-		surface.DrawText(0, y, prefix, render.DefaultForeground, render.DefaultBackground)
-		surface.DrawText(font.NarrowWidth, y, text, render.DefaultForeground, render.DefaultBackground)
+		surface.DrawText(0, y, prefix, statusForeground, statusBackground)
+		surface.DrawText(font.NarrowWidth, y, text, statusForeground, statusBackground)
 		if cursorVisible {
 			before := string([]rune(text)[:min(cursor, len([]rune(text)))])
 			cell := 1 + font.CellWidth(before)
@@ -241,7 +241,7 @@ func drawStatusLine(surface *render.Surface, y int, segments []statusSegment) in
 		if index > 0 {
 			x += 2 * font.NarrowWidth
 		}
-		cells := surface.DrawText(x, y, segment.text, segment.color, render.DefaultBackground)
+		cells := surface.DrawText(x, y, segment.text, segment.color, statusBackground)
 		x += cells * font.NarrowWidth
 	}
 	return x
@@ -274,21 +274,21 @@ func (s *Session) statusFile(buffer *SessionBuffer) string {
 
 func (s *Session) statusSizes(buffer *SessionBuffer) (string, uint8) {
 	if buffer == nil {
-		return "", 7
+		return "", statusForeground
 	}
 	if buffer.Cart == nil && buffer.Owner == "" {
-		return "T/C/Z n/a", 6
+		return "T/C/Z n/a", panelBorder
 	}
 	info, ok := s.LSPCartInfo[s.activeURI()]
 	if !ok || info.Unavailable() {
-		return "", 7
+		return "", statusForeground
 	}
-	color := uint8(7)
+	color := uint8(statusForeground)
 	switch info.CompressedStatus {
 	case "warning":
-		color = 9
+		color = statusWarningForeground
 	case "error":
-		color = 8
+		color = statusErrorForeground
 	}
 	return fmt.Sprintf("T%d C%d Z%d", info.Tokens, info.Chars, info.Compressed), color
 }
@@ -314,11 +314,11 @@ func (s *Session) drawHelp(surface *render.Surface) {
 	y := (surface.Height - height) / 2
 
 	surface.FillRect(x, y, width, height, render.DefaultBackground)
-	surface.FillRect(x, y, width, 1, 6)
-	surface.FillRect(x, y+height-1, width, 1, 6)
-	surface.FillRect(x, y, 1, height, 6)
-	surface.FillRect(x+width-1, y, 1, height, 6)
-	surface.DrawText(x+4, y+4, clipCells(s.Help.Title, panelWidth-8), 10, render.DefaultBackground)
+	surface.FillRect(x, y, width, 1, panelBorder)
+	surface.FillRect(x, y+height-1, width, 1, panelBorder)
+	surface.FillRect(x, y, 1, height, panelBorder)
+	surface.FillRect(x+width-1, y, 1, height, panelBorder)
+	surface.DrawText(x+4, y+4, clipCells(s.Help.Title, panelWidth-8), panelTitle, render.DefaultBackground)
 
 	offset := 4 * font.CellHeight
 	maxLines := (height - offset - font.CellHeight) / font.LineAdvance

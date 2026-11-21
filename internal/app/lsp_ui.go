@@ -316,7 +316,7 @@ func (s *Session) drawCompletion(surface *render.Surface, ed *editor.Editor, top
 		fg := uint8(7)
 		if index == popup.Selected {
 			bg = selectionBackground
-			fg = uint8(render.DefaultBackground)
+			fg = selectionForeground
 			surface.FillRect(x+1, rowY, width-2, font.CellHeight, bg)
 		}
 		line := item.Label
@@ -347,10 +347,10 @@ func (s *Session) drawCompletion(surface *render.Surface, ed *editor.Editor, top
 
 func drawPanel(surface *render.Surface, x, y, width, height int) {
 	surface.FillRect(x, y, width, height, render.DefaultBackground)
-	surface.FillRect(x, y, width, 1, 6)
-	surface.FillRect(x, y+height-1, width, 1, 6)
-	surface.FillRect(x, y, 1, height, 6)
-	surface.FillRect(x+width-1, y, 1, height, 6)
+	surface.FillRect(x, y, width, 1, panelBorder)
+	surface.FillRect(x, y+height-1, width, 1, panelBorder)
+	surface.FillRect(x, y, 1, height, panelBorder)
+	surface.FillRect(x+width-1, y, 1, height, panelBorder)
 }
 
 func (s *Session) drawHover(surface *render.Surface) {
@@ -458,7 +458,7 @@ func (s *Session) drawDiagnosticList(surface *render.Surface) {
 	x := (surface.Width - width) / 2
 	y := (surface.Height - height) / 2
 	drawPanel(surface, x, y, width, height)
-	surface.DrawText(x+font.NarrowWidth, y, " DIAGNOSTICS ", 10, render.DefaultBackground)
+	surface.DrawText(x+font.NarrowWidth, y, " DIAGNOSTICS ", panelTitle, render.DefaultBackground)
 	top := 0
 	if list.Selected >= rows {
 		top = list.Selected - rows + 1
@@ -474,7 +474,7 @@ func (s *Session) drawDiagnosticList(surface *render.Surface) {
 		fg := uint8(7)
 		if index == list.Selected {
 			bg = selectionBackground
-			fg = uint8(render.DefaultBackground)
+			fg = selectionForeground
 			surface.FillRect(x+1, rowY, width-2, font.CellHeight, bg)
 		}
 		severity := "I"

@@ -426,7 +426,7 @@ func (g *Game) drawRecoveryList(surface *render.Surface) {
 	x := (surface.Width - width) / 2
 	y := (surface.Height - height) / 2
 	drawPanel(surface, x, y, width, height)
-	surface.DrawText(x+font.NarrowWidth, y, " RECOVER UNSAVED WORK ", 10, render.DefaultBackground)
+	surface.DrawText(x+font.NarrowWidth, y, " RECOVER UNSAVED WORK ", panelTitle, render.DefaultBackground)
 	for row := 0; row < rows; row++ {
 		index := list.Top + row
 		if index >= len(list.Entries) {
@@ -437,8 +437,8 @@ func (g *Game) drawRecoveryList(surface *render.Surface) {
 		bg := uint8(render.DefaultBackground)
 		fg := uint8(7)
 		if index == list.Selected {
-			bg = 2
-			fg = 0
+			bg = selectionBackground
+			fg = selectionForeground
 			surface.FillRect(x+1, rowY, width-2, font.CellHeight, bg)
 		}
 		text := fmt.Sprintf("%s  %s", entry.Timestamp.Format("2006-01-02 15:04"), entry.Path)

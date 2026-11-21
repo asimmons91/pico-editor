@@ -40,27 +40,27 @@ func buildStatusParts(data statusData) []statusPart {
 	if data.inputMode != "" {
 		mode += " " + data.inputMode
 	}
-	parts = append(parts, statusPart{segment: statusSegment{mode, 10}, drop: 0})
+	parts = append(parts, statusPart{segment: statusSegment{mode, statusForeground}, drop: 0})
 	if data.file != "" {
 		text := data.file
 		if data.dirty {
 			text += "*"
 		}
-		parts = append(parts, statusPart{segment: statusSegment{text, 7}, file: true})
+		parts = append(parts, statusPart{segment: statusSegment{text, statusSecondary}, file: true})
 	}
-	parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("%d:%d", data.line, data.column), 7}, drop: 0})
+	parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("%d:%d", data.line, data.column), statusForeground}, drop: 0})
 	if data.deprecated {
-		parts = append(parts, statusPart{segment: statusSegment{"!", 8}, drop: 3})
+		parts = append(parts, statusPart{segment: statusSegment{"!", statusErrorForeground}, drop: 3})
 	}
 	if data.errors > 0 {
-		parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("E%d", data.errors), 8}, drop: 3})
+		parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("E%d", data.errors), statusErrorForeground}, drop: 3})
 	}
 	if data.warnings > 0 {
-		parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("W%d", data.warnings), 9}, drop: 3})
+		parts = append(parts, statusPart{segment: statusSegment{fmt.Sprintf("W%d", data.warnings), statusWarningForeground}, drop: 3})
 	}
 	if data.sizes != "" {
 		if index := strings.LastIndex(data.sizes, " Z"); index > 0 {
-			parts = append(parts, statusPart{segment: statusSegment{data.sizes[:index], 7}, drop: 4})
+			parts = append(parts, statusPart{segment: statusSegment{data.sizes[:index], statusForeground}, drop: 4})
 			parts = append(parts, statusPart{segment: statusSegment{data.sizes[index+1:], data.zColor}, drop: 4})
 		} else {
 			parts = append(parts, statusPart{segment: statusSegment{data.sizes, data.sizeColor}, drop: 4})
@@ -68,16 +68,16 @@ func buildStatusParts(data statusData) []statusPart {
 	}
 	switch data.lspStatus {
 	case lsp.StatusFailed:
-		parts = append(parts, statusPart{segment: statusSegment{"LSP!", 8}, drop: 0})
+		parts = append(parts, statusPart{segment: statusSegment{"LSP!", statusErrorForeground}, drop: 0})
 	case lsp.StatusReady:
-		parts = append(parts, statusPart{segment: statusSegment{"LSP", 11}, drop: 2})
+		parts = append(parts, statusPart{segment: statusSegment{"LSP", statusSecondary}, drop: 2})
 	case lsp.StatusStarting:
-		parts = append(parts, statusPart{segment: statusSegment{"LSP...", 10}, drop: 2})
+		parts = append(parts, statusPart{segment: statusSegment{"LSP...", statusWarningForeground}, drop: 2})
 	}
 	if data.message != "" {
-		color := uint8(7)
+		color := uint8(statusForeground)
 		if data.messageError {
-			color = 8
+			color = statusErrorForeground
 		}
 		parts = append(parts, statusPart{segment: statusSegment{data.message, color}, drop: 0})
 	}

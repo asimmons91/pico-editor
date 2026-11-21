@@ -22,18 +22,9 @@ import (
 )
 
 const (
-	statusRow               = GridRows - 1
-	fileTabRow              = 0
-	cartTabRow              = 1
-	statusForeground        = 6
-	statusErrorColor        = 8
-	currentLineBackground   = 1
-	textSelectionBackground = 2
-	searchBackground        = 3
-	searchCurrentBackground = 9
-	searchCurrentForeground = 0
-	selectionBackground     = 7
-	cursorInsertColor       = 10
+	statusRow  = GridRows - 1
+	fileTabRow = 0
+	cartTabRow = 1
 )
 
 // Session is the Vim-backed editor screen. It owns open buffers, the file

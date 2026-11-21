@@ -172,7 +172,8 @@ Use the canonical 16-color palette:
 ```
 
 - `internal/render.Palette` is a `[16]color.RGBA`.
-- Index 0 is the default background; index 7 is the default text color.
+- Index 1 (PICO-8's dark navy) is the editor background; index 7 is the default
+  text color. Index 0 is reserved for the letterbox around the canvas.
 - No colors outside this table are allowed in V1. Do not add alpha blending;
   UI emphasis uses palette swaps or inversion.
 

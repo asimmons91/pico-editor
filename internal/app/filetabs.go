@@ -71,14 +71,14 @@ func (s *Session) fileTabLabels() []string {
 
 func (s *Session) drawFileTabs(surface *render.Surface) {
 	y := fileTabRow * font.LineAdvance
-	surface.FillRect(0, y, surface.Width, font.CellHeight, render.DefaultBackground)
+	surface.FillRect(0, y, surface.Width, font.CellHeight, chromeBackground)
 	hits := fitTabs(s.fileTabLabels(), s.Current, GridColumns)
 	for _, hit := range hits {
-		background := uint8(render.DefaultBackground)
-		foreground := uint8(7)
+		background := uint8(chromeBackground)
+		foreground := uint8(chromeForeground)
 		if hit.Index == s.Current {
-			background = 6
-			foreground = uint8(render.DefaultBackground)
+			background = chromeActiveBackground
+			foreground = chromeActiveForeground
 		}
 		x := hit.StartCell * font.NarrowWidth
 		surface.FillRect(x, y, hit.Width*font.NarrowWidth, font.CellHeight, background)
@@ -108,14 +108,14 @@ func (s *Session) drawCartTabs(surface *render.Surface) {
 		return
 	}
 	y := cartTabRow * font.LineAdvance
-	surface.FillRect(0, y, surface.Width, font.CellHeight, render.DefaultBackground)
+	surface.FillRect(0, y, surface.Width, font.CellHeight, chromeBackground)
 	hits := fitTabs(s.cartTabLabels(buffer), buffer.ActiveTab, GridColumns)
 	for _, hit := range hits {
-		background := uint8(render.DefaultBackground)
-		foreground := uint8(7)
+		background := uint8(chromeBackground)
+		foreground := uint8(chromeForeground)
 		if hit.Index == buffer.ActiveTab {
-			background = 6
-			foreground = uint8(render.DefaultBackground)
+			background = chromeActiveBackground
+			foreground = chromeActiveForeground
 		}
 		x := hit.StartCell * font.NarrowWidth
 		surface.FillRect(x, y, hit.Width*font.NarrowWidth, font.CellHeight, background)

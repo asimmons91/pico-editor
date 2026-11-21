@@ -13,6 +13,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/asimmons91/pico-editor/internal/editor"
+	"github.com/asimmons91/pico-editor/internal/font"
 	"github.com/asimmons91/pico-editor/internal/input"
 	"github.com/asimmons91/pico-editor/internal/render"
 	"github.com/asimmons91/pico-editor/internal/vim"
@@ -260,7 +261,7 @@ func TestEditorSurfaceDrawsChromeAndCursor(t *testing.T) {
 	game, _ := newEditorGame(t, "abc\n", &recordingClipboard{})
 	ink := 0
 	for _, pixel := range game.renderer.Surface.Pix {
-		if pixel != 0 {
+		if pixel != render.DefaultBackground {
 			ink++
 		}
 	}
@@ -636,42 +637,46 @@ func TestSelectionAndSearchBackgroundsArePainted(t *testing.T) {
 	game, _ := newEditorGame(t, "   \n   \n", &recordingClipboard{})
 	base := render.NewSurface(CanvasWidth, CanvasHeight)
 	game.session.Draw(base, true)
-	if countPalette(base, textSelectionBackground) != 0 {
-		t.Fatal("baseline surface already contains selection pixels")
+	if countPaletteInRows(base, textSelectionBackground, luaCodeTop, statusRow-1) != 0 {
+		t.Fatal("baseline code area already contains selection pixels")
 	}
 	if err := sendKeys(t, game, "V"); err != nil {
 		t.Fatalf("Update V: %v", err)
 	}
 	selected := render.NewSurface(CanvasWidth, CanvasHeight)
 	game.session.Draw(selected, true)
-	if countPalette(selected, textSelectionBackground) == 0 {
+	if countPaletteInRows(selected, textSelectionBackground, luaCodeTop, statusRow-1) == 0 {
 		t.Fatal("visual line selection painted no background")
 	}
 
 	game, _ = newEditorGame(t, "one two two\n", &recordingClipboard{})
 	base = render.NewSurface(CanvasWidth, CanvasHeight)
 	game.session.Draw(base, true)
-	if countPalette(base, searchBackground) != 0 {
-		t.Fatal("baseline surface already contains search pixels")
+	if countPaletteInRows(base, searchBackground, luaCodeTop, statusRow-1) != 0 {
+		t.Fatal("baseline code area already contains search pixels")
 	}
 	if err := sendKeys(t, game, "/two<enter>"); err != nil {
 		t.Fatalf("Update search: %v", err)
 	}
 	searched := render.NewSurface(CanvasWidth, CanvasHeight)
 	game.session.Draw(searched, true)
-	if countPalette(searched, searchBackground) == 0 {
+	if countPaletteInRows(searched, searchBackground, luaCodeTop, statusRow-1) == 0 {
 		t.Fatal("non-current search matches painted no background")
 	}
-	if countPalette(searched, searchCurrentBackground) == 0 {
+	if countPaletteInRows(searched, searchCurrentBackground, luaCodeTop, statusRow-1) == 0 {
 		t.Fatal("current search match painted no current-match background")
 	}
 }
 
-func countPalette(surface *render.Surface, index uint8) int {
+func countPaletteInRows(surface *render.Surface, index uint8, firstRow, lastRow int) int {
 	count := 0
-	for _, pixel := range surface.Pix {
-		if pixel == index {
-			count++
+	for row := max(0, firstRow); row <= lastRow && row < surface.Height/font.LineAdvance; row++ {
+		start := row * font.LineAdvance * surface.Width
+		end := min(start+font.LineAdvance*surface.Width, len(surface.Pix))
+		for _, pixel := range surface.Pix[start:end] {
+			if pixel == index {
+				count++
+			}
 		}
 	}
 	return count

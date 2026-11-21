@@ -259,8 +259,8 @@ func TestLSPDrawnHighlightingAndSignature(t *testing.T) {
 	waitLSPTokens(t, game)
 	surface := newTestSurface()
 	game.session.Draw(surface, true)
-	if !surfaceHasColor(surface, 14) {
-		t.Fatal("surface has no keyword-colored semantic token")
+	if !surfaceHasColorInRows(surface, lsp.ColorKeyword, luaCodeTop, statusRow-1) {
+		t.Fatal("code area has no keyword-colored semantic token")
 	}
 	if err := sendKeys(t, game, "2G0f(i"); err != nil {
 		t.Fatalf("Update signature: %v", err)
@@ -293,7 +293,7 @@ func TestLSPDiagnosticUnderlineIsDrawn(t *testing.T) {
 	})
 	surface := newTestSurface()
 	game.session.Draw(surface, true)
-	if !surfaceHasColorInRows(surface, 8, 0, statusRow-1) && !surfaceHasColorInRows(surface, 9, 0, statusRow-1) {
+	if !surfaceHasColorInRows(surface, 8, cartCodeTop, statusRow-1) && !surfaceHasColorInRows(surface, 9, cartCodeTop, statusRow-1) {
 		t.Fatal("surface has no diagnostic underline in the code area")
 	}
 }
@@ -418,15 +418,6 @@ func TestLSPRestartKeepsEditorUsable(t *testing.T) {
 
 func newTestSurface() *render.Surface {
 	return render.NewSurface(CanvasWidth, CanvasHeight)
-}
-
-func surfaceHasColor(surface *render.Surface, color uint8) bool {
-	for _, pixel := range surface.Pix {
-		if pixel == color {
-			return true
-		}
-	}
-	return false
 }
 
 func surfaceHasColorInRows(surface *render.Surface, color uint8, firstRow, lastRow int) bool {

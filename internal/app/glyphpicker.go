@@ -305,7 +305,7 @@ func (s *Session) drawGlyphPicker(surface *render.Surface) {
 	x := (surface.Width - width) / 2
 	y := (surface.Height - height) / 2
 	drawPanel(surface, x, y, width, height)
-	surface.DrawText(x+font.NarrowWidth, y, " P8SCII GLYPH PICKER ", 10, render.DefaultBackground)
+	surface.DrawText(x+font.NarrowWidth, y, " P8SCII GLYPH PICKER ", panelTitle, render.DefaultBackground)
 
 	query := picker.Query
 	if query == "" {
@@ -328,7 +328,7 @@ func (s *Session) drawGlyphPicker(surface *render.Surface) {
 		fg := uint8(7)
 		if index == picker.Selected {
 			bg = selectionBackground
-			fg = uint8(render.DefaultBackground)
+			fg = selectionForeground
 			surface.FillRect(x+1, rowY, width-2, font.CellHeight, bg)
 		}
 		surface.DrawText(x+font.NarrowWidth, rowY, clipCells(entry.Text, glyphPickerPreview), fg, bg)
@@ -342,7 +342,7 @@ func (s *Session) drawGlyphPicker(surface *render.Surface) {
 	}
 
 	previewY := y + (2+glyphPickerList)*font.LineAdvance
-	surface.FillRect(x+1, previewY-1, width-2, 1, 6)
+	surface.FillRect(x+1, previewY-1, width-2, 1, panelBorder)
 	if entry, ok := picker.SelectedGlyph(); ok {
 		if glyph, known := font.Lookup(entry.Text); known {
 			surface.DrawGlyphScaled(x+font.NarrowWidth, previewY+1, glyph, 2, 7, render.DefaultBackground)

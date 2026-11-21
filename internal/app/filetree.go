@@ -319,7 +319,7 @@ func (s *Session) drawTree(surface *render.Surface) {
 	width := treeColumns * font.NarrowWidth
 	height := treeRows * font.LineAdvance
 	surface.FillRect(0, 0, width, height, render.DefaultBackground)
-	surface.FillRect(width-font.NarrowWidth, 0, font.NarrowWidth, height, 6)
+	surface.FillRect(width-font.NarrowWidth, 0, font.NarrowWidth, height, panelBorder)
 
 	header := "FILES"
 	if s.Tree.Filtering {
@@ -327,7 +327,8 @@ func (s *Session) drawTree(surface *render.Surface) {
 	} else if s.Tree.Filter != "" {
 		header = "FILES /" + s.Tree.Filter
 	}
-	surface.DrawText(2, 0, clipCells(header, treeColumns-2), 10, render.DefaultBackground)
+	surface.FillRect(0, 0, width-font.NarrowWidth, font.CellHeight, chromeBackground)
+	surface.DrawText(2, 0, clipCells(header, treeColumns-2), chromeForeground, chromeBackground)
 
 	rows := s.treeRows()
 	selection := -1
@@ -353,9 +354,9 @@ func (s *Session) drawTree(surface *render.Surface) {
 		foreground := uint8(7)
 		if index == selection && s.Tree.Focused {
 			background = selectionBackground
-			foreground = uint8(render.DefaultBackground)
+			foreground = selectionForeground
 		} else if index == selection {
-			foreground = uint8(10)
+			foreground = panelTitle
 		}
 		prefix := "  "
 		if entry.Entry.Dir {

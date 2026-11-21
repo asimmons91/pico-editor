@@ -11,7 +11,7 @@
 | Decision | Resolution |
 | --- | --- |
 | Upstream pin | pico-lsp `v1.6.0`; M17–M19 shipped together, so `pkg/p8scii`, `pkg/cart`, `pkg/lsp`, and `pkg/glyphs` are all in the existing pin. The previously planned `v1.8.0` tag was folded into `v1.6.0`. |
-| Semantic colors | The M7 final palette table (keyword 14, string 11, number 10, comment 13, operator 6, variable 7, parameter/property 15, function 12, type 9, namespace 14, macro/decorator 9, regexp 11, modifier 13) is implemented now. M7 may refine the table without changing M5 behavior. |
+| Semantic colors | The M7 final palette table (keyword 14, string/number/regexp 12, comment 13, operator/variable/parameter/property/function 7, type 9, namespace 14, macro/decorator 9, modifier 13, built-in library 11) is implemented now. M7 may refine the table without changing M5 behavior. |
 | LSP failure UX | A persistent error-colored status message plus `:lsp restart`. No modal dialog; editing, saving, and Vim remain usable. M7 migrates this to notifications and the command palette. |
 | Status bar | M5 appends compact `E/W`, `T/C/Z`, and `LSP` segments to the existing one-row status bar. M7 replaces the layout with the segmented bar. |
 | Integration fixtures | A small subset of pico-lsp `v1.6.0` testdata is copied under `internal/lsp/testdata` with provenance. Tests do not depend on the module cache path. |
