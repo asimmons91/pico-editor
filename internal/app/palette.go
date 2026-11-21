@@ -187,7 +187,7 @@ func (g *Game) drawPalette(surface *render.Surface) {
 	x := (surface.Width - width) / 2
 	y := (surface.Height - height) / 2
 	drawPanel(surface, x, y, width, height)
-	surface.DrawText(x+font.NarrowWidth, y, " COMMANDS ", 10, render.DefaultBackground)
+	surface.DrawText(x+font.NarrowWidth, y, " COMMANDS ", panelTitle, render.DefaultBackground)
 
 	query := palette.Query
 	if query == "" {
@@ -210,7 +210,7 @@ func (g *Game) drawPalette(surface *render.Surface) {
 		fg := uint8(7)
 		if index == palette.Selected {
 			bg = selectionBackground
-			fg = uint8(render.DefaultBackground)
+			fg = selectionForeground
 			surface.FillRect(x+1, rowY, width-2, font.CellHeight, bg)
 		}
 		title := command.Title

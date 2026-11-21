@@ -1,27 +1,28 @@
 package lsp
 
-// Semantic token colors use the final M7 table so M5 and M7 share one mapping.
-// Values are PICO-8 palette indices; internal/lsp does not import internal/render.
+// Semantic token colors follow PICO-8's own code editor: pink keywords, blue
+// strings and numbers, green built-in API calls, and white default text. Values
+// are PICO-8 palette indices; internal/lsp does not import internal/render.
 const (
 	ColorDefault    uint8 = 7
 	ColorKeyword    uint8 = 14
-	ColorString     uint8 = 11
-	ColorNumber     uint8 = 10
+	ColorString     uint8 = 12
+	ColorNumber     uint8 = 12
 	ColorComment    uint8 = 13
-	ColorOperator   uint8 = 6
+	ColorOperator   uint8 = 7
 	ColorVariable   uint8 = 7
-	ColorParameter  uint8 = 15
-	ColorProperty   uint8 = 15
-	ColorFunction   uint8 = 12
+	ColorParameter  uint8 = 7
+	ColorProperty   uint8 = 7
+	ColorFunction   uint8 = 7
 	ColorType       uint8 = 9
 	ColorNamespace  uint8 = 14
 	ColorMacro      uint8 = 9
-	ColorRegexp     uint8 = 11
+	ColorRegexp     uint8 = 12
 	ColorDecorator  uint8 = 9
 	ColorModifier   uint8 = 13
 	ColorReadonly   uint8 = 6
 	ColorDeprecated uint8 = 8
-	ColorLibrary    uint8 = 13
+	ColorLibrary    uint8 = 11
 )
 
 // Token priority is fixed by M7. Higher values win when tokens overlap.

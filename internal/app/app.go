@@ -1273,7 +1273,7 @@ func (g *Game) markFirstFrame() {
 }
 
 func (g *Game) drawFinalScreen(screen ebiten.FinalScreen, offscreen *ebiten.Image) {
-	screen.Fill(render.Palette[render.DefaultBackground])
+	screen.Fill(render.Palette[render.LetterboxBackground])
 
 	bounds := screen.Bounds()
 	g.screenWidth = bounds.Dx()

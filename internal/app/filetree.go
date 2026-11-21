@@ -15,7 +15,7 @@ const (
 	treeRows    = GridRows - 1 // rows 0..40; status stays visible
 )
 
-// TreeState is the file tree overlay's view state.
+// TreeState is the file tree sidebar's view state.
 type TreeState struct {
 	Visible      bool
 	Focused      bool
@@ -138,11 +138,10 @@ func (s *Session) RefreshTree() bool {
 // a focused tree closes; a hidden tree opens and focuses.
 func (s *Session) ToggleTree() bool {
 	if s.Tree.Visible && s.Tree.Focused {
-		s.Tree.Visible = false
-		s.Tree.Focused = false
+		s.setTreeVisible(false)
 		return true
 	}
-	s.Tree.Visible = true
+	s.setTreeVisible(true)
 	s.Tree.Focused = true
 	if s.Tree.Selected == "" {
 		s.Tree.Selected = s.defaultTreePath()
@@ -153,9 +152,7 @@ func (s *Session) ToggleTree() bool {
 
 // FocusTree shows and focuses the tree.
 func (s *Session) FocusTree() bool {
-	if !s.Tree.Visible {
-		s.Tree.Visible = true
-	}
+	s.setTreeVisible(true)
 	s.Tree.Focused = true
 	s.treeSelection()
 	return true
@@ -177,8 +174,7 @@ func (s *Session) handleTree(ev input.Event) bool {
 		s.Tree.Focused = false
 	case input.KeyQ:
 		if ev.Mods == 0 {
-			s.Tree.Visible = false
-			s.Tree.Focused = false
+			s.setTreeVisible(false)
 		}
 	case input.KeyJ, input.KeyDown:
 		s.selectTreeIndex(min(index+1, len(rows)-1), rows)
@@ -319,7 +315,7 @@ func (s *Session) drawTree(surface *render.Surface) {
 	width := treeColumns * font.NarrowWidth
 	height := treeRows * font.LineAdvance
 	surface.FillRect(0, 0, width, height, render.DefaultBackground)
-	surface.FillRect(width-font.NarrowWidth, 0, font.NarrowWidth, height, 6)
+	surface.FillRect(width-font.NarrowWidth, 0, font.NarrowWidth, height, sidebarBorder)
 
 	header := "FILES"
 	if s.Tree.Filtering {
@@ -327,7 +323,8 @@ func (s *Session) drawTree(surface *render.Surface) {
 	} else if s.Tree.Filter != "" {
 		header = "FILES /" + s.Tree.Filter
 	}
-	surface.DrawText(2, 0, clipCells(header, treeColumns-2), 10, render.DefaultBackground)
+	surface.FillRect(0, 0, width-font.NarrowWidth, font.CellHeight, chromeBackground)
+	surface.DrawText(2, 0, clipCells(header, treeColumns-2), chromeForeground, chromeBackground)
 
 	rows := s.treeRows()
 	selection := -1
@@ -353,16 +350,16 @@ func (s *Session) drawTree(surface *render.Surface) {
 		foreground := uint8(7)
 		if index == selection && s.Tree.Focused {
 			background = selectionBackground
-			foreground = uint8(render.DefaultBackground)
+			foreground = selectionForeground
 		} else if index == selection {
-			foreground = uint8(10)
+			foreground = panelTitle
 		}
 		prefix := "  "
 		if entry.Entry.Dir {
 			if s.Tree.Collapsed[entry.Entry.Path] {
-				prefix = " +"
+				prefix = "+ "
 			} else {
-				prefix = " -"
+				prefix = "v "
 			}
 		}
 		name := entry.Entry.Name
@@ -379,9 +376,9 @@ func (s *Session) drawTree(surface *render.Surface) {
 			default:
 				marker = "o"
 			}
-			prefix = marker + prefix[1:]
+			prefix = marker + " "
 		}
-		text := prefix + strings.Repeat(" ", entry.Depth) + name
+		text := prefix + strings.Repeat("  ", entry.Depth) + name
 		surface.FillRect(0, y, width-font.NarrowWidth, font.CellHeight, background)
 		surface.DrawText(2, y, clipCells(text, treeColumns-3), foreground, background)
 	}

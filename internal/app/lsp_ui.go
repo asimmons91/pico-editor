@@ -289,20 +289,20 @@ func (s *Session) drawCompletion(surface *render.Surface, ed *editor.Editor, top
 		return
 	}
 	rows := min(10, len(popup.Items))
-	widthCells := 36
+	maxCells := s.popupWidth(56)
+	widthCells := min(36, maxCells)
 	for _, item := range popup.Items {
 		line := item.Label
 		if item.Detail != "" {
 			line += "  " + item.Detail
 		}
-		widthCells = max(widthCells, min(56, font.CellWidth(line)+2))
+		widthCells = max(widthCells, min(maxCells, font.CellWidth(line)+2))
 	}
 	width := widthCells * font.NarrowWidth
 	height := (rows + 2) * font.LineAdvance
 	cursorLine := top + ed.Cursor.Pos.Line - ed.Viewport.TopLine
 	cursorCell := ed.Buffer.Info(ed.Cursor.Pos).Cell - ed.Viewport.LeftCell
-	x := cursorCell * font.NarrowWidth
-	x = min(max(0, x), surface.Width-width)
+	x := s.clampPopupX(s.codeLeftPx()+cursorCell*font.NarrowWidth, width)
 	y := (cursorLine + 1) * font.LineAdvance
 	if y+height > statusRow*font.LineAdvance {
 		y = cursorLine*font.LineAdvance - height
@@ -316,7 +316,7 @@ func (s *Session) drawCompletion(surface *render.Surface, ed *editor.Editor, top
 		fg := uint8(7)
 		if index == popup.Selected {
 			bg = selectionBackground
-			fg = uint8(render.DefaultBackground)
+			fg = selectionForeground
 			surface.FillRect(x+1, rowY, width-2, font.CellHeight, bg)
 		}
 		line := item.Label
@@ -347,23 +347,24 @@ func (s *Session) drawCompletion(surface *render.Surface, ed *editor.Editor, top
 
 func drawPanel(surface *render.Surface, x, y, width, height int) {
 	surface.FillRect(x, y, width, height, render.DefaultBackground)
-	surface.FillRect(x, y, width, 1, 6)
-	surface.FillRect(x, y+height-1, width, 1, 6)
-	surface.FillRect(x, y, 1, height, 6)
-	surface.FillRect(x+width-1, y, 1, height, 6)
+	surface.FillRect(x, y, width, 1, panelBorder)
+	surface.FillRect(x, y+height-1, width, 1, panelBorder)
+	surface.FillRect(x, y, 1, height, panelBorder)
+	surface.FillRect(x+width-1, y, 1, height, panelBorder)
 }
 
 func (s *Session) drawHover(surface *render.Surface) {
 	if s.Hover == nil {
 		return
 	}
-	lines := wrapCells(s.Hover.Text, 40, 12)
+	widthCells := s.popupWidth(42)
+	lines := wrapCells(s.Hover.Text, widthCells-2, 12)
 	if len(lines) == 0 {
 		return
 	}
-	width := 42 * font.NarrowWidth
+	width := widthCells * font.NarrowWidth
 	height := (len(lines) + 2) * font.LineAdvance
-	x := (surface.Width - width) / 2
+	x := s.popupLeft(width)
 	y := (surface.Height - height) / 2
 	drawPanel(surface, x, y, width, height)
 	for index, line := range lines {
@@ -404,9 +405,11 @@ func (s *Session) drawSignature(surface *render.Surface) {
 		return
 	}
 	count := min(3, len(s.Signature.Help.Signatures))
-	width := 60 * font.NarrowWidth
+	widthCells := s.popupWidth(60)
+	labelCells := widthCells - 4
+	width := widthCells * font.NarrowWidth
 	height := (count + 2) * font.LineAdvance
-	x := (surface.Width - width) / 2
+	x := s.popupLeft(width)
 	y := statusRow*font.LineAdvance - height
 	drawPanel(surface, x, y, width, height)
 	active := s.Signature.Help.ActiveSignature
@@ -417,7 +420,7 @@ func (s *Session) drawSignature(surface *render.Surface) {
 		if index == active {
 			color = 7
 		}
-		surface.DrawText(x+font.NarrowWidth, rowY, clipCells(signature.Label, 56), color, render.DefaultBackground)
+		surface.DrawText(x+font.NarrowWidth, rowY, clipCells(signature.Label, labelCells), color, render.DefaultBackground)
 		if index != active {
 			continue
 		}
@@ -438,11 +441,17 @@ func (s *Session) drawSignature(surface *render.Surface) {
 		}
 		prefix := signature.Label[:offset]
 		cells := font.CellWidth(prefix)
-		widthCells := font.CellWidth(label)
-		if cells+widthCells > 56 {
-			widthCells = max(1, 56-cells)
+		if cells >= labelCells {
+			continue
 		}
-		surface.InvertRect(x+font.NarrowWidth+cells*font.NarrowWidth, rowY, widthCells*font.NarrowWidth, font.CellHeight)
+		paramCells := font.CellWidth(label)
+		if cells+paramCells > labelCells {
+			paramCells = max(1, labelCells-cells)
+		}
+		// Inverse video in the editor palette: white block, navy label.
+		paramX := x + font.NarrowWidth + cells*font.NarrowWidth
+		surface.FillRect(paramX, rowY, paramCells*font.NarrowWidth, font.CellHeight, render.DefaultForeground)
+		surface.DrawText(paramX, rowY, clipCells(label, paramCells), render.DefaultBackground, render.DefaultForeground)
 	}
 }
 
@@ -458,7 +467,7 @@ func (s *Session) drawDiagnosticList(surface *render.Surface) {
 	x := (surface.Width - width) / 2
 	y := (surface.Height - height) / 2
 	drawPanel(surface, x, y, width, height)
-	surface.DrawText(x+font.NarrowWidth, y, " DIAGNOSTICS ", 10, render.DefaultBackground)
+	surface.DrawText(x+font.NarrowWidth, y, " DIAGNOSTICS ", panelTitle, render.DefaultBackground)
 	top := 0
 	if list.Selected >= rows {
 		top = list.Selected - rows + 1
@@ -474,7 +483,7 @@ func (s *Session) drawDiagnosticList(surface *render.Surface) {
 		fg := uint8(7)
 		if index == list.Selected {
 			bg = selectionBackground
-			fg = uint8(render.DefaultBackground)
+			fg = selectionForeground
 			surface.FillRect(x+1, rowY, width-2, font.CellHeight, bg)
 		}
 		severity := "I"

@@ -332,7 +332,8 @@ Exit criteria:
 
 - All V1 features are discoverable and documented.
 - No P0/P1 bugs remain in editing, saving, or LSP flows.
-- Screenshot/golden tests cover the font, palette, tabs, and status bar.
+- Screenshot/golden tests cover the font, palette, tabs, status bar, sidebar, and
+  gutter.
 - A 64KB cart opens and edits without visible latency.
 
 ### M8 — Linux release
@@ -446,6 +447,7 @@ normative.
 | pico-lsp `pkg/cart` pin | `v1.6.0` (M18 shipped in that release) | M4 |
 | Cart tab editing | Strict active-tab line window; cursor, operators, paste, search, and `:s` stay inside the tab | M4 |
 | Cart/file tree startup | Directory or no argument opens and focuses the tree; a file opens hidden with editor focus | M4 |
+| Editor layout | The file tree is a resizing 20-column sidebar; a four-cell gutter holds diagnostic signs and relative line numbers; the status row spans the full width | M4/M7 |
 | M4 dialogs | Arrow/Tab plus Enter, with O/R/C, S/D/C accelerators and Esc cancel | M4 |
 | M4 new tab separators | Typing a new `-->8` separator in insert mode is rejected until tab creation is designed | M4 |
 | M4 section headers | Code that would introduce a cart section header is rejected at save time | M4 |

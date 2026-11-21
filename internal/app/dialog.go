@@ -209,11 +209,11 @@ func (s *Session) drawDialog(surface *render.Surface) {
 	y := (surface.Height - height) / 2
 
 	surface.FillRect(x, y, width, height, render.DefaultBackground)
-	surface.FillRect(x, y, width, 1, 6)
-	surface.FillRect(x, y+height-1, width, 1, 6)
-	surface.FillRect(x, y, 1, height, 6)
-	surface.FillRect(x+width-1, y, 1, height, 6)
-	surface.DrawText(x+4, y+4, clipCells(dialog.Title, widthCells-8), 10, render.DefaultBackground)
+	surface.FillRect(x, y, width, 1, panelBorder)
+	surface.FillRect(x, y+height-1, width, 1, panelBorder)
+	surface.FillRect(x, y, 1, height, panelBorder)
+	surface.FillRect(x+width-1, y, 1, height, panelBorder)
+	surface.DrawText(x+4, y+4, clipCells(dialog.Title, widthCells-8), panelTitle, render.DefaultBackground)
 	for index, line := range dialog.Message {
 		surface.DrawText(x+4, y+12+index*font.LineAdvance, clipCells(line, widthCells-8), 7, render.DefaultBackground)
 	}
@@ -237,7 +237,7 @@ func (s *Session) drawDialog(surface *render.Surface) {
 		fg := uint8(7)
 		if index == dialog.Selected {
 			bg = selectionBackground
-			fg = uint8(render.DefaultBackground)
+			fg = selectionForeground
 		}
 		surface.FillRect(cursor, optionY, cells*font.NarrowWidth, font.CellHeight, bg)
 		surface.DrawText(cursor, optionY, label, fg, bg)

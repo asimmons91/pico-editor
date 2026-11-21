@@ -21,6 +21,12 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 	if buffer := s.CurrentBuffer(); buffer != nil {
 		baseLine = s.baseLine(buffer)
 	}
+	signs := s.diagnosticSigns(ed, documentURI, baseLine)
+	leftPx := s.codeLeftPx()
+	rightPx := s.editorRightPx()
+	if first == last && height > 0 {
+		s.drawGutterLine(surface, ed.Cursor.Pos.Line, first, diagnosticSign{}, topRow*font.LineAdvance)
+	}
 	for _, visible := range viewport.VisibleLines(ed.Buffer) {
 		if visible.Line < first || visible.Line >= last || visible.Row >= height {
 			continue
@@ -29,20 +35,20 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 		y := (topRow + visible.Row) * font.LineAdvance
 		currentLine := visible.Line == ed.Cursor.Pos.Line
 		if currentLine {
-			surface.FillRect(0, y, surface.Width, font.CellHeight, currentLineBackground)
+			surface.FillRect(leftPx, y, rightPx-leftPx, font.CellHeight, currentLineBackground)
 		}
 		if ed.Selection.Kind == editor.SelectionLine {
 			firstLine, lastLine := ed.Selection.LineRange()
 			if visible.Line >= firstLine && visible.Line <= lastLine {
-				surface.FillRect(0, y, surface.Width, font.CellHeight, textSelectionBackground)
+				surface.FillRect(leftPx, y, rightPx-leftPx, font.CellHeight, textSelectionBackground)
 			}
 		}
 		for cluster := range editor.LineClusters(line, ed.Buffer.TabWidth) {
-			x := (cluster.Cell - viewport.LeftCell) * font.NarrowWidth
-			if x >= surface.Width {
+			x := leftPx + (cluster.Cell-viewport.LeftCell)*font.NarrowWidth
+			if x >= rightPx {
 				break
 			}
-			if x+cluster.Pixels <= 0 {
+			if x+cluster.Pixels <= leftPx {
 				continue
 			}
 			selected := clusterSelected(ed, visible.Line, cluster.Rune)
@@ -58,6 +64,7 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 			}
 			if searched {
 				background = searchBackground
+				foreground = searchForeground
 			}
 			if thisMatch && !selected {
 				foreground, background = searchCurrentForeground, searchCurrentBackground
@@ -78,8 +85,59 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 				surface.DrawGlyph(x, y, font.Replacement, foreground, background)
 			}
 		}
-		s.drawDiagnosticsForLine(surface, ed, documentURI, baseLine, visible.Line, y)
+		s.drawGutterLine(surface, ed.Cursor.Pos.Line, visible.Line, signs[visible.Line], y)
+		s.drawDiagnosticsForLine(surface, ed, documentURI, baseLine, leftPx, visible.Line, y)
 	}
+}
+
+type diagnosticSign struct {
+	letter byte
+	color  uint8
+}
+
+// drawGutterLine paints the diagnostic sign and relative line number for one
+// visible buffer line.
+func (s *Session) drawGutterLine(surface *render.Surface, cursorLine, line int, sign diagnosticSign, y int) {
+	if sign.letter != 0 {
+		surface.DrawText(s.editorLeftPx(), y, string(sign.letter), sign.color, render.DefaultBackground)
+	}
+	number := line + 1
+	relative := line - cursorLine
+	if relative < 0 {
+		relative = -relative
+	}
+	if relative > 0 {
+		number = relative
+	}
+	number = min(number, 999)
+	color := uint8(gutterForeground)
+	if line == cursorLine {
+		color = gutterCurrent
+	}
+	surface.DrawText(s.editorLeftPx()+font.NarrowWidth, y, fmt.Sprintf("%3d", number), color, render.DefaultBackground)
+}
+
+func (s *Session) diagnosticSigns(ed *editor.Editor, documentURI string, baseLine int) map[int]diagnosticSign {
+	signs := make(map[int]diagnosticSign)
+	for _, diagnostic := range s.LSPDiagnostics[documentURI] {
+		if diagnostic.Severity != lsp.SeverityError && diagnostic.Severity != lsp.SeverityWarning {
+			continue
+		}
+		start, end, ok := lsp.EditorRange(ed.Buffer, baseLine, diagnostic.Range)
+		if !ok {
+			continue
+		}
+		for line := start.Line; line <= end.Line; line++ {
+			if diagnostic.Severity == lsp.SeverityError {
+				signs[line] = diagnosticSign{letter: 'E', color: gutterError}
+				continue
+			}
+			if existing, ok := signs[line]; !ok || existing.letter != 'E' {
+				signs[line] = diagnosticSign{letter: 'W', color: gutterWarning}
+			}
+		}
+	}
+	return signs
 }
 
 // currentSearchMatch returns the index of the match containing pos, or -1.
@@ -92,7 +150,7 @@ func currentSearchMatch(matches []editor.Match, pos editor.Pos) int {
 	return -1
 }
 
-func (s *Session) drawDiagnosticsForLine(surface *render.Surface, ed *editor.Editor, documentURI string, baseLine, line, y int) {
+func (s *Session) drawDiagnosticsForLine(surface *render.Surface, ed *editor.Editor, documentURI string, baseLine, leftPx, line, y int) {
 	for _, diagnostic := range s.LSPDiagnostics[documentURI] {
 		if diagnostic.Severity != lsp.SeverityError && diagnostic.Severity != lsp.SeverityWarning {
 			continue
@@ -112,11 +170,21 @@ func (s *Session) drawDiagnosticsForLine(surface *render.Surface, ed *editor.Edi
 		if endCell <= startCell {
 			endCell = startCell + 1
 		}
+		if endCell <= 0 || startCell >= s.codeWidth() {
+			continue
+		}
+		if startCell < 0 {
+			startCell = 0
+		}
+		endCell = min(endCell, s.codeWidth())
+		if endCell <= startCell {
+			continue
+		}
 		color := uint8(8)
 		if diagnostic.Severity == lsp.SeverityWarning {
 			color = 9
 		}
-		surface.FillRect(startCell*font.NarrowWidth, y+font.CellHeight-1, (endCell-startCell)*font.NarrowWidth, 1, color)
+		surface.FillRect(leftPx+startCell*font.NarrowWidth, y+font.CellHeight-1, (endCell-startCell)*font.NarrowWidth, 1, color)
 	}
 }
 
@@ -126,8 +194,10 @@ func (s *Session) drawCursor(surface *render.Surface, ed *editor.Editor, topRow,
 	}
 	position := ed.Cursor.Pos
 	viewport := &ed.Viewport
+	leftPx := s.codeLeftPx()
+	rightPx := s.editorRightPx()
 	if first == last {
-		surface.DrawCursor(0, topRow*font.LineAdvance, font.NarrowWidth, render.CursorBlock)
+		surface.DrawCursor(leftPx, topRow*font.LineAdvance, font.NarrowWidth, render.CursorBlock)
 		return
 	}
 	if position.Line < first || position.Line >= last {
@@ -137,14 +207,14 @@ func (s *Session) drawCursor(surface *render.Surface, ed *editor.Editor, topRow,
 		return
 	}
 	info := ed.Buffer.Info(position)
-	x := (info.Cell - viewport.LeftCell) * font.NarrowWidth
+	x := leftPx + (info.Cell-viewport.LeftCell)*font.NarrowWidth
 	y := (topRow + position.Line - viewport.TopLine) * font.LineAdvance
 	cells := ed.Buffer.ClusterAt(position).Cells
 	width := cells * font.NarrowWidth
 	if width <= 0 {
 		width = font.NarrowWidth
 	}
-	if x >= surface.Width || x+width <= 0 {
+	if x >= rightPx || x+width <= leftPx {
 		return
 	}
 	style := render.CursorBlock
@@ -190,11 +260,11 @@ func clusterSearched(matches []editor.Match, line, runeOffset int) bool {
 
 func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorVisible bool) {
 	y := statusRow * font.LineAdvance
-	surface.FillRect(0, y, surface.Width, font.CellHeight, render.DefaultBackground)
+	surface.FillRect(0, y, surface.Width, surface.Height-y, statusBackground)
 
 	if prefix, text, cursor, active := s.Vim.Prompt(); active {
-		surface.DrawText(0, y, prefix, render.DefaultForeground, render.DefaultBackground)
-		surface.DrawText(font.NarrowWidth, y, text, render.DefaultForeground, render.DefaultBackground)
+		surface.DrawText(0, y, prefix, statusForeground, statusBackground)
+		surface.DrawText(font.NarrowWidth, y, text, statusForeground, statusBackground)
 		if cursorVisible {
 			before := string([]rune(text)[:min(cursor, len([]rune(text)))])
 			cell := 1 + font.CellWidth(before)
@@ -216,6 +286,7 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 	info := ed.Buffer.Info(ed.Cursor.Pos)
 	data.line = info.Pos.Line + 1
 	data.column = info.Cell + 1
+	data.percent = statusPercent(info.Pos.Line, len(ed.Buffer.Lines))
 	data.errors, data.warnings = s.DiagnosticCounts(s.activeURI())
 	if tokens, ok := s.LSPTokens[s.activeURI()]; ok {
 		data.deprecated = tokens.DeprecatedAt(ed.Cursor.Pos.Line, ed.Cursor.Pos.Rune)
@@ -229,7 +300,64 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 	if s.LSP == nil {
 		data.lspStatus = lsp.StatusOff
 	}
-	drawStatusLine(surface, y, layoutStatus(GridColumns, data))
+	left, right := layoutStatusSections(GridColumns-1, data)
+	s.drawStatusBar(surface, y, left, right)
+}
+
+func (s *Session) drawStatusBar(surface *render.Surface, y int, left, right []statusSegment) {
+	x := 0
+	if len(left) > 0 && left[0].text != "" {
+		mode := left[0]
+		background := statusModeBackground(s.Vim.Mode)
+		foreground := statusModeForeground(s.Vim.Mode)
+		cells := font.CellWidth(mode.text) + 2
+		surface.FillRect(0, y, cells*font.NarrowWidth, surface.Height-y, background)
+		surface.DrawText(font.NarrowWidth, y, mode.text, foreground, background)
+		x = cells * font.NarrowWidth
+		left = left[1:]
+	}
+	for _, segment := range left {
+		x += 2 * font.NarrowWidth
+		cells := surface.DrawText(x, y, segment.text, segment.color, statusBackground)
+		x += cells * font.NarrowWidth
+	}
+	if len(right) == 0 {
+		return
+	}
+	rightWidth := statusSegmentsCells(right) * font.NarrowWidth
+	rightX := surface.Width - font.NarrowWidth - rightWidth
+	if rightX < x+2*font.NarrowWidth {
+		rightX = x + 2*font.NarrowWidth
+	}
+	for index, segment := range right {
+		if index > 0 {
+			rightX += 2 * font.NarrowWidth
+		}
+		cells := surface.DrawText(rightX, y, segment.text, segment.color, statusBackground)
+		rightX += cells * font.NarrowWidth
+	}
+}
+
+func statusModeBackground(mode vim.Mode) uint8 {
+	switch mode {
+	case vim.ModeInsert:
+		return modeInsertBackground
+	case vim.ModeVisualChar, vim.ModeVisualLine, vim.ModeVisualBlock:
+		return modeVisualBackground
+	case vim.ModeCommandLine:
+		return modeCommandBackground
+	default:
+		return modeNormalBackground
+	}
+}
+
+func statusModeForeground(mode vim.Mode) uint8 {
+	switch mode {
+	case vim.ModeVisualChar, vim.ModeVisualLine, vim.ModeVisualBlock:
+		return modeDarkForeground
+	default:
+		return modeLightForeground
+	}
 }
 
 // drawStatusLine draws segments with a two-cell gap and returns the final pixel
@@ -241,7 +369,7 @@ func drawStatusLine(surface *render.Surface, y int, segments []statusSegment) in
 		if index > 0 {
 			x += 2 * font.NarrowWidth
 		}
-		cells := surface.DrawText(x, y, segment.text, segment.color, render.DefaultBackground)
+		cells := surface.DrawText(x, y, segment.text, segment.color, statusBackground)
 		x += cells * font.NarrowWidth
 	}
 	return x
@@ -267,28 +395,28 @@ func statusMode(mode vim.Mode) string {
 func (s *Session) statusFile(buffer *SessionBuffer) string {
 	name := s.bufferName(buffer)
 	if buffer != nil && buffer.Cart != nil {
-		name = fmt.Sprintf("%s:%d", name, buffer.ActiveTab+1)
+		name = fmt.Sprintf("%s:%d", name, buffer.ActiveTab)
 	}
 	return name
 }
 
 func (s *Session) statusSizes(buffer *SessionBuffer) (string, uint8) {
 	if buffer == nil {
-		return "", 7
+		return "", statusForeground
 	}
 	if buffer.Cart == nil && buffer.Owner == "" {
-		return "T/C/Z n/a", 6
+		return "T/C/Z n/a", statusSecondary
 	}
 	info, ok := s.LSPCartInfo[s.activeURI()]
 	if !ok || info.Unavailable() {
-		return "", 7
+		return "", statusForeground
 	}
-	color := uint8(7)
+	color := uint8(statusForeground)
 	switch info.CompressedStatus {
 	case "warning":
-		color = 9
+		color = statusWarningForeground
 	case "error":
-		color = 8
+		color = statusErrorForeground
 	}
 	return fmt.Sprintf("T%d C%d Z%d", info.Tokens, info.Chars, info.Compressed), color
 }
@@ -314,11 +442,11 @@ func (s *Session) drawHelp(surface *render.Surface) {
 	y := (surface.Height - height) / 2
 
 	surface.FillRect(x, y, width, height, render.DefaultBackground)
-	surface.FillRect(x, y, width, 1, 6)
-	surface.FillRect(x, y+height-1, width, 1, 6)
-	surface.FillRect(x, y, 1, height, 6)
-	surface.FillRect(x+width-1, y, 1, height, 6)
-	surface.DrawText(x+4, y+4, clipCells(s.Help.Title, panelWidth-8), 10, render.DefaultBackground)
+	surface.FillRect(x, y, width, 1, panelBorder)
+	surface.FillRect(x, y+height-1, width, 1, panelBorder)
+	surface.FillRect(x, y, 1, height, panelBorder)
+	surface.FillRect(x+width-1, y, 1, height, panelBorder)
+	surface.DrawText(x+4, y+4, clipCells(s.Help.Title, panelWidth-8), panelTitle, render.DefaultBackground)
 
 	offset := 4 * font.CellHeight
 	maxLines := (height - offset - font.CellHeight) / font.LineAdvance

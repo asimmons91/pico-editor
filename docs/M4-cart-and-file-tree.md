@@ -53,7 +53,7 @@ backup behavior.
 4. Save pipeline with byte preservation, atomic writes, conflict detection, and
    backups.
 5. `internal/workspace` folder scan, include association, and refresh.
-6. File tree overlay, file tabs, and buffer lifecycle.
+6. File tree sidebar, file tabs, and buffer lifecycle.
 7. Golden tests, failure-injection tests, and a manual cart checklist.
 
 ## Detailed requirements
@@ -193,9 +193,9 @@ func (d *Document) Save() error
 
 - Parse tabs from the code body; tab index 0 is the first tab, even when the
   body starts with `-->8`.
-- Tab bar row (see layout below) shows `0`, `1`, … plus a dirty marker on the
-  active tab. Tab names are always available from `pkg/cart`; unnamed tabs are
-  synthesized as `Tab N` (one-based).
+- The cart bufferline row (see layout below) shows `0`, `1`, … plus a dirty
+  marker on the active tab. Tab names are always available from `pkg/cart`;
+  unnamed tabs are synthesized as `Tab N` (one-based).
 - Only the active tab is drawn. Separator lines are hidden.
 - Convert public full-cart tab lines to code-body lines once:
   `localStart = tab.StartLine - BaseLine`, `localEnd = tab.EndLine - BaseLine`.
@@ -219,22 +219,36 @@ func (d *Document) Save() error
 
 ### 4. Layout with carts
 
-The 64×42 grid is fixed:
+The 64×42 grid is fixed. A visible file tree is a 20-column sidebar; it reduces
+the editor area instead of covering it.
 
 | Rows | Content |
 | --- | --- |
-| 0 | File tabs (open buffers) |
-| 1 | Cart code tabs (only for `.p8`) |
+| 0 | Sidebar header (when open) and file tabs (bufferline) |
+| 1 | Sidebar entries and cart code tabs (only for `.p8`) |
 | 2–40 | Code area for `.p8` (39 rows) |
 | 1–40 | Code area for `.lua` (40 rows) |
-| 41 | Status/command line |
+| 41 | Status/command line, spanning the full width |
+
+Columns:
+
+| Columns | Content |
+| --- | --- |
+| 0–19 | File-tree sidebar when visible |
+| 20–23 | Four-cell sign and relative line-number gutter |
+| 24–63 | Code text when the sidebar is visible |
+| 0–3 | Gutter when the sidebar is hidden |
+| 4–63 | Code text when the sidebar is hidden |
 
 - The cart tab row is hidden for `.lua` buffers.
 - Long file-tab and cart-tab strips scroll horizontally to keep the active tab
-  visible.
-- The status bar shows `file:tab` for carts and `file` for `.lua`.
-- The file tree overlay covers columns 0–19 and rows 0–40 when open; it does
-  not resize the code area.
+  visible, within the current editor width.
+- The status bar shows `file:tab` for carts and `file` for `.lua`. The mode
+  block is left-aligned; position, sizes, LSP state, and percentage are
+  right-aligned.
+- The gutter shows one diagnostic sign (`E`/`W`) and relative line numbers with
+  the current line absolute.
+- Toggling the tree reflows the active viewport and keeps the cursor visible.
 
 ### 5. Save pipeline
 
@@ -343,15 +357,16 @@ internal/workspace/
   workspace_test.go
 internal/app/
   buffers.go       buffer lifecycle, cart tabs, view state
-  cartview.go      (layout and code-only view live in screen.go/buffers.go)
   dialog.go        modal conflict/quit/error dialogs
   external.go      focus refresh and external conflict detection
-  filetree.go      overlay tree
+  filetree.go      sidebar tree
   filetabs.go      file and cart tab strips
+  layout.go        editor geometry, sidebar reflow, popup placement
 ```
 
-The implementation keeps the code-only view in `screen.go` and the tab strips in
-`filetabs.go`; `cartview.go` was not needed as a separate file.
+The implementation keeps the code-only view in `screen.go`, the tab strips in
+`filetabs.go`, and the shared geometry in `layout.go`; `cartview.go` was not
+needed as a separate file.
 
 ## Interfaces and state
 
@@ -381,6 +396,7 @@ guarantees byte-preserving saves.
 | pico-lsp dependency | `pkg/cart` ships in `v1.6.0`; the editor pins that release. |
 | Tab confinement | `internal/editor` owns an active half-open line window. Cursor motions, operators, boundary joins/deletes, paste, search, `gg`/`G`, and ex ranges stay inside the active code tab. Empty tabs use a virtual cursor and materialize one blank line on the first edit. |
 | Startup layout | A file argument opens with the tree hidden and editor focus. A directory or no argument opens an empty buffer with the tree visible and focused. |
+| Editor layout | A visible file tree is a 20-column sidebar that resizes the editor. A four-cell gutter holds diagnostic signs and relative line numbers. |
 | Dialog input | Dialogs use arrows/Tab plus Enter, single-key accelerators drawn from the option labels (O/R/C, S/D/C), and Esc for Cancel or OK. |
 | Conflict backups | Every conflicting overwrite, cart or `.lua`, writes `<name>.bak` or `<name>.bak.1`–`.bak.9` before the atomic replace. Failed backups abort the write. Conflict overwrites refresh the target mode from disk before the write. |
 | Recreated modes | A deleted writable file keeps its recorded mode; a deleted read-only file is recreated `0644`. |

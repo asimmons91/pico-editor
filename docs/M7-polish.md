@@ -60,21 +60,24 @@ work. A 64KB cart stays responsive.
 
 Use palette indices only. The final table:
 
+The table mirrors PICO-8's own code editor: pink keywords, blue strings and
+numbers, green built-in API calls, and white default text.
+
 | Token type | Index | Color | Notes |
 | --- | --- | --- | --- |
 | `keyword` | 14 | `#FF77A8` | control flow, declarations |
-| `string` | 11 | `#00E436` | includes escapes |
-| `number` | 10 | `#FFEC27` | numbers and numeric literals |
-| `comment` | 13 | `#83769C` | readable on black |
-| `operator` | 6 | `#C2C3C7` | punctuation |
+| `string` | 12 | `#29ADFF` | includes escapes |
+| `number` | 12 | `#29ADFF` | numbers and numeric literals |
+| `comment` | 13 | `#83769C` | readable on navy |
+| `operator` | 7 | `#FFF1E8` | punctuation |
 | `variable` | 7 | `#FFF1E8` | default identifier color |
-| `parameter` | 15 | `#FFCCAA` | function parameters |
-| `property` | 15 | `#FFCCAA` | fields and members |
-| `function` | 12 | `#29ADFF` | calls and declarations |
+| `parameter` | 7 | `#FFF1E8` | function parameters |
+| `property` | 7 | `#FFF1E8` | fields and members |
+| `function` | 7 | `#FFF1E8` | calls and declarations |
 | `type` / `class` / `enum` | 9 | `#FFA300` | type-like symbols |
 | `namespace` | 14 | `#FF77A8` | modules and namespaces |
 | `macro` | 9 | `#FFA300` | macro-like symbols |
-| `regexp` | 11 | `#00E436` | regex literals |
+| `regexp` | 12 | `#29ADFF` | regex literals |
 | `decorator` | 9 | `#FFA300` | annotations |
 | `modifier` | 13 | `#83769C` | modifiers and attributes |
 | default | 7 | `#FFF1E8` | unknown token types |
@@ -86,7 +89,8 @@ Modifiers:
 - `readonly` / `static`: index 6 instead of the base color.
 - `deprecated`: index 8, plus a one-cell `!` marker in the status bar when the
   cursor is on the token.
-- `defaultLibrary`: index 13.
+- `defaultLibrary`: index 11, so built-in API calls read green like PICO-8's
+  editor.
 - Unknown modifiers are ignored.
 
 Rendering:
@@ -94,35 +98,45 @@ Rendering:
 - Token priority is fixed: comment > string > number > keyword > type > function
   > property > variable > operator > parameter > namespace > default. Later
   tokens never overwrite higher-priority cells.
-- The current line is background index 1; text keeps its token color.
-- Selection is background index 2; text keeps its token color.
-- Search matches use background index 3; the current match uses background
-  index 9 with foreground index 0.
+- The editor background is index 1. PICO-8 does not tint the current line, so it
+  uses the same background and text keeps its token color.
+- Selection is background index 2 and overrides search/current-match
+  backgrounds. Search matches keep their index 7 foreground; otherwise text
+  keeps its token color.
+- Search matches use background index 3 with foreground index 7; the current
+  match uses background index 9 with foreground index 0.
 - Diagnostics underline errors with index 8 and warnings with index 9, one
   pixel on row `y+5` of the cell.
-- Cursor: block inverts the cell(s); insert bar uses index 10.
+- Cursor: block inverts the cell(s); insert bar uses index 7.
 
 ### 2. Status bar
 
-One row, 64 cells, at the bottom. Segments, left to right:
+One row, 64 cells, at the bottom, spanning the full width. The mode block is
+left-aligned; the file and diagnostics follow it. Position, sizes, LSP state,
+and percentage are right-aligned.
 
 ```text
-<N|I|V|VL|VB|:><PUNY|HIRA|KATA>  <file>[:<tab>]<*>  <line>:<col>  E<n> W<n>  T<n> C<n> Z<n>  [LSP]
+[ N ]  <file>[:<tab>]<*>  E<n> W<n>              <line>:<col>  T<n> C<n> Z<n>  [LSP]  <pct>%
 ```
 
 - Mode: `N`, `I`, `V`, `VL`, `VB`, `:`; append `PUNY`, `HIRA`, or `KATA` when
-  active.
+  active. Draw it as a padded block: normal blue 12, insert green 11, visual
+  pink 14, command orange 9.
 - File: base name, optional cart tab index, `*` when dirty.
 - Position: 1-based line and 1-based cell column.
-- Diagnostics: omit zero counts; color errors/warnings.
+- Background is index 8 (red), normal text is index 15 (peach), and the file
+  segment is index 7 (white), matching PICO-8's status bar.
+- Diagnostics: omit zero counts; color errors with index 0 and warnings with
+  index 10.
 - Sizes: `T` tokens/8192, `C` chars/65535, `Z` compressed bytes. Color `Z` at
   the warning/error thresholds. Show `n/a` for standalone `.lua`.
-- LSP: `LSP` when ready, `LSP!` when failed, hidden when off. Use index 8 for
-  failure.
+- LSP: `LSP` when ready, `LSP!` when failed, hidden when off. Use index 7 for
+  ready and index 0 for failure.
+- Percentage: cursor line over the buffer line count, rounded down.
 - Notifications temporarily replace the rightmost segments for 4s.
-- Truncation priority: drop sizes, then diagnostics, then file path segments;
-  never drop mode, position, or LSP failure. Truncate the middle of long paths
-  with `…`.
+- Truncation priority: drop sizes and percentage, then diagnostics, then file
+  path segments; never drop mode, position, or LSP failure. Truncate the middle
+  of long paths with `…`.
 - The command-line prompt replaces the status row while active.
 
 ### 3. Command registry and palette
@@ -315,8 +329,8 @@ Logging:
 - `docs/TROUBLESHOOTING.md`: graphics/audio backend, clipboard, IME, LSP
   restart, logs, recovery.
 - Screenshots under `docs/images/` generated from golden surfaces: cart view,
-  completion, picker, palette, error dialog. PNGs are committed and checked by
-  a golden test.
+  sidebar/gutter, completion, picker, palette, error dialog. PNGs are committed
+  and checked by a golden test.
 - `:help` topics: `keys`, `input`, `lsp`, `config`, `troubleshooting`.
 
 ### 10. Performance
@@ -416,7 +430,8 @@ the next frame boundary.
 - Recovery: write, crash simulation, recover, discard, prune, atomic failure.
 - Refresh-on-focus: clean reload, dirty conflict, config reload, tree rescan.
 - Notifications: dedupe, timeout, history cap.
-- Screenshots: golden PNGs for the five documented screens.
+- Screenshots: golden PNGs for the six documented screens, including the
+  sidebar and gutter layout.
 - Performance: benchmarks and a 64KB acceptance test.
 
 ### Manual
@@ -431,7 +446,8 @@ the next frame boundary.
 
 - [x] All V1 features are discoverable through the palette and documented.
 - [x] No P0/P1 bugs remain in editing, saving, LSP, input, or recovery.
-- [x] Screenshot/golden tests cover font, palette, tabs, status, and dialogs.
+- [x] Screenshot/golden tests cover font, palette, tabs, status, sidebar,
+  gutter, and dialogs.
 - [x] Settings and keymaps load, validate, and reload as specified.
 - [x] Refresh-on-focus handles clean and dirty external changes.
 - [x] Crash recovery works after a forced kill.
@@ -446,10 +462,12 @@ the next frame boundary.
 - **UI layout:** palette, status, notifications, recovery, and dialogs stay in
   `internal/app` with the existing M4–M6 UI. No `internal/ui` package was added.
 - **Semantic colors:** the final M7 table is implemented in `internal/lsp` and
-  rendered with current-line, selection, search, and current-match backgrounds;
-  deprecated tokens add the status-bar `!` marker.
-- **Status bar:** 64-cell layout with the documented 20/40/64-cell truncation
-  tests. Notification text replaces the rightmost optional segments.
+  rendered with selection, search, and current-match backgrounds; the current
+  line matches PICO-8's uniform editor background. Deprecated tokens add the
+  status-bar `!` marker.
+- **Status bar:** 64-cell layout with a colored mode block, right-aligned
+  position/sizes/LSP/percentage segments, and the documented 20/40/64-cell
+  truncation tests. Notification text replaces the rightmost optional segments.
 - **Keymaps:** defaults, rebinding, unbinding, reserved Vim/input/LSP bindings,
   and config-layer precedence are covered by tests. `Ctrl+Tab` remains a fixed
   insert-mode tab switch for counted inserts.
@@ -467,7 +485,7 @@ the next frame boundary.
   1MB rotation with three backups, `--log-file -` stderr mode, and a privacy
   test proving file and clipboard text never reach the log.
 - **Docs/screenshots:** `README.md`, `USAGE.md`, `CONFIG.md`, `KEYMAP.md`, and
-  `TROUBLESHOOTING.md`; five committed 2× golden PNGs under `docs/images/`.
+  `TROUBLESHOOTING.md`; six committed 2× golden PNGs under `docs/images/`.
 - **Performance:** benchmarks for buffer insert, viewport draw, token apply,
   and palette filter; the 64KB cart acceptance test enforces the documented
   open/keystroke budgets locally and uses a smoke threshold on shared CI. Idle

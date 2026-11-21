@@ -71,16 +71,18 @@ func (s *Session) fileTabLabels() []string {
 
 func (s *Session) drawFileTabs(surface *render.Surface) {
 	y := fileTabRow * font.LineAdvance
-	surface.FillRect(0, y, surface.Width, font.CellHeight, render.DefaultBackground)
-	hits := fitTabs(s.fileTabLabels(), s.Current, GridColumns)
+	left := s.editorLeftPx()
+	width := s.editorWidth() * font.NarrowWidth
+	surface.FillRect(left, y, width, font.CellHeight, chromeBackground)
+	hits := fitTabs(s.fileTabLabels(), s.Current, s.editorWidth())
 	for _, hit := range hits {
-		background := uint8(render.DefaultBackground)
-		foreground := uint8(7)
+		background := uint8(chromeBackground)
+		foreground := uint8(chromeForeground)
 		if hit.Index == s.Current {
-			background = 6
-			foreground = uint8(render.DefaultBackground)
+			background = chromeActiveBackground
+			foreground = chromeActiveForeground
 		}
-		x := hit.StartCell * font.NarrowWidth
+		x := left + hit.StartCell*font.NarrowWidth
 		surface.FillRect(x, y, hit.Width*font.NarrowWidth, font.CellHeight, background)
 		surface.DrawText(x, y, hit.Label, foreground, background)
 	}
@@ -108,16 +110,18 @@ func (s *Session) drawCartTabs(surface *render.Surface) {
 		return
 	}
 	y := cartTabRow * font.LineAdvance
-	surface.FillRect(0, y, surface.Width, font.CellHeight, render.DefaultBackground)
-	hits := fitTabs(s.cartTabLabels(buffer), buffer.ActiveTab, GridColumns)
+	left := s.editorLeftPx()
+	width := s.editorWidth() * font.NarrowWidth
+	surface.FillRect(left, y, width, font.CellHeight, chromeBackground)
+	hits := fitTabs(s.cartTabLabels(buffer), buffer.ActiveTab, s.editorWidth())
 	for _, hit := range hits {
-		background := uint8(render.DefaultBackground)
-		foreground := uint8(7)
+		background := uint8(chromeBackground)
+		foreground := uint8(chromeForeground)
 		if hit.Index == buffer.ActiveTab {
-			background = 6
-			foreground = uint8(render.DefaultBackground)
+			background = chromeActiveBackground
+			foreground = chromeActiveForeground
 		}
-		x := hit.StartCell * font.NarrowWidth
+		x := left + hit.StartCell*font.NarrowWidth
 		surface.FillRect(x, y, hit.Width*font.NarrowWidth, font.CellHeight, background)
 		surface.DrawText(x, y, hit.Label, foreground, background)
 	}
@@ -128,8 +132,12 @@ func (s *Session) ClickFileTabs(x, y int) bool {
 	if y < fileTabRow*font.LineAdvance || y >= (fileTabRow+1)*font.LineAdvance {
 		return false
 	}
-	cell := x / font.NarrowWidth
-	for _, hit := range fitTabs(s.fileTabLabels(), s.Current, GridColumns) {
+	left := s.editorLeftPx()
+	if x < left || x >= s.editorRightPx() {
+		return false
+	}
+	cell := (x - left) / font.NarrowWidth
+	for _, hit := range fitTabs(s.fileTabLabels(), s.Current, s.editorWidth()) {
 		if cell >= hit.StartCell && cell < hit.EndCell {
 			if hit.Index != s.Current {
 				s.endInsertMode()
@@ -153,8 +161,12 @@ func (s *Session) ClickCartTabs(x, y int) bool {
 	if y < cartTabRow*font.LineAdvance || y >= (cartTabRow+1)*font.LineAdvance {
 		return false
 	}
-	cell := x / font.NarrowWidth
-	for _, hit := range fitTabs(s.cartTabLabels(buffer), buffer.ActiveTab, GridColumns) {
+	left := s.editorLeftPx()
+	if x < left || x >= s.editorRightPx() {
+		return false
+	}
+	cell := (x - left) / font.NarrowWidth
+	for _, hit := range fitTabs(s.cartTabLabels(buffer), buffer.ActiveTab, s.editorWidth()) {
 		if cell >= hit.StartCell && cell < hit.EndCell {
 			if hit.Index != buffer.ActiveTab {
 				s.endInsertMode()

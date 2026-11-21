@@ -2,10 +2,13 @@ package render
 
 import "image/color"
 
-// DefaultBackground and DefaultForeground are PICO-8 palette indices.
+// DefaultBackground and DefaultForeground are PICO-8 palette indices. The
+// editor uses the dark navy of PICO-8's own code editor; the letterbox around
+// the canvas stays black.
 const (
-	DefaultBackground uint8 = 0
-	DefaultForeground uint8 = 7
+	DefaultBackground   uint8 = 1
+	DefaultForeground   uint8 = 7
+	LetterboxBackground uint8 = 0
 )
 
 // Palette is the canonical PICO-8 16-color palette. V1 uses no colors outside
