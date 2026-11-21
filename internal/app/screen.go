@@ -43,7 +43,6 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 				surface.FillRect(leftPx, y, rightPx-leftPx, font.CellHeight, textSelectionBackground)
 			}
 		}
-		s.drawGutterLine(surface, ed.Cursor.Pos.Line, visible.Line, signs[visible.Line], y)
 		for cluster := range editor.LineClusters(line, ed.Buffer.TabWidth) {
 			x := leftPx + (cluster.Cell-viewport.LeftCell)*font.NarrowWidth
 			if x >= rightPx {
@@ -86,6 +85,7 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 				surface.DrawGlyph(x, y, font.Replacement, foreground, background)
 			}
 		}
+		s.drawGutterLine(surface, ed.Cursor.Pos.Line, visible.Line, signs[visible.Line], y)
 		s.drawDiagnosticsForLine(surface, ed, documentURI, baseLine, leftPx, visible.Line, y)
 	}
 }
@@ -169,6 +169,16 @@ func (s *Session) drawDiagnosticsForLine(surface *render.Surface, ed *editor.Edi
 		endCell := ed.Buffer.CellColumn(end) - ed.Viewport.LeftCell
 		if endCell <= startCell {
 			endCell = startCell + 1
+		}
+		if endCell <= 0 || startCell >= s.codeWidth() {
+			continue
+		}
+		if startCell < 0 {
+			startCell = 0
+		}
+		endCell = min(endCell, s.codeWidth())
+		if endCell <= startCell {
+			continue
 		}
 		color := uint8(8)
 		if diagnostic.Severity == lsp.SeverityWarning {
@@ -276,9 +286,7 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 	info := ed.Buffer.Info(ed.Cursor.Pos)
 	data.line = info.Pos.Line + 1
 	data.column = info.Cell + 1
-	if lines := len(ed.Buffer.Lines); lines > 0 {
-		data.percent = (info.Pos.Line + 1) * 100 / lines
-	}
+	data.percent = statusPercent(info.Pos.Line, len(ed.Buffer.Lines))
 	data.errors, data.warnings = s.DiagnosticCounts(s.activeURI())
 	if tokens, ok := s.LSPTokens[s.activeURI()]; ok {
 		data.deprecated = tokens.DeprecatedAt(ed.Cursor.Pos.Line, ed.Cursor.Pos.Rune)

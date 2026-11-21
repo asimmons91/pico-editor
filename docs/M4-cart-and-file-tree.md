@@ -193,9 +193,9 @@ func (d *Document) Save() error
 
 - Parse tabs from the code body; tab index 0 is the first tab, even when the
   body starts with `-->8`.
-- Tab bar row (see layout below) shows `0`, `1`, … plus a dirty marker on the
-  active tab. Tab names are always available from `pkg/cart`; unnamed tabs are
-  synthesized as `Tab N` (one-based).
+- The cart bufferline row (see layout below) shows `0`, `1`, … plus a dirty
+  marker on the active tab. Tab names are always available from `pkg/cart`;
+  unnamed tabs are synthesized as `Tab N` (one-based).
 - Only the active tab is drawn. Separator lines are hidden.
 - Convert public full-cart tab lines to code-body lines once:
   `localStart = tab.StartLine - BaseLine`, `localEnd = tab.EndLine - BaseLine`.
@@ -357,15 +357,16 @@ internal/workspace/
   workspace_test.go
 internal/app/
   buffers.go       buffer lifecycle, cart tabs, view state
-  cartview.go      (layout and code-only view live in screen.go/buffers.go)
   dialog.go        modal conflict/quit/error dialogs
   external.go      focus refresh and external conflict detection
   filetree.go      sidebar tree
   filetabs.go      file and cart tab strips
+  layout.go        editor geometry, sidebar reflow, popup placement
 ```
 
-The implementation keeps the code-only view in `screen.go` and the tab strips in
-`filetabs.go`; `cartview.go` was not needed as a separate file.
+The implementation keeps the code-only view in `screen.go`, the tab strips in
+`filetabs.go`, and the shared geometry in `layout.go`; `cartview.go` was not
+needed as a separate file.
 
 ## Interfaces and state
 

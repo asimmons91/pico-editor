@@ -441,6 +441,9 @@ func (s *Session) drawSignature(surface *render.Surface) {
 		}
 		prefix := signature.Label[:offset]
 		cells := font.CellWidth(prefix)
+		if cells >= labelCells {
+			continue
+		}
 		paramCells := font.CellWidth(label)
 		if cells+paramCells > labelCells {
 			paramCells = max(1, labelCells-cells)

@@ -54,6 +54,22 @@ func TestStatusLayoutDropsSizesThenDiagnostics(t *testing.T) {
 	}
 }
 
+func TestStatusLayoutDropsPercentageWithSizes(t *testing.T) {
+	data := fullStatusData()
+	data.percent = 42
+	segments := layoutStatus(40, data)
+	text := statusText(segments)
+	if strings.Contains(text, "T120") || strings.Contains(text, "42%") {
+		t.Errorf("status %q kept sizes/percentage at 40 cells", text)
+	}
+	if !strings.Contains(text, "E2") {
+		t.Errorf("status %q dropped diagnostics before sizes", text)
+	}
+	if fontCells(text) > 40 {
+		t.Errorf("status %q is %d cells, want <= 40", text, fontCells(text))
+	}
+}
+
 func TestStatusLayoutDropsDiagnosticsWhenSpaceIsTight(t *testing.T) {
 	data := fullStatusData()
 	data.file = strings.Repeat("very-long-name", 4) + ".p8"

@@ -191,6 +191,13 @@ func layoutStatusSections(width int, data statusData) (left, right []statusSegme
 	return left, right
 }
 
+func statusPercent(line, lines int) int {
+	if lines <= 0 {
+		return 0
+	}
+	return (line + 1) * 100 / lines
+}
+
 func statusSegmentsCells(segments []statusSegment) int {
 	if len(segments) == 0 {
 		return 0
