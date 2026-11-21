@@ -236,6 +236,30 @@ func TestStatusBarDrawsModeBackgrounds(t *testing.T) {
 	}
 }
 
+func TestSidebarDoesNotCoverModalOverlays(t *testing.T) {
+	game, _ := newEditorGame(t, "abc\n", &recordingClipboard{})
+	session := game.session
+	session.setTreeVisible(true)
+	session.DiagList = &DiagnosticList{Items: []DiagnosticItem{{
+		Range:    lsp.Range{Start: lsp.Position{Line: 0}, End: lsp.Position{Line: 0, Character: 1}},
+		Severity: lsp.SeverityWarning,
+		Message:  "unused",
+	}}}
+
+	surface := render.NewSurface(CanvasWidth, CanvasHeight)
+	session.Draw(surface, false)
+	found := false
+	for y := 0; y < CanvasHeight; y++ {
+		if surface.At(8, y) == panelBorder {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("sidebar painted over the centered diagnostic modal")
+	}
+}
+
 func TestStatusPercent(t *testing.T) {
 	for _, test := range []struct {
 		line, lines, want int

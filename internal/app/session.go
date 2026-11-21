@@ -839,6 +839,9 @@ func (s *Session) Draw(surface *render.Surface, cursorVisible bool) {
 	s.drawFileTabs(surface)
 	s.drawCartTabs(surface)
 	s.drawStatus(surface, ed, cursorVisible)
+	if s.Tree.Visible {
+		s.drawTree(surface)
+	}
 	s.drawSignature(surface)
 	s.drawCompletion(surface, ed, top)
 	s.drawHover(surface)
@@ -847,9 +850,6 @@ func (s *Session) Draw(surface *render.Surface, cursorVisible bool) {
 	}
 	if s.GlyphPicker != nil {
 		s.drawGlyphPicker(surface)
-	}
-	if s.Tree.Visible {
-		s.drawTree(surface)
 	}
 	if s.Help != nil {
 		s.drawHelp(surface)
