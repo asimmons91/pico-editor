@@ -11,10 +11,12 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/asimmons91/pico-editor/internal/app"
+	"github.com/asimmons91/pico-editor/internal/config"
 	"github.com/asimmons91/pico-editor/internal/version"
 )
 
@@ -59,13 +61,20 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 		"build_date", version.BuildDate,
 	)
 
-	// M0 and M1 use the default 4x scale. M7 feeds the configured scale here;
-	// 0 selects the automatic 80%-of-monitor path.
-	scale := app.DefaultScale
-	if monitor := ebiten.Monitor(); monitor != nil {
-		width, height := monitor.Size()
-		scale = app.ResolveScale(app.DefaultScale, width, height)
+	game := app.New(app.Config{
+		Logger:       logger,
+		DebugCharset: options.debugCharset,
+		File:         options.file,
+		EnableLSP:    true,
+		Version:      version.Version,
+	})
+	if err := game.StartupError(); err != nil {
+		logger.Error("startup", "error", err)
+		fmt.Fprintf(stderr, "pico-editor: %v\n", err)
+		return 1
 	}
+
+	scale := game.InitialScale()
 	logger.Info("window",
 		"scale", scale,
 		"width", app.CanvasWidth*scale,
@@ -79,19 +88,6 @@ func run(args []string, stdout, stderr io.Writer) (exitCode int) {
 	// The game decides whether a close request can proceed so unsaved buffers
 	// are not discarded silently.
 	ebiten.SetWindowClosingHandled(true)
-
-	game := app.New(app.Config{
-		Logger:       logger,
-		DebugCharset: options.debugCharset,
-		File:         options.file,
-		EnableLSP:    true,
-		Version:      version.Version,
-	})
-	if err := game.StartupError(); err != nil {
-		logger.Error("startup", "error", err)
-		fmt.Fprintf(stderr, "pico-editor: %v\n", err)
-		return 1
-	}
 
 	if err := ebiten.RunGame(game); err != nil {
 		logger.Error("run", "error", err)
@@ -122,7 +118,7 @@ func parseFlags(args []string, stderr io.Writer) (options, error) {
 	flags.BoolVar(&opts.showVersion, "version", false, "print version information and exit")
 	flags.BoolVar(&opts.debugCharset, "debug-charset", false, "show the P8SCII full-charset debug screen")
 	flags.StringVar(&levelText, "log-level", "info", "log level: debug, info, warn, or error")
-	flags.StringVar(&opts.logFile, "log-file", "", "log file path (default: $XDG_STATE_HOME/pico-editor/pico-editor.log)")
+	flags.StringVar(&opts.logFile, "log-file", "", "log file path, or - for stderr (default: $XDG_STATE_HOME/pico-editor/pico-editor.log)")
 	flags.Usage = func() {
 		printUsage(stderr, flags)
 	}
@@ -180,8 +176,12 @@ func parseLevel(text string) (slog.Level, error) {
 	}
 }
 
-// setupLogger opens the log file and falls back to stderr when it cannot.
+// setupLogger opens the rotating log file and falls back to stderr when it
+// cannot. "--log-file -" selects stderr directly.
 func setupLogger(level slog.Level, path string, stderr io.Writer) (*slog.Logger, func()) {
+	if path == "-" {
+		return stderrLogger(level, stderr), func() {}
+	}
 	if path == "" {
 		path = defaultLogPath()
 	}
@@ -192,18 +192,108 @@ func setupLogger(level slog.Level, path string, stderr io.Writer) (*slog.Logger,
 		return stderrLogger(level, stderr), func() {}
 	}
 
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	logFile, err := openRotatingFile(path, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "pico-editor: warning: cannot open log file %s: %v; logging to stderr\n", path, err)
 		return stderrLogger(level, stderr), func() {}
 	}
-	_ = file.Chmod(0o600)
 
-	return slog.New(slog.NewTextHandler(file, &slog.HandlerOptions{Level: level})), func() {
-		if err := file.Close(); err != nil {
+	return slog.New(slog.NewTextHandler(logFile, &slog.HandlerOptions{Level: level})), func() {
+		if err := logFile.Close(); err != nil {
 			fmt.Fprintf(stderr, "pico-editor: warning: closing log file: %v\n", err)
 		}
 	}
+}
+
+// logRotateBytes is the M7 rotation threshold. Three numbered backups are kept.
+const logRotateBytes int64 = 1 << 20
+
+type rotatingFile struct {
+	path   string
+	file   *os.File
+	mu     sync.Mutex
+	max    int64
+	stderr io.Writer
+	retry  int64
+}
+
+func openRotatingFile(path string, stderr io.Writer) (*rotatingFile, error) {
+	writer := &rotatingFile{path: path, max: logRotateBytes, stderr: stderr}
+	if info, err := os.Stat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("%s is not a regular file", path)
+		}
+		if info.Size() >= writer.max {
+			if err := writer.rotateFiles(); err != nil {
+				fmt.Fprintf(stderr, "pico-editor: warning: cannot rotate log %s: %v\n", path, err)
+			}
+		}
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	_ = file.Chmod(0o600)
+	writer.file = file
+	return writer, nil
+}
+
+func (r *rotatingFile) Write(data []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.file == nil {
+		return 0, os.ErrClosed
+	}
+	n, err := r.file.Write(data)
+	info, statErr := r.file.Stat()
+	if err == nil && statErr == nil && info.Size() >= r.max && info.Size() >= r.retry {
+		r.rotate()
+	}
+	return n, err
+}
+
+func (r *rotatingFile) rotate() {
+	old := r.file
+	if err := r.rotateFiles(); err != nil {
+		r.retry = r.max * 2
+		fmt.Fprintf(r.stderr, "pico-editor: warning: cannot rotate log %s: %v; keeping the current file\n", r.path, err)
+		return
+	}
+	file, err := os.OpenFile(r.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		// The renamed file descriptor is still open; keep writing to it rather
+		// than losing records.
+		fmt.Fprintf(r.stderr, "pico-editor: warning: reopening log %s: %v\n", r.path, err)
+		r.retry = r.max * 2
+		return
+	}
+	_ = file.Chmod(0o600)
+	if err := old.Close(); err != nil {
+		fmt.Fprintf(r.stderr, "pico-editor: warning: closing rotated log: %v\n", err)
+	}
+	r.file = file
+	r.retry = 0
+}
+
+func (r *rotatingFile) rotateFiles() error {
+	_ = os.Remove(r.path + ".3")
+	_ = os.Rename(r.path+".2", r.path+".3")
+	_ = os.Rename(r.path+".1", r.path+".2")
+	if err := os.Rename(r.path, r.path+".1"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func (r *rotatingFile) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.file == nil {
+		return nil
+	}
+	err := r.file.Close()
+	r.file = nil
+	return err
 }
 
 func stderrLogger(level slog.Level, stderr io.Writer) *slog.Logger {
@@ -211,11 +301,5 @@ func stderrLogger(level slog.Level, stderr io.Writer) *slog.Logger {
 }
 
 func defaultLogPath() string {
-	if stateHome := os.Getenv("XDG_STATE_HOME"); stateHome != "" && filepath.IsAbs(stateHome) {
-		return filepath.Join(stateHome, "pico-editor", "pico-editor.log")
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".local", "state", "pico-editor", "pico-editor.log")
-	}
-	return filepath.Join(os.TempDir(), "pico-editor", "pico-editor.log")
+	return config.LogPath()
 }

@@ -45,6 +45,65 @@ func TestScanSortsAndSkips(t *testing.T) {
 	}
 }
 
+func TestScanOptions(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "visible.lua"), "a=1\n")
+	writeFile(t, filepath.Join(root, ".hidden.lua"), "b=1\n")
+	writeFile(t, filepath.Join(root, "cache", "kept.lua"), "c=1\n")
+	writeFile(t, filepath.Join(root, "skipme", "dropped.lua"), "d=1\n")
+	writeFile(t, filepath.Join(root, "extra", "one.lua"), "e=1\n")
+	writeFile(t, filepath.Join(root, "extra", "two.lua"), "f=1\n")
+
+	options := DefaultOptions()
+	options.ShowHidden = true
+	options.Exclude = []string{"skipme"}
+	options.MaxEntries = 3
+	ws, err := OpenWithOptions(root, options, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ws.Truncated {
+		t.Fatal("MaxEntries did not truncate the scan")
+	}
+	names := map[string]bool{}
+	var walk func([]*Entry)
+	walk = func(entries []*Entry) {
+		for _, entry := range entries {
+			names[entry.Name] = true
+			walk(entry.Children)
+		}
+	}
+	walk(ws.Entries)
+	if !names[".hidden.lua"] {
+		t.Error("show_hidden did not include .hidden.lua")
+	}
+	if names["skipme"] || names["dropped.lua"] {
+		t.Error("exclude did not skip the configured directory")
+	}
+}
+
+func TestSetOptionsRefreshesOnNextScan(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "one.lua"), "a=1\n")
+	writeFile(t, filepath.Join(root, "two.lua"), "b=1\n")
+	ws, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ws.Entries) != 2 {
+		t.Fatalf("entries = %+v", ws.Entries)
+	}
+	options := DefaultOptions()
+	options.Exclude = []string{"one.lua"}
+	ws.SetOptions(options)
+	if err := ws.Refresh(); err != nil {
+		t.Fatal(err)
+	}
+	if len(ws.Entries) != 1 || ws.Entries[0].Name != "two.lua" {
+		t.Fatalf("entries after exclude = %+v", ws.Entries)
+	}
+}
+
 func TestIncludeOwnership(t *testing.T) {
 	root := t.TempDir()
 	util := filepath.Join(root, "lib", "util.lua")

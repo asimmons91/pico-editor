@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"github.com/asimmons91/pico-editor/internal/cart"
+	"github.com/asimmons91/pico-editor/internal/config"
 	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/input"
+	"github.com/asimmons91/pico-editor/internal/lsp"
 	"github.com/asimmons91/pico-editor/internal/vim"
 	"github.com/asimmons91/pico-editor/internal/workspace"
 )
@@ -19,25 +21,43 @@ const (
 	cartCodeTop  = 2
 )
 
+// SessionOptions carries the settings generation used to build a session.
+type SessionOptions struct {
+	Settings config.Settings
+}
+
 // NewSessionAt opens root as the workspace and path as the first buffer. An
 // empty path opens an empty buffer and focuses the file tree.
 func NewSessionAt(root, path string, logger *slog.Logger) (*Session, error) {
+	return NewSessionAtOptions(root, path, logger, SessionOptions{Settings: config.DefaultSettings()})
+}
+
+// NewSessionAtOptions is NewSessionAt with explicit settings.
+func NewSessionAtOptions(root, path string, logger *slog.Logger, options SessionOptions) (*Session, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	workspaceTree, err := workspace.OpenWithLogger(root, logger)
+	settings := options.Settings
+	if settings.Version == 0 {
+		settings = config.DefaultSettings()
+	}
+	workspaceTree, err := workspace.OpenWithOptions(root, workspaceOptions(settings.Files), logger)
 	if err != nil {
 		return nil, err
 	}
 	session := &Session{
-		Vim:       vim.New(),
-		P8:        input.NewP8Input(logger),
-		Workspace: workspaceTree,
-		logger:    logger,
+		Vim:            vim.New(),
+		P8:             input.NewP8Input(logger),
+		Workspace:      workspaceTree,
+		Settings:       settings,
+		logger:         logger,
+		LSPTokens:      make(map[string]lsp.TokenSet),
+		LSPDiagnostics: make(map[string][]lsp.Diagnostic),
+		LSPCartInfo:    make(map[string]lsp.CartInfo),
 	}
 	session.Tree.Init(session)
 	if workspaceTree.Truncated {
-		session.SetStatus("file tree truncated at 20000 entries", true)
+		session.SetStatus("file tree truncated at the configured entry cap", true)
 	} else if len(workspaceTree.Warnings) > 0 {
 		session.workspaceStatus(workspaceTree.Warnings)
 	}
@@ -58,6 +78,14 @@ func NewSessionAt(root, path string, logger *slog.Logger) (*Session, error) {
 	session.prepareBuffer(buffer)
 	session.Tree.Selected = buffer.Editor.Buffer.Path
 	return session, nil
+}
+
+func workspaceOptions(settings config.FileSettings) workspace.Options {
+	return workspace.Options{
+		ShowHidden: settings.ShowHidden,
+		Exclude:    append([]string{}, settings.Exclude...),
+		MaxEntries: settings.MaxEntries,
+	}
 }
 
 func isCartPath(path string) bool {
@@ -103,8 +131,9 @@ func (s *Session) prepareBuffer(buffer *SessionBuffer) {
 	s.GlyphPicker = nil
 	s.glyphPickerPending = false
 	ed := buffer.Editor
+	ed.Buffer.TabWidth = s.Settings.Editor.TabWidth
 	ed.Viewport.Width = GridColumns
-	ed.Viewport.ScrollOff = 2
+	ed.Viewport.ScrollOff = s.Settings.Editor.ScrollOff
 	if buffer.Cart == nil {
 		ed.Viewport.Height = luaCodeRows
 		ed.ClearLineRange()
@@ -343,4 +372,26 @@ func (s *Session) workspaceStatus(warnings []string) {
 		return
 	}
 	s.SetStatus(warnings[0], true)
+}
+
+// ApplySettings swaps in a validated settings generation. Values that can
+// apply live (tab width, scrolloff, file scan options) take effect now; the app
+// handles scale and font restart notifications separately.
+func (s *Session) ApplySettings(settings config.Settings) {
+	s.Settings = settings
+	if s.Workspace != nil {
+		s.Workspace.SetOptions(workspaceOptions(settings.Files))
+		if err := s.Workspace.Refresh(); err != nil {
+			s.logger.Warn("workspace refresh", "error", err)
+			s.SetStatus("workspace refresh: "+shortError(err), true)
+		}
+	}
+	for _, buffer := range s.Buffers {
+		if buffer == nil || buffer.Editor == nil {
+			continue
+		}
+		buffer.Editor.Buffer.TabWidth = settings.Editor.TabWidth
+		buffer.Editor.Viewport.ScrollOff = settings.Editor.ScrollOff
+		buffer.Editor.EnsureVisible()
+	}
 }

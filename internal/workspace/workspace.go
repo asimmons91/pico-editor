@@ -16,8 +16,39 @@ import (
 
 var errSkipDir = errors.New("skip directory")
 
-// MaxEntries is the V1 scan cap. Hitting it stops the scan with Truncated set.
+// MaxEntries is the default V1 scan cap. Hitting it stops the scan with
+// Truncated set. Files settings may override it.
 const MaxEntries = 20000
+
+// DefaultExclude is the documented file tree exclusion list.
+var DefaultExclude = []string{".git", "node_modules", "vendor", "bin", "dist"}
+
+// Options control the workspace scan. The zero value is not useful; call
+// DefaultOptions and override fields.
+type Options struct {
+	ShowHidden bool
+	Exclude    []string
+	MaxEntries int
+}
+
+// DefaultOptions returns the M7 defaults.
+func DefaultOptions() Options {
+	return Options{
+		ShowHidden: false,
+		Exclude:    append([]string(nil), DefaultExclude...),
+		MaxEntries: MaxEntries,
+	}
+}
+
+func (o Options) normalized() Options {
+	if o.MaxEntries <= 0 {
+		o.MaxEntries = MaxEntries
+	}
+	if o.Exclude == nil {
+		o.Exclude = append([]string(nil), DefaultExclude...)
+	}
+	return o
+}
 
 // maxCartScanSize mirrors the cart adapter's open limit so workspace scans do
 // not read arbitrarily large files just to discover they are unsupported.
@@ -52,16 +83,23 @@ type Workspace struct {
 	logger   *slog.Logger
 	resolver *p8cart.Resolver
 	count    int
+	options  Options
+	exclude  map[string]bool
 }
 
-// Open scans root. It returns an error only when root itself is unusable;
-// individual unreadable children are reported as warnings.
+// Open scans root with the default options. It returns an error only when root
+// itself is unusable; individual unreadable children are reported as warnings.
 func Open(root string) (*Workspace, error) {
 	return OpenWithLogger(root, nil)
 }
 
 // OpenWithLogger is Open with a logger for skipped directories and carts.
 func OpenWithLogger(root string, logger *slog.Logger) (*Workspace, error) {
+	return OpenWithOptions(root, DefaultOptions(), logger)
+}
+
+// OpenWithOptions scans root using explicit M7 file settings.
+func OpenWithOptions(root string, options Options, logger *slog.Logger) (*Workspace, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("workspace root %s: %w", root, err)
@@ -76,17 +114,41 @@ func OpenWithLogger(root string, logger *slog.Logger) (*Workspace, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	options = options.normalized()
 	workspace := &Workspace{
 		Root:     filepath.Clean(absolute),
 		Carts:    make(map[string]*CartRef),
 		Owners:   make(map[string]string),
 		logger:   logger,
 		resolver: p8cart.NewResolver(nil),
+		options:  options,
+		exclude:  excludeSet(options.Exclude),
 	}
 	if err := workspace.Refresh(); err != nil {
 		return nil, err
 	}
 	return workspace, nil
+}
+
+// SetOptions replaces the scan settings for the next refresh.
+func (w *Workspace) SetOptions(options Options) {
+	w.options = options.normalized()
+	w.exclude = excludeSet(w.options.Exclude)
+}
+
+// Options returns the active scan settings.
+func (w *Workspace) Options() Options {
+	return w.options
+}
+
+func excludeSet(entries []string) map[string]bool {
+	set := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		if entry != "" {
+			set[entry] = true
+		}
+	}
+	return set
 }
 
 // Refresh rescans the root. The previous tree is replaced only on success.
@@ -158,7 +220,7 @@ func (w *Workspace) scanDir(dir string) ([]*Entry, error) {
 			break
 		}
 		name := entry.Name()
-		if ignoreName(name) {
+		if w.ignoreName(name) {
 			continue
 		}
 		path := filepath.Join(dir, name)
@@ -225,10 +287,10 @@ func (w *Workspace) addFile(path, name string) (*Entry, bool) {
 }
 
 func (w *Workspace) reserve() bool {
-	if w.count >= MaxEntries {
+	if w.count >= w.options.MaxEntries {
 		if !w.Truncated {
 			w.Truncated = true
-			w.warn("file tree truncated", w.Root, fmt.Errorf("more than %d entries", MaxEntries))
+			w.warn("file tree truncated", w.Root, fmt.Errorf("more than %d entries", w.options.MaxEntries))
 		}
 		return false
 	}
@@ -370,16 +432,14 @@ func wantedFile(name string) bool {
 	return strings.EqualFold(extension, ".p8") || strings.EqualFold(extension, ".lua")
 }
 
-func ignoreName(name string) bool {
-	if strings.HasPrefix(name, ".") {
+func (w *Workspace) ignoreName(name string) bool {
+	if w.exclude[name] {
 		return true
 	}
-	switch name {
-	case "node_modules", "vendor", "bin", "dist":
+	if !w.options.ShowHidden && strings.HasPrefix(name, ".") {
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
 func betterOwner(candidate, current, target string) bool {

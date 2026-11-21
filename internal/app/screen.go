@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/asimmons91/pico-editor/internal/editor"
@@ -15,6 +14,7 @@ import (
 func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow, first, last, height int) {
 	viewport := &ed.Viewport
 	matches := s.Vim.SearchHighlights(ed)
+	current := currentSearchMatch(matches, ed.Cursor.Pos)
 	documentURI := s.activeURI()
 	tokens := s.LSPTokens[documentURI]
 	baseLine := 0
@@ -27,6 +27,16 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 		}
 		line := ed.Buffer.Lines[visible.Line]
 		y := (topRow + visible.Row) * font.LineAdvance
+		currentLine := visible.Line == ed.Cursor.Pos.Line
+		if currentLine {
+			surface.FillRect(0, y, surface.Width, font.CellHeight, currentLineBackground)
+		}
+		if ed.Selection.Kind == editor.SelectionLine {
+			firstLine, lastLine := ed.Selection.LineRange()
+			if visible.Line >= firstLine && visible.Line <= lastLine {
+				surface.FillRect(0, y, surface.Width, font.CellHeight, textSelectionBackground)
+			}
+		}
 		for cluster := range editor.LineClusters(line, ed.Buffer.TabWidth) {
 			x := (cluster.Cell - viewport.LeftCell) * font.NarrowWidth
 			if x >= surface.Width {
@@ -37,20 +47,27 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 			}
 			selected := clusterSelected(ed, visible.Line, cluster.Rune)
 			searched := clusterSearched(matches, visible.Line, cluster.Rune)
+			thisMatch := current >= 0 && clusterSearched(matches[current:current+1], visible.Line, cluster.Rune)
 			foreground := uint8(render.DefaultForeground)
 			if color, ok := tokens.ColorAt(visible.Line, cluster.Rune); ok {
 				foreground = color
 			}
 			background := uint8(render.DefaultBackground)
+			if currentLine {
+				background = currentLineBackground
+			}
 			if searched {
 				background = searchBackground
 			}
+			if thisMatch && !selected {
+				foreground, background = searchCurrentForeground, searchCurrentBackground
+			}
 			if selected {
-				foreground, background = background, selectionBackground
+				background = textSelectionBackground
 			}
 			switch {
 			case cluster.Tab:
-				if selected || searched {
+				if background != render.DefaultBackground {
 					surface.FillRect(x, y, cluster.Pixels, font.CellHeight, background)
 				}
 			case cluster.Known && cluster.Glyph.Printable:
@@ -63,6 +80,16 @@ func (s *Session) drawBuffer(surface *render.Surface, ed *editor.Editor, topRow,
 		}
 		s.drawDiagnosticsForLine(surface, ed, documentURI, baseLine, visible.Line, y)
 	}
+}
+
+// currentSearchMatch returns the index of the match containing pos, or -1.
+func currentSearchMatch(matches []editor.Match, pos editor.Pos) int {
+	for index, match := range matches {
+		if !pos.Before(match.Start) && pos.Before(match.End) {
+			return index
+		}
+	}
+	return -1
 }
 
 func (s *Session) drawDiagnosticsForLine(surface *render.Surface, ed *editor.Editor, documentURI string, baseLine, line, y int) {
@@ -176,57 +203,106 @@ func (s *Session) drawStatus(surface *render.Surface, ed *editor.Editor, cursorV
 		return
 	}
 
-	mode := s.Vim.Mode.String()
-	if s.P8 != nil {
-		if label := s.P8.ModeLabel(); label != "" {
-			mode += " " + label
-		}
-	}
-	x := surface.DrawText(0, y, mode+"  ", 10, render.DefaultBackground)
-
 	buffer := s.CurrentBuffer()
-	name := s.bufferName(buffer)
-	if buffer != nil && buffer.Cart != nil {
-		name = fmt.Sprintf("%s:%d", name, buffer.ActiveTab)
+	data := statusData{
+		mode:      statusMode(s.Vim.Mode),
+		file:      s.statusFile(buffer),
+		dirty:     ed.Buffer.Dirty(),
+		lspStatus: s.LSPStatus,
 	}
-	marker := ""
-	if ed.Buffer.Dirty() {
-		marker = " *"
-	}
-	owner := ""
-	if buffer != nil && buffer.Owner != "" {
-		owner = " [" + filepath.Base(buffer.Owner) + "]"
+	if s.P8 != nil {
+		data.inputMode = s.P8.ModeLabel()
 	}
 	info := ed.Buffer.Info(ed.Cursor.Pos)
-	position := fmt.Sprintf("%d:%d", info.Pos.Line+1, info.Cell+1)
-	status := fmt.Sprintf("%s%s%s  %s", name, marker, owner, position)
-	message := s.Status
-	messageError := s.StatusError
-	if message == "" && s.LSPMessage != "" {
-		message = s.LSPMessage
-		messageError = s.LSPMessageError
+	data.line = info.Pos.Line + 1
+	data.column = info.Cell + 1
+	data.errors, data.warnings = s.DiagnosticCounts(s.activeURI())
+	if tokens, ok := s.LSPTokens[s.activeURI()]; ok {
+		data.deprecated = tokens.DeprecatedAt(ed.Cursor.Pos.Line, ed.Cursor.Pos.Rune)
 	}
-	if message != "" {
-		status += "  " + message
+	data.sizes, data.sizeColor = s.statusSizes(buffer)
+	data.zColor = data.sizeColor
+	if message, isError := s.statusMessage(); message != "" {
+		data.message = message
+		data.messageError = isError
 	}
-	if s.LSPStatus == lsp.StatusFailed && s.LSPMessage != "" && s.LSPMessage != message {
-		status += "  " + s.LSPMessage
-		messageError = true
+	if s.LSP == nil {
+		data.lspStatus = lsp.StatusOff
 	}
-	segments := s.lspStatusSegments()
-	suffixCells := segmentCells(segments)
-	limit := GridColumns - x - suffixCells - 1
-	if limit < 1 {
-		limit = 1
+	drawStatusLine(surface, y, layoutStatus(GridColumns, data))
+}
+
+// drawStatusLine draws segments with a two-cell gap and returns the final pixel
+// x coordinate. Surface.DrawText returns cells, so status drawing must convert
+// between cells and pixels explicitly.
+func drawStatusLine(surface *render.Surface, y int, segments []statusSegment) int {
+	x := 0
+	for index, segment := range segments {
+		if index > 0 {
+			x += 2 * font.NarrowWidth
+		}
+		cells := surface.DrawText(x, y, segment.text, segment.color, render.DefaultBackground)
+		x += cells * font.NarrowWidth
 	}
-	color := uint8(statusForeground)
-	if messageError {
-		color = statusErrorColor
+	return x
+}
+
+func statusMode(mode vim.Mode) string {
+	switch mode {
+	case vim.ModeInsert:
+		return "I"
+	case vim.ModeVisualChar:
+		return "V"
+	case vim.ModeVisualLine:
+		return "VL"
+	case vim.ModeVisualBlock:
+		return "VB"
+	case vim.ModeCommandLine:
+		return ":"
+	default:
+		return "N"
 	}
-	surface.DrawText(x*font.NarrowWidth, y, clipCells(status, limit), color, render.DefaultBackground)
-	if suffixCells > 0 {
-		drawStatusSegments(surface, (GridColumns-suffixCells)*font.NarrowWidth, y, segments)
+}
+
+func (s *Session) statusFile(buffer *SessionBuffer) string {
+	name := s.bufferName(buffer)
+	if buffer != nil && buffer.Cart != nil {
+		name = fmt.Sprintf("%s:%d", name, buffer.ActiveTab+1)
 	}
+	return name
+}
+
+func (s *Session) statusSizes(buffer *SessionBuffer) (string, uint8) {
+	if buffer == nil {
+		return "", 7
+	}
+	if buffer.Cart == nil && buffer.Owner == "" {
+		return "T/C/Z n/a", 6
+	}
+	info, ok := s.LSPCartInfo[s.activeURI()]
+	if !ok || info.Unavailable() {
+		return "", 7
+	}
+	color := uint8(7)
+	switch info.CompressedStatus {
+	case "warning":
+		color = 9
+	case "error":
+		color = 8
+	}
+	return fmt.Sprintf("T%d C%d Z%d", info.Tokens, info.Chars, info.Compressed), color
+}
+
+func (s *Session) statusMessage() (string, bool) {
+	if s.DisplayMessage != "" {
+		return s.DisplayMessage, s.DisplayMessageError
+	}
+	// Sessions created without the app's notification center (unit tests) keep
+	// the legacy Status fallback. In the app, statuses are toasts and expire.
+	if s.notify == nil && s.Status != "" {
+		return s.Status, s.StatusError
+	}
+	return "", false
 }
 
 func (s *Session) drawHelp(surface *render.Surface) {

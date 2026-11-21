@@ -148,7 +148,7 @@ func (g *Game) handlePalette(ev input.Event) (quit, changed bool) {
 			return false, true
 		}
 		g.palette = nil
-		quit, _ := command.Run(g)
+		quit, _ := g.runCommand(command)
 		return quit, true
 	case input.KeyUp:
 		palette.move(-1)
@@ -217,19 +217,20 @@ func (g *Game) drawPalette(surface *render.Surface) {
 		if command.Category != "" {
 			title = command.Category + ": " + strings.TrimPrefix(command.Title, command.Category+": ")
 		}
-		keyCells := font.CellWidth(command.Key)
+		keyText := g.displayKey(command)
+		keyCells := font.CellWidth(keyText)
 		titleCells := paletteCells - 3 - keyCells
 		if titleCells < 10 {
 			titleCells = 10
 		}
 		surface.DrawText(x+font.NarrowWidth, rowY, clipCells(title, titleCells), fg, bg)
-		if command.Key != "" {
+		if keyText != "" {
 			keyX := x + width - 2*font.NarrowWidth - keyCells*font.NarrowWidth
 			keyColor := uint8(6)
 			if index == palette.Selected {
 				keyColor = fg
 			}
-			surface.DrawText(keyX, rowY, command.Key, keyColor, bg)
+			surface.DrawText(keyX, rowY, keyText, keyColor, bg)
 		}
 	}
 

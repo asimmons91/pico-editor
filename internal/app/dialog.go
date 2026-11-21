@@ -18,6 +18,7 @@ const (
 	DialogOutsideRoot
 	DialogQuit
 	DialogError
+	DialogConfigError
 )
 
 // DialogOption is one modal choice.
@@ -27,12 +28,14 @@ type DialogOption struct {
 
 // Dialog is a small keyboard-driven modal panel.
 type Dialog struct {
-	Kind     DialogKind
-	Title    string
-	Message  []string
-	Options  []DialogOption
-	Selected int
-	Chosen   bool
+	Kind      DialogKind
+	Title     string
+	Message   []string
+	Options   []DialogOption
+	Selected  int
+	Chosen    bool
+	Operation string
+	Path      string
 }
 
 // ShowDialog opens a modal dialog and selects defaultIndex.
@@ -59,10 +62,19 @@ func (s *Session) ShowDialog(kind DialogKind, title, message string, options []D
 
 // ShowError opens a one-button error dialog.
 func (s *Session) ShowError(title string, err error) {
+	s.ShowErrorDetail(title, "", "", err)
+}
+
+// ShowErrorDetail adds the operation and path that produced an error.
+func (s *Session) ShowErrorDetail(title, operation, path string, err error) {
 	if err == nil {
 		return
 	}
 	s.ShowDialog(DialogError, title, err.Error(), []DialogOption{{Label: "OK"}}, 0)
+	if s.Dialog != nil {
+		s.Dialog.Operation = operation
+		s.Dialog.Path = path
+	}
 }
 
 // TakeDialogResult returns the selected option once and closes the dialog.
@@ -104,7 +116,11 @@ func (s *Session) handleDialog(ev input.Event) bool {
 		dialog.Chosen = true
 		return true
 	case input.KeyEsc:
-		dialog.Selected = cancelOption(dialog.Options)
+		if dialog.Kind == DialogConfigError {
+			dialog.Selected = 0
+		} else {
+			dialog.Selected = cancelOption(dialog.Options)
+		}
 		dialog.Chosen = true
 		return true
 	}
@@ -150,7 +166,7 @@ func wrapDialogMessage(message string) []string {
 	if len(words) == 0 {
 		return nil
 	}
-	const width = 54
+	const width = 40
 	var lines []string
 	current := ""
 	for _, word := range words {
@@ -178,6 +194,12 @@ func (s *Session) drawDialog(surface *render.Surface) {
 	}
 	widthCells := 60
 	heightRows := 5 + len(dialog.Message)
+	if dialog.Kind == DialogError || dialog.Kind == DialogConfigError {
+		widthCells = 48
+		if heightRows < 10 {
+			heightRows = 10
+		}
+	}
 	if heightRows < 7 {
 		heightRows = 7
 	}
@@ -197,6 +219,16 @@ func (s *Session) drawDialog(surface *render.Surface) {
 	}
 
 	optionY := y + height - 2*font.LineAdvance
+	if dialog.Path != "" || dialog.Operation != "" {
+		detail := dialog.Operation
+		if dialog.Path != "" {
+			if detail != "" {
+				detail += ": "
+			}
+			detail += dialog.Path
+		}
+		surface.DrawText(x+4, optionY-font.LineAdvance, clipCells(detail, widthCells-8), 6, render.DefaultBackground)
+	}
 	cursor := x + 4
 	for index, option := range dialog.Options {
 		label := " " + option.Label + " "

@@ -7,18 +7,39 @@ editing, and authentic P8SCII input. One Go binary, no WebView.
 > PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
 > with, sponsored by, or endorsed by Lexaloffle Games.
 
-**Status:** M6 implemented. Automated checks pass; interactive X11/Wayland
+**Status:** M7 implemented. Automated checks pass; interactive X11/Wayland
 spot checks from M1 are tracked in
 [docs/spikes/M1-input.md](docs/spikes/M1-input.md), the M3 manual checklist is
 in [docs/spikes/M3-vim.md](docs/spikes/M3-vim.md), the M4 cart/tree checklist is
-in [docs/spikes/M4-cart.md](docs/spikes/M4-cart.md), and the M5 LSP checklist is
-in [docs/spikes/M5-lsp.md](docs/spikes/M5-lsp.md). pico-lsp runs in-process:
+in [docs/spikes/M4-cart.md](docs/spikes/M4-cart.md), the M5 LSP checklist is in
+[docs/spikes/M5-lsp.md](docs/spikes/M5-lsp.md), and the M6 input checklist is in
+[docs/spikes/M6-input.md](docs/spikes/M6-input.md). M7 automated verification
+and the remaining manual checklist are in
+[docs/spikes/M7-polish.md](docs/spikes/M7-polish.md). pico-lsp runs in-process:
 editing a cart or include gets semantic highlighting, diagnostics, completion,
 hover, signature help, and go-to-definition, with token/character/compressed
-sizes in the status row. P8SCII input now includes Shift+letter glyphs,
-Ctrl+J/K kana, Ctrl+P puny mode, a complete glyph picker, and `p8_left`
-completion; see [docs/INPUT.md](docs/INPUT.md). Next is M7 (polish and
-hardening).
+sizes in the status row. P8SCII input includes Shift+letter glyphs, Ctrl+J/K
+kana, Ctrl+P puny mode, a complete glyph picker, and `p8_left` completion; see
+[docs/INPUT.md](docs/INPUT.md). M7 adds TOML settings and keymaps, a redesigned
+semantic status bar and notifications, the command palette, refresh-on-focus,
+crash recovery, rotating logs, documentation, and the final performance pass.
+Next is M8 (Linux release).
+
+![pico-editor cart view](docs/images/cart-view.png)
+
+V1 features:
+
+- Open a project folder and browse `.p8` and `.lua` files in a simple tree.
+- Edit `.p8` carts as PICO-8 code tabs; save without touching other sections.
+- Semantic highlighting, diagnostics, completion, hover, signature help, and
+  go-to-definition from in-process pico-lsp.
+- A curated Vim core with visual char/line/block, text objects, registers,
+  search, undo/redo, `:s`, and basic ex commands.
+- Authentic P8SCII input: Shift+letter glyphs, kana/puny modes, glyph picker,
+  and `p8_left` completion.
+- TOML settings, rebindable global keys, command palette, notifications,
+  refresh-on-focus, error dialogs, crash recovery, and rotating logs.
+- Linux AppImage and tar.gz releases with install/run documentation (M8).
 
 With no argument the current directory opens as a workspace with the file tree
 focused. Pass a `.p8` cart, `.lua` include, or directory to start there:
@@ -36,12 +57,17 @@ In the editor, `:help` lists the core keys. Use `i`/`a` to insert, `Esc` to
 return to normal mode, `:w` to save, `:q` to close (or `:q!` to discard), and
 `:wq`/`:x` to write and close. `Ctrl+S` saves the current buffer. `Ctrl+Tab` and
 `Ctrl+Shift+Tab` move between cart code tabs; `Ctrl+Shift+B` toggles the file
-tree. `Ctrl+Q` and the window close button offer Save all / Discard all /
-Cancel when buffers are dirty. Carts save only the `__lua__` body; the header
-and every other section are preserved byte-for-byte. `.p8.png` remains
-unsupported. `K` shows hover, `gd`/`Ctrl+]` jumps to a definition, `Ctrl+Space`
-opens completion in insert mode, `:diag` lists diagnostics, and `:lsp restart`
-restarts the in-process language server.
+tree. `Ctrl+Shift+P` opens the command palette, `Ctrl+Shift+M` opens message
+history, and `F1` opens help. `Ctrl+Q` and the window close button offer Save
+all / Discard all / Cancel when buffers are dirty. Carts save only the `__lua__`
+body; the header and every other section are preserved byte-for-byte. `.p8.png`
+remains unsupported. `K` shows hover, `gd`/`Ctrl+]` jumps to a definition,
+`Ctrl+Space` opens completion in insert mode, `:diag` lists diagnostics, and
+`:lsp restart` restarts the in-process language server. Settings and keymaps
+live in TOML; see [docs/CONFIG.md](docs/CONFIG.md) and
+[docs/KEYMAP.md](docs/KEYMAP.md). Dirty buffers are journaled for crash
+recovery, and `:messages`, `:reload`, and `:help config`/`:help troubleshooting`
+cover the rest.
 
 ## Requirements
 
@@ -83,6 +109,10 @@ inject the version, commit, and build date into
 ## Documentation
 
 - [Roadmap and V1 scope](docs/ROADMAP.md)
+- [Usage and quick start](docs/USAGE.md)
+- [Configuration reference](docs/CONFIG.md)
+- [Keymap and command IDs](docs/KEYMAP.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Architecture and invariants](docs/ARCHITECTURE.md)
 - [Frozen Vim command matrix](docs/VIM.md)
 - [P8SCII input and capture notes](docs/INPUT.md)
@@ -92,6 +122,8 @@ inject the version, commit, and build date into
 - [M4 cart and file tree checklist](docs/spikes/M4-cart.md)
 - [M5 in-process LSP checklist](docs/spikes/M5-lsp.md)
 - [M6 input capture and checklist](docs/spikes/M6-input.md)
+- [M7 verification and manual checklist](docs/spikes/M7-polish.md)
+- [Screenshots](docs/images/)
 - [License](LICENSE)
 
 ## Contributing

@@ -94,7 +94,7 @@ func (s *Service) Flush(now time.Time) bool {
 			changes = append(changes, change{doc: *doc, open: true})
 			continue
 		}
-		if doc.Dirty && now.Sub(doc.LastChange) >= documentDebounce {
+		if doc.Dirty && now.Sub(doc.LastChange) >= s.debounce() {
 			doc.Dirty = false
 			doc.Sent = true
 			changes = append(changes, change{doc: *doc})

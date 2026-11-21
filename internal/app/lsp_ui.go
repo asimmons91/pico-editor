@@ -283,14 +283,6 @@ func segmentCells(segments []statusSegment) int {
 	return cells
 }
 
-func drawStatusSegments(surface *render.Surface, x, y int, segments []statusSegment) int {
-	for _, segment := range segments {
-		x += surface.DrawText(x, y, segment.text, segment.color, render.DefaultBackground)
-		x += font.NarrowWidth
-	}
-	return x
-}
-
 func (s *Session) drawCompletion(surface *render.Surface, ed *editor.Editor, top int) {
 	popup := s.Completion
 	if popup == nil || len(popup.Items) == 0 {

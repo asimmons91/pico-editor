@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/asimmons91/pico-editor/internal/cart"
+	"github.com/asimmons91/pico-editor/internal/config"
 	"github.com/asimmons91/pico-editor/internal/editor"
 	"github.com/asimmons91/pico-editor/internal/font"
 	"github.com/asimmons91/pico-editor/internal/fsutil"
@@ -21,14 +22,18 @@ import (
 )
 
 const (
-	statusRow           = GridRows - 1
-	fileTabRow          = 0
-	cartTabRow          = 1
-	statusForeground    = 6
-	statusErrorColor    = 8
-	searchBackground    = 1
-	selectionBackground = 7
-	cursorInsertColor   = 10
+	statusRow               = GridRows - 1
+	fileTabRow              = 0
+	cartTabRow              = 1
+	statusForeground        = 6
+	statusErrorColor        = 8
+	currentLineBackground   = 1
+	textSelectionBackground = 2
+	searchBackground        = 3
+	searchCurrentBackground = 9
+	searchCurrentForeground = 0
+	selectionBackground     = 7
+	cursorInsertColor       = 10
 )
 
 // Session is the Vim-backed editor screen. It owns open buffers, the file
@@ -44,10 +49,21 @@ type Session struct {
 
 	Workspace *workspace.Workspace
 
+	// Settings is immutable for one configuration generation.
+	Settings config.Settings
+
 	LSP *lsp.Service
 
 	Status      string
 	StatusError bool
+
+	// DisplayMessage is the active toast for the status row. The app sets it
+	// from NotificationCenter before each draw; it replaces rightmost segments.
+	DisplayMessage      string
+	DisplayMessageError bool
+
+	notify         func(message string, severity NotificationSeverity, toast bool)
+	forgetRecovery func(path string)
 
 	LSPStatus       lsp.Status
 	LSPMessage      string
@@ -292,10 +308,15 @@ func (s *Session) clearP8Pending() {
 	}
 }
 
+func (s *Session) forgetPath(path string) {
+	if s.forgetRecovery != nil {
+		s.forgetRecovery(path)
+	}
+}
+
 func (s *Session) applyVimResult(result vim.Result) (quit bool) {
 	if result.Notify != "" {
-		s.Status = result.Notify
-		s.StatusError = result.Error
+		s.SetStatus(result.Notify, result.Error)
 	}
 	return false
 }
@@ -376,10 +397,41 @@ func (s *Session) VisualClipboardYank() (bool, []vim.Action) {
 	return true, result.Actions
 }
 
-// SetStatus replaces the status notification.
+// CanDismissNotification reports whether Esc/Enter should dismiss a persistent
+// error toast instead of reaching Vim or an overlay.
+func (s *Session) CanDismissNotification() bool {
+	if s.Dialog != nil || s.GlyphPicker != nil || s.Help != nil || s.DiagList != nil || s.Tree.Focused {
+		return false
+	}
+	if s.Vim.Mode != vim.ModeNormal {
+		return false
+	}
+	_, _, _, active := s.Vim.Prompt()
+	return !active
+}
+
+// SetStatus replaces the status notification and forwards it to the toast
+// center when one is attached.
 func (s *Session) SetStatus(message string, isError bool) {
 	s.Status = message
 	s.StatusError = isError
+	if message != "" && s.notify != nil {
+		severity := NotifyInfo
+		if isError {
+			severity = NotifyError
+		}
+		s.notify(message, severity, true)
+	}
+}
+
+// NotifyRoutine records a message in history without a toast. LSP request
+// noise uses this path so routine traffic never interrupts editing.
+func (s *Session) NotifyRoutine(message string, severity NotificationSeverity) {
+	s.Status = message
+	s.StatusError = severity == NotifyError
+	if message != "" && s.notify != nil {
+		s.notify(message, severity, false)
+	}
 }
 
 // ClearStatus removes the status notification.
@@ -462,11 +514,12 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 			return false
 		}
 		current := s.CurrentBuffer()
+		reloadPath := ed.Buffer.Path
 		if current != nil && current.Cart != nil {
 			active := current.ActiveTab
 			fresh, err := s.openSessionBuffer(current.Cart.Path)
 			if err != nil {
-				s.ShowError("Reload failed", err)
+				s.ShowErrorDetail("Reload failed", "reload", current.Cart.Path, err)
 				return false
 			}
 			if active < len(fresh.Cart.Tabs) {
@@ -486,6 +539,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 			s.prepareBuffer(s.CurrentBuffer())
 			s.refreshOwner(s.CurrentBuffer())
 		}
+		s.forgetPath(reloadPath)
 		s.SetStatus("reloaded", false)
 		return true
 	}
@@ -512,11 +566,12 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 		if force {
 			fresh, err := s.openSessionBuffer(absolute)
 			if err != nil {
-				s.ShowError("Open failed", err)
+				s.ShowErrorDetail("Open failed", "open", absolute, err)
 				return false
 			}
 			s.closeLSPDocument(s.Buffers[index])
 			s.Buffers[index] = fresh
+			s.forgetPath(absolute)
 		}
 		s.Current = index
 		s.prepareBuffer(s.CurrentBuffer())
@@ -525,7 +580,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 	opened, err := s.openSessionBuffer(absolute)
 	if err != nil {
 		s.logger.Error("open", "path", absolute, "error", err)
-		s.ShowError("Open failed", err)
+		s.ShowErrorDetail("Open failed", "open", absolute, err)
 		return false
 	}
 	if ed.Buffer.Path == "" && !ed.Buffer.Dirty() {
@@ -535,6 +590,7 @@ func (s *Session) OpenPath(path string, force bool) (changed bool) {
 	} else if force && ed.Buffer.Dirty() {
 		// :e! abandons the current buffer's changes rather than leaving a
 		// second dirty buffer behind.
+		s.forgetPath(ed.Buffer.Path)
 		s.closeLSPDocument(s.Buffers[s.Current])
 		s.Buffers[s.Current] = opened
 	} else {
@@ -639,6 +695,7 @@ func (s *Session) OpenHelp(topic string) bool {
 	s.glyphPickerPending = false
 	if ed := s.CurrentEditor(); ed != nil && s.Vim != nil {
 		s.Vim.ResetOperator()
+		s.Vim.ResetPending(ed)
 	}
 	title, lines := helpTopic(topic)
 	s.Help = &HelpOverlay{Title: title, Lines: lines}
@@ -866,9 +923,23 @@ func helpTopic(topic string) (string, []string) {
 		}
 	case "config":
 		return "Help: config", []string{
-			"TOML settings and keymaps arrive in M7.",
+			"TOML settings load in two layers:",
 			"Global: $XDG_CONFIG_HOME/pico-editor/config.toml",
 			"Workspace: <root>/.pico-editor.toml",
+			"Workspace values win; arrays replace, tables merge.",
+			"Edit [keys.<mode>] to bind commands, \"\" to unbind.",
+			":reload or Config: reload settings applies changes live.",
+			"Scale changes need a restart. See docs/CONFIG.md and KEYMAP.md.",
+		}
+	case "troubleshooting":
+		return "Help: troubleshooting", []string{
+			"Logs: $XDG_STATE_HOME/pico-editor/pico-editor.log (rotates at 1MB).",
+			"Use --log-level debug and --log-file - for stderr output.",
+			"Recovery journals live in $XDG_STATE_HOME/pico-editor/recovery.",
+			"If the window is blurry, fixed scales 1..8 avoid fractional scaling.",
+			"Clipboard uses XWayland on GNOME Wayland and falls back to registers.",
+			"If pico-lsp fails, run :lsp restart and check the log.",
+			"See docs/TROUBLESHOOTING.md for graphics, IME, and recovery help.",
 		}
 	default:
 		return "Help: keys", []string{
@@ -883,8 +954,10 @@ func helpTopic(topic string) (string, []string) {
 			"gg G Ctrl+O Ctrl+I zz zt zb   jumps/scroll",
 			"K hover; gd Ctrl+] definition; :diag; :lsp restart",
 			"Ctrl+Space completion; Ctrl+N Ctrl+Shift+N select",
-			"Ctrl+Tab Ctrl+Shift+Tab   cart code tabs",
-			"Ctrl+Shift+B   file tree; Ctrl+S saves",
+			"Ctrl+Shift+P palette; Ctrl+Shift+M messages",
+			"Ctrl+Shift+G glyph picker; F1 help",
+			"Ctrl+Shift+B tree; Ctrl+S saves; Ctrl+Tab tabs",
+			":reload config; :messages history; :help config",
 			"Esc cancels pending state or leaves a mode.",
 		}
 	}

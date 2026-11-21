@@ -286,3 +286,83 @@ func TestRunRejectsMissingCart(t *testing.T) {
 		t.Errorf("stderr = %q, want the missing cart path", stderr.String())
 	}
 }
+
+func TestMain(m *testing.M) {
+	base, err := os.MkdirTemp("", "pico-editor-main-test-")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
+	_ = os.Setenv("XDG_STATE_HOME", filepath.Join(base, "state"))
+	_ = os.Setenv("HOME", filepath.Join(base, "home"))
+	code := m.Run()
+	_ = os.RemoveAll(base)
+	os.Exit(code)
+}
+
+func TestRotatingFileKeepsThreeBackups(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "pico-editor.log")
+	var stderr bytes.Buffer
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := &rotatingFile{path: path, file: file, max: 32, stderr: &stderr}
+	for index := 0; index < 4; index++ {
+		if _, err := writer.Write([]byte(strings.Repeat("a", 40))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{".1", ".2", ".3"} {
+		if _, err := os.Stat(path + suffix); err != nil {
+			t.Errorf("missing rotated log %s: %v", path+suffix, err)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("rotated log mode = %o, want 600", got)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want no rotation warnings", stderr.String())
+	}
+}
+
+func TestSetupLoggerDashUsesStderr(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	logger, closeLog := setupLogger(slog.LevelInfo, "-", &stderr)
+	logger.Info("to stderr")
+	closeLog()
+	if !strings.Contains(stderr.String(), "to stderr") {
+		t.Fatalf("stderr = %q, want the log record", stderr.String())
+	}
+}
+
+func TestOpenRotatingFileRejectsNonRegularPath(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "log-directory")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	if _, err := openRotatingFile(path, &stderr); err == nil {
+		t.Fatal("openRotatingFile accepted a directory")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() {
+		t.Fatal("directory log path was moved aside")
+	}
+}

@@ -7,8 +7,8 @@ import (
 )
 
 // Settings are the pico8 initialization options the editor sends. They mirror
-// pico-lsp's public JSON settings; M7 replaces the hard-coded defaults with
-// TOML configuration.
+// pico-lsp's public JSON settings. M7 loads custom glyphs from TOML; type
+// checking, inlay hints, and max problems keep the documented defaults in V1.
 type Settings struct {
 	TypeChecking string
 	InlayHints   bool

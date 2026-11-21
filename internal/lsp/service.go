@@ -107,6 +107,13 @@ func (s *Service) Settings() Settings {
 	return s.settings
 }
 
+func (s *Service) debounce() time.Duration {
+	if s.opts.Debounce > 0 {
+		return s.opts.Debounce
+	}
+	return documentDebounce
+}
+
 // Start launches pico-lsp and opens every known document. It is safe to call
 // from a background goroutine.
 func (s *Service) Start(ctx context.Context) error {
@@ -411,6 +418,7 @@ func (s *Service) enqueueDocument(method string, params any, documentURI string,
 }
 
 func (s *Service) enqueueTo(out chan<- outbound, method string, params any, documentURI string, version int) {
+	s.log.Debug("request", "method", method, "document", documentURI, "version", version)
 	select {
 	case out <- outbound{method: method, params: params, documentURI: documentURI, version: version}:
 	default:

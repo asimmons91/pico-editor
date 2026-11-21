@@ -3,6 +3,7 @@ module github.com/asimmons91/pico-editor
 go 1.27.4
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/asimmons91/pico-lsp v1.7.0
 	github.com/hajimehoshi/ebiten/v2 v2.10.6
 	go.lsp.dev/jsonrpc2 v1.0.1

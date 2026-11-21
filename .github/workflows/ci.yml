@@ -37,6 +37,9 @@ jobs:
       - name: Check
         run: mise run check
 
+      - name: Record benchmarks
+        run: mise run bench
+
   xvfb-smoke:
     name: xvfb smoke
     runs-on: ubuntu-latest

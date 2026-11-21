@@ -119,19 +119,19 @@ want.action: diagnostics
 want.mode: normal
 ---
 matrix: 2.8-messages
-name: messages arrive in M7
+name: messages opens the notification history
 buffer: abc
 keys: :messages<enter>
 want.buffer: abc
-want.notify: M7
+want.action: messages
 want.mode: normal
 ---
 matrix: 2.8-reload
-name: config reload arrives in M7
+name: reload reparses both config layers
 buffer: abc
 keys: :reload<enter>
 want.buffer: abc
-want.notify: M7
+want.action: config-reload
 want.mode: normal
 ---
 matrix: 2.8-substitute

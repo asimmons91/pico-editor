@@ -14,6 +14,10 @@ run = "go run ./cmd/pico-editor"
 description = "Run the Go test suite"
 run = "go test ./..."
 
+[tasks.bench]
+description = "Record benchmark output (timings are informational)"
+run = "go test ./... -run '^$' -bench . -benchtime=1x"
+
 [tasks.lint]
 description = "Run golangci-lint"
 run = "golangci-lint run"
